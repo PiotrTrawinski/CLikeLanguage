@@ -49,13 +49,14 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
     while (getline(file, line)) {
         // if include directive then add source file from it
         int includeStrSize = sizeof("#include")-1;
-        if (line.size() > includeStrSize && line.substr(0, includeStrSize-1) == "#include") {
+        if (line.size() > includeStrSize && line.substr(0, includeStrSize) == "#include") {
 
-            FileInfo includedFile(line.substr(includeStrSize), &fileInfo, lineNumber);
+            FileInfo includedFile(line.substr(includeStrSize+1), &fileInfo, lineNumber);
             auto includedCode = getSourceFromFile(includedFile);
             
             // if reading source from included file failed we do not try to continue without
             if (!includedCode) {
+                file.close();
                 return nullopt;
             }
 
@@ -68,6 +69,7 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
         lineNumber++;
     }
 
+    file.close();
     return sourceCode;
 }
 
