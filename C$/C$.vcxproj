@@ -116,6 +116,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="parsing.cpp" />
+    <ClCompile Include="Token.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="parsing.h" />
+    <ClInclude Include="Token.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
