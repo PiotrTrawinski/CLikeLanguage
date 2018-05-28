@@ -2,17 +2,8 @@
 
 using namespace std;
 
-struct SourceStringLine {
-    SourceStringLine(string line, int number) :
-        line(line),
-        number(number)
-    {}
 
-    string line;
-    int number;
-};
-
-optional<vector<unique_ptr<Token>>> createTokens(vector<SourceStringLine> sourceCode) {
+optional<vector<Token>> createTokens(vector<SourceStringLine> sourceCode) {
     return nullopt;
 }
 
@@ -62,7 +53,7 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
     return sourceCode;
 }
 
-optional<vector<unique_ptr<Token>>> parseFile(string fileName) {
+optional<vector<Token>> parseFile(string fileName) {
     auto sourceCode = getSourceFromFile(FileInfo(fileName));
     if (!sourceCode) {
         return nullopt;

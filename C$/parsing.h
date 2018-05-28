@@ -1,9 +1,11 @@
 #pragma once
 #include <vector>
-#include <memory>
 #include <fstream>
 #include <optional>
 #include <iostream>
-#include "Token.h"
-#include "FileInfo.h"
 
+#include "SourceStringLine.h"
+#include "FileInfo.h"
+#include "Token.h"
+
+std::optional<std::vector<Token>> parseFile(std::string fileName);
