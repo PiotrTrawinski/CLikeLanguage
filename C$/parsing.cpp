@@ -11,9 +11,11 @@ optional<vector<Token>> createTokens(vector<SourceStringLine> sourceCode) {
 void printErrorIncludeStack(FileInfo fileInfo) {
     cerr << "Include Error: Could not open source file \"" << fileInfo.name << "\"\n";
     FileInfo* parent = fileInfo.parent;
+    FileInfo* child = &fileInfo;
     while (parent != nullptr) {
-        cerr << "included in " << parent->name << " at line " << parent->includeLineNumber << '\n';
+        cerr << "included in " << parent->name << " at line " << child->includeLineNumber << '\n';
         parent = parent->parent;
+        child = child->parent;
     }
 }
 optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
@@ -25,7 +27,7 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
 
     vector<SourceStringLine> sourceCode;
     string line;
-    int lineNumber = 0;
+    int lineNumber = 1;
     while (getline(file, line)) {
         // if include directive then add source file from it
         int includeStrSize = sizeof("#include")-1;
