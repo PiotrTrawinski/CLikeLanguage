@@ -118,10 +118,11 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="parsing.cpp" />
-    <ClCompile Include="Token.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FileInfo.h" />
     <ClInclude Include="parsing.h" />
+    <ClInclude Include="SourceStringLine.h" />
     <ClInclude Include="Token.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
