@@ -3,6 +3,7 @@
 #include <fstream>
 #include <optional>
 #include <iostream>
+#include <unordered_set>
 
 #include "SourceStringLine.h"
 #include "FileInfo.h"

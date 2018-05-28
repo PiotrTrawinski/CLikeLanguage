@@ -4,7 +4,7 @@ using namespace std;
 
 
 optional<vector<Token>> createTokens(vector<SourceStringLine> sourceCode) {
-    return nullopt;
+    return vector<Token>();
 }
 
 
@@ -18,7 +18,13 @@ void printErrorIncludeStack(FileInfo fileInfo) {
         child = child->parent;
     }
 }
-optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
+optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo, unordered_set<string>& includedFiles) {
+    auto [_iter, inserted] = includedFiles.insert(fileInfo.name);
+    if (!inserted) {
+        // no error so just return empty vector
+        return vector<SourceStringLine>();
+    }
+    
     ifstream file(fileInfo.name);
     if (!file) {
         printErrorIncludeStack(fileInfo);
@@ -34,7 +40,7 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
         if (line.size() > includeStrSize && line.substr(0, includeStrSize) == "#include") {
 
             FileInfo includedFile(line.substr(includeStrSize+1), &fileInfo, lineNumber);
-            auto includedCode = getSourceFromFile(includedFile);
+            auto includedCode = getSourceFromFile(includedFile, includedFiles);
             
             // if reading source from included file failed we do not try to continue without
             if (!includedCode) {
@@ -56,7 +62,8 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo) {
 }
 
 optional<vector<Token>> parseFile(string fileName) {
-    auto sourceCode = getSourceFromFile(FileInfo(fileName));
+    unordered_set<string> includedFiles;
+    auto sourceCode = getSourceFromFile(FileInfo(fileName), includedFiles);
     if (!sourceCode) {
         return nullopt;
     }
