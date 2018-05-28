@@ -4,6 +4,8 @@
 #include <optional>
 #include <iostream>
 #include <unordered_set>
+#include <memory>
+#include <tuple>
 
 #include "SourceStringLine.h"
 #include "FileInfo.h"

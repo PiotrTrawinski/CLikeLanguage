@@ -4,6 +4,7 @@ using namespace std;
 
 
 optional<vector<Token>> createTokens(vector<SourceStringLine> sourceCode) {
+    
     return vector<Token>();
 }
 
@@ -18,16 +19,10 @@ void printErrorIncludeStack(FileInfo fileInfo) {
         child = child->parent;
     }
 }
-optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo, unordered_set<string>& includedFiles) {
-    auto [_iter, inserted] = includedFiles.insert(fileInfo.name);
-    if (!inserted) {
-        // no error so just return empty vector
-        return vector<SourceStringLine>();
-    }
-    
-    ifstream file(fileInfo.name);
+optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo, vector<unique_ptr<FileInfo>>& fileInfos) {
+    ifstream file(fileInfo->name);
     if (!file) {
-        printErrorIncludeStack(fileInfo);
+        printErrorIncludeStack(*fileInfo);
         return nullopt;
     }
 
@@ -39,19 +34,30 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo, unordere
         int includeStrSize = sizeof("#include")-1;
         if (line.size() > includeStrSize && line.substr(0, includeStrSize) == "#include") {
 
-            FileInfo includedFile(line.substr(includeStrSize+1), &fileInfo, lineNumber);
-            auto includedCode = getSourceFromFile(includedFile, includedFiles);
-            
-            // if reading source from included file failed we do not try to continue without
-            if (!includedCode) {
-                file.close();
-                return nullopt;
+            string includeFileName = line.substr(includeStrSize+1);
+            bool alreadyInserted = false;
+            for (const auto& element : fileInfos) {
+                if (element.get()->name == includeFileName) {
+                    alreadyInserted = true;
+                    break;
+                }
             }
+            if (!alreadyInserted) {
+                fileInfos.emplace_back(make_unique<FileInfo>(includeFileName, fileInfo, lineNumber));
+                //FileInfo includedFile(line.substr(includeStrSize+1), fileInfo, lineNumber);
+                auto includedCode = getSourceFromFile(fileInfos.back().get(), fileInfos);
 
-            // append includedFile to the rest of sourceCode
-            sourceCode.insert(sourceCode.end(), includedCode.value().begin(), includedCode.value().end());
+                // if reading source from included file failed we do not try to continue without
+                if (!includedCode) {
+                    file.close();
+                    return nullopt;
+                }
+
+                // append includedFile to the rest of sourceCode
+                sourceCode.insert(sourceCode.end(), includedCode.value().begin(), includedCode.value().end());
+            }
         } else {
-            sourceCode.emplace_back(line, lineNumber);
+            sourceCode.emplace_back(line, fileInfo, lineNumber);
         }
 
         lineNumber++;
@@ -60,14 +66,15 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo, unordere
     file.close();
     return sourceCode;
 }
-pair<optional<vector<SourceStringLine>>, unordered_set<string>> getSourceFromFile(FileInfo fileInfo) {
-    unordered_set<string> includedFiles;
-    auto sourceCode = getSourceFromFile(fileInfo, includedFiles);
-    return {sourceCode, includedFiles};
+tuple<optional<vector<SourceStringLine>>, vector<unique_ptr<FileInfo>>> getSourceFromFile(string fileName) {
+    vector<unique_ptr<FileInfo>> fileInfos;
+    fileInfos.emplace_back(make_unique<FileInfo>(fileName));
+    auto sourceCode = getSourceFromFile(fileInfos.back().get(), fileInfos);
+    return {sourceCode, move(fileInfos)};
 }
 
 optional<vector<Token>> parseFile(string fileName) {
-    auto [sourceCode, _includedFiles] = getSourceFromFile(FileInfo(fileName));
+    auto [sourceCode, fileInfos] = getSourceFromFile(fileName);
     if (!sourceCode) {
         return nullopt;
     }

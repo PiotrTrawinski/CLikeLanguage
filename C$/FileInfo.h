@@ -2,6 +2,7 @@
 #include <string>
 
 struct FileInfo {
+    FileInfo(){}
     FileInfo(std::string name, FileInfo* parent=nullptr, int lineNumber=0) :
         name(name),
         parent(parent),
