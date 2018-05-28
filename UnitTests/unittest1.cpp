@@ -42,6 +42,14 @@ template <typename T> wstring toWstring(const vector<T>& vec) {
     str += toWstring(vec[vec.size()-1]) + L"}";
     return str;
 }
+template <typename T> wstring toWstringNewLines(const unordered_set<T>& set) {
+    wstring str = L"{";
+    for (const auto& value : set) {
+        str += toWstring(value) + L"\n";
+    }
+    str += L"}";
+    return str;
+}
 template <typename T> wstring toWstringNewLines(const vector<T>& vec) {
     wstring str = L"{\n";
     for (int i = 0; i < vec.size(); ++i) {
@@ -70,6 +78,9 @@ namespace Microsoft::VisualStudio::CppUnitTestFramework {
     template<> wstring ToString<vector<SourceStringLine>>(const vector<SourceStringLine>& vec) {
         return toWstringNewLines(vec);
     }
+    template<> wstring ToString<unordered_set<string>>(const unordered_set<string>& set) {
+        return toWstringNewLines(set);
+    }
 }
 
 namespace Parsing {	
@@ -79,7 +90,8 @@ namespace Parsing {
 	public:
 		TEST_METHOD(fileDoesntExist) {
             FileInfo fileInfo(randomString);
-            auto result = getSourceFromFile(fileInfo);
+            unordered_set<string> includedFiles;
+            auto [result, _] = getSourceFromFile(fileInfo);
 		    Assert::IsFalse(result.has_value(), L"result doesn't have value");
         }
 
@@ -87,7 +99,8 @@ namespace Parsing {
             ofstream newFile(randomString);
             newFile.close();
             FileInfo fileInfo(randomString);
-            auto result = getSourceFromFile(randomString);
+            unordered_set<string> includedFiles;
+            auto [result, _] = getSourceFromFile(fileInfo);
             remove(randomString.c_str());
 
             Assert::IsTrue(result.has_value(), L"result has value");
@@ -96,10 +109,10 @@ namespace Parsing {
 
         TEST_METHOD(fewLinesNoInclude) {
             vector<SourceStringLine> expected = {
-                {"// some commented line", 0},
-                {"#notInclude", 1},
-                {"", 2},
-                {"x #include file", 3}
+                {"// some commented line", 1},
+                {"#notInclude", 2},
+                {"", 3},
+                {"x #include file", 4}
             };
 
             ofstream newFile(randomString);
@@ -108,18 +121,19 @@ namespace Parsing {
             }
             newFile.close();
             FileInfo fileInfo(randomString);
-            auto result = getSourceFromFile(randomString);
+            unordered_set<string> includedFiles;
+            auto [result, _] = getSourceFromFile(fileInfo);
             remove(randomString.c_str());
 
             Assert::IsTrue(result.has_value(), L"result has value");
             Assert::AreEqual(expected, result.value());
         }
 
-        TEST_METHOD(onlyIncludes) {
+        TEST_METHOD(onlyIncludesInFirstFile) {
             vector<SourceStringLine> expected = {
-                {"file 1 line 0", 0},
-                {"file 1 line 1", 1},
-                {"file 2 line 0", 0}
+                {"file 1 line 0", 1},
+                {"file 1 line 1", 2},
+                {"file 2 line 0", 1}
             };
             string randomString1 = randomString+"1";
             string randomString2 = randomString+"2";
@@ -147,7 +161,8 @@ namespace Parsing {
             FileInfo fileInfo2(randomString2);
             FileInfo fileInfo3(randomString3);
 
-            auto result = getSourceFromFile(randomString);
+            unordered_set<string> includedFiles;
+            auto [result, _] = getSourceFromFile(fileInfo);
 
             remove(randomString.c_str());
             remove((randomString1).c_str());
@@ -157,5 +172,27 @@ namespace Parsing {
             Assert::IsTrue(result.has_value(), L"result has value");
             Assert::AreEqual(expected, result.value());
         }
+
+        TEST_METHOD(recursiveInclude) {
+            vector<SourceStringLine> expectedSource = {};
+            unordered_set<string> expectedIncludedFiles = {
+                {randomString}
+            };
+
+            ofstream newFile(randomString);
+            for (auto sourceLine : expectedSource) {
+                newFile << sourceLine.line << "\n";
+            }
+            newFile.close();
+            FileInfo fileInfo(randomString);
+            auto [sourceCode, includedFiles] = getSourceFromFile(fileInfo);
+            remove(randomString.c_str());
+
+            Assert::IsTrue(sourceCode.has_value(), L"result has value");
+            Assert::AreEqual(expectedSource, sourceCode.value());
+            Assert::AreEqual(expectedIncludedFiles, includedFiles);
+        }
+
+
 	};
 }

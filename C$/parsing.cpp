@@ -60,10 +60,14 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo fileInfo, unordere
     file.close();
     return sourceCode;
 }
+pair<optional<vector<SourceStringLine>>, unordered_set<string>> getSourceFromFile(FileInfo fileInfo) {
+    unordered_set<string> includedFiles;
+    auto sourceCode = getSourceFromFile(fileInfo, includedFiles);
+    return {sourceCode, includedFiles};
+}
 
 optional<vector<Token>> parseFile(string fileName) {
-    unordered_set<string> includedFiles;
-    auto sourceCode = getSourceFromFile(FileInfo(fileName), includedFiles);
+    auto [sourceCode, _includedFiles] = getSourceFromFile(FileInfo(fileName));
     if (!sourceCode) {
         return nullopt;
     }
