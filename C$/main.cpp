@@ -3,8 +3,9 @@
 
 using namespace std;
 
-int main(char** argv, int argc) {
+int main(int argc, char** argv) {
     if (argc < 2) {
+        cerr << "You didn't provide a file to compile\n";
         return 1;
     }
     auto tokens = parseFile(argv[1]);
