@@ -17,22 +17,11 @@ optional<vector<unique_ptr<Token>>> createTokens(vector<SourceStringLine> source
 }
 
 
-struct FileInfo {
-    FileInfo(string name, FileInfo* parent=nullptr, int lineNumber=0) :
-        name(name),
-        parent(parent),
-        lineNumber(lineNumber)
-    {}
-
-    FileInfo* parent;
-    string name;
-    int lineNumber;
-};
 void printErrorIncludeStack(FileInfo fileInfo) {
     cerr << "Include Error: Could not open source file \"" << fileInfo.name << "\"\n";
     FileInfo* parent = fileInfo.parent;
     while (parent != nullptr) {
-        cerr << "included in " << parent->name << " at line " << parent->lineNumber << '\n';
+        cerr << "included in " << parent->name << " at line " << parent->includeLineNumber << '\n';
         parent = parent->parent;
     }
 }

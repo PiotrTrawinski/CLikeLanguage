@@ -29,5 +29,8 @@
     <ClInclude Include="Token.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="FileInfo.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

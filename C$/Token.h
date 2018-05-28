@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "FileInfo.h"
 
 struct Token {
     enum class Type {
@@ -11,11 +12,17 @@ struct Token {
         Symbol          // any 1 symbol that does not match anything above
     };
 
-    Token(Type type, std::string value) : 
+    Token(Type type, const std::string& value, int lineNumber, int charNumber, FileInfo* fileInfo) : 
         type(type),
-        value(value)
+        value(value),
+        lineNumber(lineNumber),
+        charNumber(charNumber),
+        fileInfo(fileInfo)
     {}
     
     Type type;
     std::string value;
+    int lineNumber;
+    int charNumber;
+    FileInfo* fileInfo;
 };
