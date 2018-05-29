@@ -32,7 +32,36 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
             }
             else if (c == '/' && charId < lineStr.size() - 1 && lineStr[charId + 1] == '*') {
                 // multi-line comment
-                
+                charId += 2; // skip '/' and '*' symbols
+
+                // skip everything till appropriate closing comment (*/) string
+                // (nested coments work -> /* ... /* ... */ ... */ is corrent syntax)
+                int openedComents = 1;
+                while (lineId < sourceCode.size()) {
+                    while (charId < lineStr.size() - 1) {
+                        if (lineStr[charId] == '*' && lineStr[charId+1] == '/') {
+                            openedComents -= 1;
+                            if (openedComents <= 0) {
+                                break;
+                            }
+                        }
+                        else if (lineStr[charId] == '/' && lineStr[charId+1] == '*') {
+                            openedComents += 1;
+                        }
+                        charId++;
+                    }
+                    if (openedComents <= 0) {
+                        break;
+                    }
+                    lineId++;
+                }
+
+                if (openedComents > 0) {
+                    cerr << "Parsing error: missing closing multi-line comment (*/)\n";
+                    cerr << "starting at line " << lineNumber << '\n';
+                }
+
+                charId += 2; // skip '*' and '/' symbols
             }
             else if (!isspace(c)){
                 // only whitespace characters don't get saved
