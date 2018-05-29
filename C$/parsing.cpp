@@ -3,9 +3,48 @@
 using namespace std;
 
 
-optional<vector<Token>> createTokens(vector<SourceStringLine> sourceCode) {
-    
-    return vector<Token>();
+optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode) {
+    vector<Token> tokens;
+
+    for(int lineId = 0; lineId < sourceCode.size(); ++lineId){
+        const FileInfo* fileInfo = sourceCode[lineId].file;
+        const int lineNumber = sourceCode[lineId].number;
+        const string& lineStr = sourceCode[lineId].value;
+        int charId = 0;
+        while (charId < lineStr.size()) {
+            int charNumber = charId+1;
+            char c = lineStr[charId];
+            if (isalpha(c)) {
+                //while()
+            }
+            else if (c == '\"') {
+
+            }
+            else if (c == '\'') {
+
+            }
+            else if (isdigit(c)) {
+
+            }
+            else if (c == '/' && charId < lineStr.size() - 1 && lineStr[charId + 1] == '/') {
+                // single line comment
+                break;
+            }
+            else if (c == '/' && charId < lineStr.size() - 1 && lineStr[charId + 1] == '*') {
+                // multi-line comment
+                
+            }
+            else if (!isspace(c)){
+                // only whitespace characters don't get saved
+                tokens.emplace_back(Token::Type::Symbol, string(1,c), lineNumber, charNumber, fileInfo);
+                charId++;
+            } else {
+                charId++;
+            }
+        }
+    }
+
+    return tokens;
 }
 
 
