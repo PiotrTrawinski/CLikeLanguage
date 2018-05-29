@@ -12,7 +12,7 @@ struct Token {
         Symbol          // any 1 symbol that does not match anything above
     };
 
-    Token(Type type, const std::string& value, int lineNumber, int charNumber, FileInfo* fileInfo) : 
+    Token(Type type, const std::string& value, int lineNumber, int charNumber, const FileInfo* fileInfo) : 
         type(type),
         value(value),
         lineNumber(lineNumber),
@@ -24,5 +24,5 @@ struct Token {
     std::string value;
     int lineNumber;
     int charNumber;
-    FileInfo* fileInfo;
+    const FileInfo* fileInfo;
 };
