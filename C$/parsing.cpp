@@ -15,16 +15,66 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
             int charNumber = charId+1;
             char c = lineStr[charId];
             if (isalpha(c)) {
-                //while()
+                string label = string(1, c);
+                charId++;
+                while (charId < lineStr.size() && (isalpha(lineStr[charId]) || lineStr[charId]=='_')) {
+                    label += lineStr[charId];
+                    charId++;
+                }
+                tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo);
             }
             else if (c == '\"') {
-
+                // for now there is no support of escape characters (like \" \n \t)
+                string stringLiteral = "";
+                charId++;
+                while (charId < lineStr.size() && c != '\"') {
+                    stringLiteral += lineStr[charId];
+                    charId++;
+                }
+                tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo);
             }
             else if (c == '\'') {
-
+                // for now there is no support of escape characters (like \" \n \t)
+                charId++; // skip opening ' symbol
+                if (charId >= lineStr.size()) {
+                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
+                    cerr << "didn't complete the definition of char literal defined at char " << charNumber << '\n';
+                    return nullopt;
+                }
+                string character = string(1, lineStr[charId]);
+                charId++; // skip char enclosed in ' symbols
+                if (charId >= lineStr.size()) {
+                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
+                    cerr << "missing closing ' symbol for char literal defined at char " << charNumber << '\n';
+                    return nullopt;
+                }
+                if (lineStr[charId] != '\'') {
+                    cerr << "Parsing error: missing closing ' symbol for char literal\n";
+                    return nullopt;
+                }
+                charId++; // skip closing ' symbol
+                tokens.emplace_back(Token::Type::Char, character, lineNumber, charNumber, fileInfo);
             }
             else if (isdigit(c)) {
-
+                string strNumber = string(1, c);
+                charId++;
+                bool haveDot = false;
+                while (charId < lineStr.size() && (isdigit(lineStr[charId]) || lineStr[charId]=='.')) {
+                    if (lineStr[charId] == '.') {
+                        if (haveDot) {
+                            cerr << "Parsing error: too many dots in number\n";
+                            return nullopt;
+                        }
+                        haveDot = true;
+                    }
+                    strNumber += lineStr[charId];
+                    charId++;
+                }
+                if (haveDot) {
+                    tokens.emplace_back(Token::Type::Float, strNumber, lineNumber, charNumber, fileInfo);
+                } else {
+                    tokens.emplace_back(Token::Type::Integer, strNumber, lineNumber, charNumber, fileInfo);
+                }
             }
             else if (c == '/' && charId < lineStr.size() - 1 && lineStr[charId + 1] == '/') {
                 // single line comment
@@ -58,7 +108,8 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
 
                 if (openedComents > 0) {
                     cerr << "Parsing error: missing closing multi-line comment (*/)\n";
-                    cerr << "starting at line " << lineNumber << '\n';
+                    cerr << "in file " << fileInfo->name << " starting at line " << lineNumber << '\n';
+                    return nullopt;
                 }
 
                 charId += 2; // skip '*' and '/' symbols
