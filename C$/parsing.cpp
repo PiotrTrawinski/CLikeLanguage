@@ -7,9 +7,9 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
     vector<Token> tokens;
 
     for(int lineId = 0; lineId < sourceCode.size(); ++lineId){
-        const FileInfo* fileInfo = sourceCode[lineId].file;
-        const int lineNumber = sourceCode[lineId].number;
-        const string& lineStr = sourceCode[lineId].value;
+        FileInfo* fileInfo = sourceCode[lineId].file;
+        int lineNumber = sourceCode[lineId].number;
+        string_view lineStr = sourceCode[lineId].value;
         int charId = 0;
         while (charId < lineStr.size()) {
             int charNumber = charId+1;
@@ -17,7 +17,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
             if (isalpha(c)) {
                 string label = string(1, c);
                 charId++;
-                while (charId < lineStr.size() && (isalpha(lineStr[charId]) || lineStr[charId]=='_')) {
+                while (charId < lineStr.size() && (isalpha(lineStr[charId]) || isdigit(lineStr[charId]) || lineStr[charId]=='_')) {
                     label += lineStr[charId];
                     charId++;
                 }
@@ -26,11 +26,12 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
             else if (c == '\"') {
                 // for now there is no support of escape characters (like \" \n \t)
                 string stringLiteral = "";
-                charId++;
-                while (charId < lineStr.size() && c != '\"') {
+                charId++; // skip opening " symbol
+                while (charId < lineStr.size() && lineStr[charId] != '\"') {
                     stringLiteral += lineStr[charId];
                     charId++;
                 }
+                charId++; // skip closing " symbol
                 tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo);
             }
             else if (c == '\'') {
@@ -88,14 +89,19 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                 // (nested coments work -> /* ... /* ... */ ... */ is corrent syntax)
                 int openedComents = 1;
                 while (lineId < sourceCode.size()) {
+                    fileInfo = sourceCode[lineId].file;
+                    lineNumber = sourceCode[lineId].number;
+                    lineStr = sourceCode[lineId].value;
                     while (charId < lineStr.size() - 1) {
                         if (lineStr[charId] == '*' && lineStr[charId+1] == '/') {
                             openedComents -= 1;
+                            charId++;
                             if (openedComents <= 0) {
                                 break;
                             }
                         }
                         else if (lineStr[charId] == '/' && lineStr[charId+1] == '*') {
+                            charId++;
                             openedComents += 1;
                         }
                         charId++;
@@ -104,6 +110,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                         break;
                     }
                     lineId++;
+                    charId = 0;
                 }
 
                 if (openedComents > 0) {
@@ -112,7 +119,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                     return nullopt;
                 }
 
-                charId += 2; // skip '*' and '/' symbols
+                charId++; // skip closing / symbol
             }
             else if (!isspace(c)){
                 // only whitespace characters don't get saved
