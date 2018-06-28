@@ -21,6 +21,9 @@
     <ClCompile Include="parsing.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="interpreting.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parsing.h">
@@ -33,6 +36,9 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="SourceStringLine.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeTreeTypes.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

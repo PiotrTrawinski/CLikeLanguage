@@ -116,12 +116,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="interpreting.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="parsing.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileInfo.h" />
     <ClInclude Include="parsing.h" />
+    <ClInclude Include="CodeTreeTypes.h" />
     <ClInclude Include="SourceStringLine.h" />
     <ClInclude Include="Token.h" />
   </ItemGroup>
