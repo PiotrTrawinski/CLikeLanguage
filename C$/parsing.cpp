@@ -162,16 +162,16 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo) {
 
             string includeFileName = line.substr(includeStrSize+1);
             bool alreadyInserted = false;
-            for (const auto& element : fileInfos) {
+            for (const auto& element : GVARS.fileInfos) {
                 if (element.get()->name == includeFileName) {
                     alreadyInserted = true;
                     break;
                 }
             }
             if (!alreadyInserted) {
-                fileInfos.emplace_back(make_unique<FileInfo>(includeFileName, fileInfo, lineNumber));
+                GVARS.fileInfos.emplace_back(make_unique<FileInfo>(includeFileName, fileInfo, lineNumber));
                 //FileInfo includedFile(line.substr(includeStrSize+1), fileInfo, lineNumber);
-                auto includedCode = getSourceFromFile(fileInfos.back().get());
+                auto includedCode = getSourceFromFile(GVARS.fileInfos.back().get());
 
                 // if reading source from included file failed we do not try to continue without
                 if (!includedCode) {
@@ -193,8 +193,8 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo) {
     return sourceCode;
 }
 optional<vector<SourceStringLine>> getSourceFromFile(string fileName) {
-    fileInfos.emplace_back(make_unique<FileInfo>(fileName));
-    auto sourceCode = getSourceFromFile(fileInfos.back().get());
+    GVARS.fileInfos.emplace_back(make_unique<FileInfo>(fileName));
+    auto sourceCode = getSourceFromFile(GVARS.fileInfos.back().get());
     return sourceCode;
 }
 
