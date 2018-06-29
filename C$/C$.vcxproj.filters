@@ -27,6 +27,9 @@
     <ClCompile Include="Keywords.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="globalVariables.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parsing.h">
@@ -51,6 +54,9 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="keywords.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="globalVariables.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

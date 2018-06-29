@@ -20,6 +20,11 @@ bool internalError(string message, const CodePosition& codePosition) {
     return false;
 }
 
+unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& delimiter=";") {
+    unique_ptr<Value> value;
+    return value;
+}
+
 bool ForScope::interpret(const vector<Token>& tokens, int& i) {
     return true;
 }
@@ -69,6 +74,100 @@ bool CodeScope::interpret(const vector<Token>& tokens, int& i) {
             }
             break;
         case Token::Type::Label:
+            /// Possible legal uses of label at start of expression:
+            // keyword
+            // variable declaration (x :: 3; x := 5; x: int; x :: ())
+            // class declaration (MyClass :: class {}; MyClass :: class<T,U> {})
+            // expression (value) (x = 3; fun(2,1) = 5; x.fun(2,1).y = 1)
+
+            Keyword* keyword = Keyword::get(token.value);
+            if (keyword) {
+                switch (keyword->kind) {
+                case Keyword::Kind::SpecialValue:
+                    return errorMessage("statement cannot start with r-value", token.codePosition);
+                case Keyword::Kind::TypeName:
+                    return errorMessage("statement cannot start with type name", token.codePosition);
+                case Keyword::Kind::ScopeStart:
+                    switch (((ScopeStartKeyword*)keyword)->value) {
+                    case ScopeStartKeyword::Value::Class:
+                        statements.push_back(make_unique<ClassScope>(token.codePosition, this));
+                        break;
+                    case ScopeStartKeyword::Value::Defer:
+                        statements.push_back(make_unique<DeferScope>(token.codePosition, this));
+                        break;
+                    case ScopeStartKeyword::Value::If:
+                        statements.push_back(make_unique<IfScope>(token.codePosition, this));
+                        break;
+                    case ScopeStartKeyword::Value::ElseIf:
+                        statements.push_back(make_unique<ElseIfScope>(token.codePosition, this));
+                        break;
+                    case ScopeStartKeyword::Value::Else:
+                        statements.push_back(make_unique<ElseScope>(token.codePosition, this));
+                        break;
+                    case ScopeStartKeyword::Value::While:
+                        statements.push_back(make_unique<WhileScope>(token.codePosition, this));
+                        break;
+                    case ScopeStartKeyword::Value::For:
+                        statements.push_back(make_unique<ForScope>(token.codePosition, this));
+                        break;
+                    }
+                    i += 1;
+                    ((Scope*)statements.back().get())->interpret(tokens, i);
+                    break;
+                case Keyword::Kind::FlowStatement:
+                    switch (((FlowStatementKeyword*)keyword)->value) {
+                    case FlowStatementKeyword::Value::Break:
+                        statements.push_back(make_unique<Operation>(token.codePosition, Operation::Kind::Break));
+                        break; 
+                    case FlowStatementKeyword::Value::Continue:
+                        statements.push_back(make_unique<Operation>(token.codePosition, Operation::Kind::Continue));
+                        break; 
+                    case FlowStatementKeyword::Value::Remove:
+                        this->statements.push_back(make_unique<Operation>(token.codePosition, Operation::Kind::Remove));
+                        break; 
+                    case FlowStatementKeyword::Value::Return:
+                        this->statements.push_back(make_unique<Operation>(token.codePosition, Operation::Kind::Return));
+                        break; 
+                    }
+                    i += 1;
+                    auto value = getValue(tokens, i);
+                    if (value) {
+                        ((Operation*)statements.back().get())->arguments.push_back(move(value));
+                    }
+                    break;
+                }
+            }
+            else if (i + 1 >= tokens.size()) {
+                return errorMessage("unexpected end of file", token.codePosition);
+            }
+            else if (tokens[i + 1].value == ":" || tokens[i + 1].value == "&") {
+                // assignment
+                if (i + 3 >= tokens.size()) {
+                    return errorMessage("unexpected end of assignment", token.codePosition);
+                }
+                if (tokens[i + 3].value == "class") {
+                    // class declaration
+                    if (tokens[i + 1].value + tokens[i+2].value != "::") {
+                        return errorMessage("unexpected symbols in class declaration. Did you mean to use '::'?", tokens[i+1].codePosition);
+                    }
+
+
+                } else {
+                    // variable declaration
+                    if (tokens[i+2].value != ":" && tokens[i+2].value != "=") {
+
+                    }
+                    bool declareByReference = tokens[i + 1].value == "&";
+                    auto declaration = make_unique<Declaration>(token.codePosition);
+                    declaration->variable.isConst = tokens[i+2].value == ":";
+                    declaration->variable.name = token.value;
+                    //declaration->variable.type
+                }
+            }
+            else {
+                statements.push_back(getValue(tokens, i));
+            }
+
             break;
 
         }

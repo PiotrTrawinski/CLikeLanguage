@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "CodePosition.h"
+#include "Token.h"
 
 struct Type {
     enum class Kind {
@@ -22,8 +23,7 @@ struct Type {
         Float,
         Template,
         TemplateClass,
-        TemplateFunction,
-        Void
+        TemplateFunction
     };
 
     Type (Kind kind) : kind(kind) {}
@@ -35,7 +35,6 @@ struct Statement {
     enum class Kind {
         Scope,
         Declaration,
-        Assignment,
         Value
     };
 
@@ -49,16 +48,15 @@ struct Statement {
 };
 
 struct Value : Statement {
-    Value(const CodePosition& position, Type* type) : 
-        Statement(position, Statement::Kind::Value), 
-        type(type) 
+    Value(const CodePosition& position) : 
+        Statement(position, Statement::Kind::Value)
     {}
-    Type* type;
+    Type* type = nullptr;
     bool isConstexpr;
 };
 
 struct Variable : Value {
-    Variable(const CodePosition& position, Type* type) : Value(position, type) {}
+    Variable(const CodePosition& position) : Value(position) {}
 
     std::string name;
     bool isConst;
@@ -73,7 +71,8 @@ struct Operation : Value {
         Eq, Neq,
         Gt, Lt, Gte, Lte,
         Shl, Shr, Sal, Sar,
-        Reference, Address,
+        Assign,
+        Reference, Address, GetValue,
         Cast,
         FunctionCall,
         Allocation,
@@ -84,8 +83,12 @@ struct Operation : Value {
         Return
     };
 
-    Operation(const CodePosition& position, Type* returnType) : Value(position, returnType) {}
+    Operation(const CodePosition& position, Kind kind) : 
+        Value(position),
+        kind(kind)
+    {}
 
+    Kind kind;
     std::vector<std::unique_ptr<Value>> arguments;
 };
 
@@ -165,37 +168,26 @@ struct TemplateFunctionType : FunctionType {
     Operations
 */
 struct CastOperation : Operation {
-    CastOperation(const CodePosition& position, Type* argType, Type* returnType) : 
-        Operation(position, returnType),
+    CastOperation(const CodePosition& position, Type* argType) : 
+        Operation(position, Operation::Kind::Cast),
         argType(argType)
     {}
 
     Type* argType;
 };
 struct FunctionCallOperation : Operation {
-    FunctionCallOperation(const CodePosition& position, Type* returnType, const Variable& function) : 
-        Operation(position, returnType), 
+    FunctionCallOperation(const CodePosition& position, const Variable& function) : 
+        Operation(position, Operation::Kind::FunctionCall), 
         function(function)
     {}
 
     Variable function;
 };
 
-
-
-struct Assignment : Statement {
-    Assignment(const CodePosition& position, Type* variableType) : 
-        Statement(position, Statement::Kind::Assignment),
-        variable(position, variableType)
-    {}
-
-    Variable variable;
-    std::unique_ptr<Value> value;
-};
 struct Declaration : Statement {
-    Declaration(const CodePosition& position, Type* variableType) : 
+    Declaration(const CodePosition& position) : 
         Statement(position, Statement::Kind::Declaration),
-        variable(position, variableType)
+        variable(position)
     {}
 
     Variable variable;
@@ -219,19 +211,6 @@ struct Scope : Statement {
         owner(owner),
         parentScope(parentScope)
     {}
-
-    static std::optional<Owner> keywordToOwner(Keyword keyword) {
-        switch (keyword) {
-        case Keyword::Class:  return Owner::Class;
-        case Keyword::For:    return Owner::For;
-        case Keyword::While:  return Owner::While;
-        case Keyword::If:     return Owner::If;
-        case Keyword::ElseIf: return Owner::ElseIf;
-        case Keyword::Else:   return Owner::Else;
-        case Keyword::Defer:  return Owner::Defer;
-        default: return std::nullopt;
-        }
-    }
 
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
@@ -301,32 +280,32 @@ struct DeferScope : CodeScope {
     Values
 */
 struct IntegerValue : Value {
-    IntegerValue(const CodePosition& position, IntegerType* integerType) : Value(position, integerType) {
+    IntegerValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     int64_t value;
 };
 struct FloatValue : Value {
-    FloatValue(const CodePosition& position, FloatType* floatType) : Value(position, floatType) {
+    FloatValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     double value;
 };
 struct StringValue : Value {
-    StringValue(const CodePosition& position, StringType* stringType) : Value(position, stringType) {
+    StringValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     std::string value;
 };
 struct StaticArrayValue : Value {
-    StaticArrayValue(const CodePosition& position, StaticArrayType* staticArrayType) : Value(position, staticArrayType) {
+    StaticArrayValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     std::vector<std::unique_ptr<Value>> values;
 };
 struct FunctionValue : Value {
-    FunctionValue(const CodePosition& position, FunctionType* functionType, Scope* parentScope) : 
-        Value(position, functionType),
+    FunctionValue(const CodePosition& position, Scope* parentScope) : 
+        Value(position),
         body(position, Scope::Owner::Function, parentScope)
     {
         isConstexpr = true;

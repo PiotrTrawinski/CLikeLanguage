@@ -10,5 +10,6 @@
 #include "SourceStringLine.h"
 #include "FileInfo.h"
 #include "Token.h"
+#include "globalVariables.h"
 
 std::optional<std::vector<Token>> parseFile(std::string fileName);
