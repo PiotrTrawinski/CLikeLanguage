@@ -145,7 +145,7 @@ void printErrorIncludeStack(FileInfo fileInfo) {
         child = child->parent;
     }
 }
-optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo, vector<unique_ptr<FileInfo>>& fileInfos) {
+optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo) {
     ifstream file(fileInfo->name);
     if (!file) {
         printErrorIncludeStack(*fileInfo);
@@ -162,16 +162,16 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo, vector<
 
             string includeFileName = line.substr(includeStrSize+1);
             bool alreadyInserted = false;
-            for (const auto& element : fileInfos) {
+            for (const auto& element : GVARS.fileInfos) {
                 if (element.get()->name == includeFileName) {
                     alreadyInserted = true;
                     break;
                 }
             }
             if (!alreadyInserted) {
-                fileInfos.emplace_back(make_unique<FileInfo>(includeFileName, fileInfo, lineNumber));
+                GVARS.fileInfos.emplace_back(make_unique<FileInfo>(includeFileName, fileInfo, lineNumber));
                 //FileInfo includedFile(line.substr(includeStrSize+1), fileInfo, lineNumber);
-                auto includedCode = getSourceFromFile(fileInfos.back().get(), fileInfos);
+                auto includedCode = getSourceFromFile(GVARS.fileInfos.back().get());
 
                 // if reading source from included file failed we do not try to continue without
                 if (!includedCode) {
@@ -192,15 +192,14 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo, vector<
     file.close();
     return sourceCode;
 }
-tuple<optional<vector<SourceStringLine>>, vector<unique_ptr<FileInfo>>> getSourceFromFile(string fileName) {
-    vector<unique_ptr<FileInfo>> fileInfos;
-    fileInfos.emplace_back(make_unique<FileInfo>(fileName));
-    auto sourceCode = getSourceFromFile(fileInfos.back().get(), fileInfos);
-    return {sourceCode, move(fileInfos)};
+optional<vector<SourceStringLine>> getSourceFromFile(string fileName) {
+    GVARS.fileInfos.emplace_back(make_unique<FileInfo>(fileName));
+    auto sourceCode = getSourceFromFile(GVARS.fileInfos.back().get());
+    return sourceCode;
 }
 
 optional<vector<Token>> parseFile(string fileName) {
-    auto [sourceCode, fileInfos] = getSourceFromFile(fileName);
+    auto sourceCode = getSourceFromFile(fileName);
     if (!sourceCode) {
         return nullopt;
     }

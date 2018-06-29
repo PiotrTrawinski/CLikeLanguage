@@ -4,6 +4,9 @@
 #include <memory>
 #include <optional>
 
+#include "CodePosition.h"
+#include "Token.h"
+
 struct Type {
     enum class Kind {
         OwnerPointer,
@@ -18,10 +21,10 @@ struct Type {
         Function,
         Integer,
         Float,
+        Void,
         Template,
         TemplateClass,
-        TemplateFunction,
-        Void
+        TemplateFunction
     };
 
     Type (Kind kind) : kind(kind) {}
@@ -33,26 +36,28 @@ struct Statement {
     enum class Kind {
         Scope,
         Declaration,
-        Assignment,
         Value
     };
 
-    Statement(Kind kind) : kind(kind) {}
+    Statement(const CodePosition& position, Kind kind) : 
+        kind(kind),
+        position(position)
+    {}
 
     Kind kind;
+    CodePosition position;
 };
 
 struct Value : Statement {
-    Value(Type* type) : 
-        Statement(Statement::Kind::Value), 
-        type(type) 
+    Value(const CodePosition& position) : 
+        Statement(position, Statement::Kind::Value)
     {}
-    Type* type;
+    std::unique_ptr<Type> type = nullptr;
     bool isConstexpr;
 };
 
 struct Variable : Value {
-    Variable(Type* type) : Value(type) {}
+    Variable(const CodePosition& position) : Value(position) {}
 
     std::string name;
     bool isConst;
@@ -67,7 +72,8 @@ struct Operation : Value {
         Eq, Neq,
         Gt, Lt, Gte, Lte,
         Shl, Shr, Sal, Sar,
-        Reference, Address,
+        Assign,
+        Reference, Address, GetValue,
         Cast,
         FunctionCall,
         Allocation,
@@ -78,40 +84,44 @@ struct Operation : Value {
         Return
     };
 
-    Operation(Type* returnType) : Value(returnType) {}
+    Operation(const CodePosition& position, Kind kind) : 
+        Value(position),
+        kind(kind)
+    {}
 
+    Kind kind;
     std::vector<std::unique_ptr<Value>> arguments;
 };
 
 
 struct OwnerPointerType : Type {
     OwnerPointerType() : Type(Type::Kind::OwnerPointer) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct RawPointerType : Type {
     RawPointerType() : Type(Type::Kind::RawPointer) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct MaybeErrorType : Type {
     MaybeErrorType() : Type(Type::Kind::MaybeError) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct ReferenceType : Type {
     ReferenceType() : Type(Type::Kind::Reference) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct StaticArrayType : Type {
     StaticArrayType() : Type(Type::Kind::StaticArray) {}
-    Type* elementType;
+    std::unique_ptr<Type> elementType;
     int size;
 };
 struct DynamicArrayType : Type {
     DynamicArrayType() : Type(Type::Kind::DynamicArray) {}
-    Type* elementType;
+    std::unique_ptr<Type> elementType;
 };
 struct ArrayViewType : Type {
     ArrayViewType() : Type(Type::Kind::ArrayView) {}
-    Type* elementType;
+    std::unique_ptr<Type> elementType;
 };
 struct StringType : Type {
     StringType() : Type(Type::Kind::String) {}
@@ -119,15 +129,15 @@ struct StringType : Type {
 struct ClassType : Type {
     ClassType() : Type(Type::Kind::Class) {}
     std::string name;
-    std::vector<Variable> variables;
+    //std::vector<Variable> variables;
 };
 struct FunctionType : Type {
     FunctionType() : Type(Type::Kind::Function) {}
-    Type* returnType;
-    std::vector<Type*> argumentTypes;
+    std::unique_ptr<Type> returnType;
+    std::vector<std::unique_ptr<Type>> argumentTypes;
 };
 struct IntegerType : Type {
-    enum class Size { I8, I16, I32, I64 };
+    enum class Size { I8, I16, I32, I64, U8, U16, U32, U64 };
     IntegerType() : Type(Type::Kind::Integer) {}
     Size size;
 };
@@ -140,17 +150,17 @@ struct TemplateType : Type {
     TemplateType() : Type(Type::Kind::Template) {}
     std::string name;
 };
-struct TempalteClassType : ClassType {
+/*struct TempalteClassType : ClassType {
     TempalteClassType() {
         kind = Type::Kind::TemplateClass;
     }
-    std::vector<TemplateType*> templateTypes;
-};
+    std::vector<std::unique_ptr<TemplateType>> templateTypes;
+};*/
 struct TemplateFunctionType : FunctionType {
     TemplateFunctionType() {
         kind = Type::Kind::TemplateFunction;
     }
-    std::vector<TemplateType*> templateTypes;
+    std::vector<std::unique_ptr<TemplateType>> templateTypes;
 };
 
 
@@ -159,37 +169,25 @@ struct TemplateFunctionType : FunctionType {
     Operations
 */
 struct CastOperation : Operation {
-    CastOperation(Type* argType, Type* returnType) : 
-        Operation(returnType),
-        argType(argType)
+    CastOperation(const CodePosition& position) : 
+        Operation(position, Operation::Kind::Cast)
     {}
 
-    Type* argType;
+    std::unique_ptr<Type> argType;
 };
 struct FunctionCallOperation : Operation {
-    FunctionCallOperation(Type* returnType, const Variable& function) : 
-        Operation(returnType), 
-        function(function)
+    FunctionCallOperation(const CodePosition& position) : 
+        Operation(position, Operation::Kind::FunctionCall),
+        function(position)
     {}
 
     Variable function;
 };
 
-
-
-struct Assignment : Statement {
-    Assignment(Type* variableType) : 
-        Statement(Statement::Kind::Assignment),
-        variable(variableType)
-    {}
-
-    Variable variable;
-    std::unique_ptr<Value> value;
-};
 struct Declaration : Statement {
-    Declaration(Type* variableType) : 
-        Statement(Statement::Kind::Declaration),
-        variable(variableType)
+    Declaration(const CodePosition& position) : 
+        Statement(position, Statement::Kind::Declaration),
+        variable(position)
     {}
 
     Variable variable;
@@ -208,46 +206,75 @@ struct Scope : Statement {
         Defer
     };
 
-    Scope(Owner owner, Scope* parentScope) : 
-        Statement(Statement::Kind::Scope),
+    Scope(const CodePosition& position, Owner owner, Scope* parentScope) : 
+        Statement(position, Statement::Kind::Scope),
         owner(owner),
         parentScope(parentScope)
     {}
 
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
+    virtual bool interpret(const std::vector<Token>& tokens, int& i)=0;
 };
 
 struct CodeScope : Scope {
-    CodeScope(Scope::Owner owner, Scope* parentScope) : Scope(owner, parentScope) {}
+    CodeScope(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false) : 
+        Scope(position, owner, parentScope),
+        isGlobalScope(isGlobalScope)
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 
+    bool isGlobalScope;
     std::vector<std::unique_ptr<Statement>> statements;
 };
 struct ClassScope : Scope {
-    ClassScope(Scope* parentScope) : Scope(Scope::Owner::Class, parentScope) {}
+    ClassScope(const CodePosition& position, Scope* parentScope) : 
+        Scope(position, Scope::Owner::Class, parentScope) 
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 
+    std::string name;
+    std::vector<std::unique_ptr<TemplateType>> templateTypes;
     std::vector<Declaration> declarations;
 };
 
 struct ForScope : CodeScope {
-    ForScope(Scope* parentScope) : CodeScope(Scope::Owner::For, parentScope) {}
+    ForScope(const CodePosition& position, Scope* parentScope) : 
+        CodeScope(position, Scope::Owner::For, parentScope) 
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 struct WhileScope : CodeScope {
-    WhileScope(Scope* parentScope) : CodeScope(Scope::Owner::While, parentScope) {}
+    WhileScope(const CodePosition& position, Scope* parentScope) : 
+        CodeScope(position, Scope::Owner::While, parentScope) 
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 struct IfScope : CodeScope {
-    IfScope(Scope* parentScope) : CodeScope(Scope::Owner::If, parentScope) {}
+    IfScope(const CodePosition& position, Scope* parentScope) :
+        CodeScope(position, Scope::Owner::If, parentScope) 
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
     std::unique_ptr<Value> conditionExpression;
 };
 struct ElseIfScope : CodeScope {
-    ElseIfScope(Scope* parentScope) : CodeScope(Scope::Owner::ElseIf, parentScope) {}
+    ElseIfScope(const CodePosition& position, Scope* parentScope) : 
+        CodeScope(position, Scope::Owner::ElseIf, parentScope) 
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
     std::unique_ptr<Value> conditionExpression;
 };
 struct ElseScope : CodeScope {
-    ElseScope(Scope* parentScope) : CodeScope(Scope::Owner::Else, parentScope) {}
+    ElseScope(const CodePosition& position, Scope* parentScope) : 
+        CodeScope(position, Scope::Owner::Else, parentScope) 
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 struct DeferScope : CodeScope {
-    DeferScope(Scope* parentScope) : CodeScope(Scope::Owner::Defer, parentScope) {}
+    DeferScope(const CodePosition& position, Scope* parentScope) : 
+        CodeScope(position, Scope::Owner::Defer, parentScope) 
+    {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 
 
@@ -255,37 +282,37 @@ struct DeferScope : CodeScope {
     Values
 */
 struct IntegerValue : Value {
-    IntegerValue(IntegerType* integerType) : Value(integerType) {
+    IntegerValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     int64_t value;
 };
 struct FloatValue : Value {
-    FloatValue(FloatType* floatType) : Value(floatType) {
+    FloatValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     double value;
 };
 struct StringValue : Value {
-    StringValue(StringType* stringType) : Value(stringType) {
+    StringValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     std::string value;
 };
 struct StaticArrayValue : Value {
-    StaticArrayValue(StaticArrayType* staticArrayType) : Value(staticArrayType) {
+    StaticArrayValue(const CodePosition& position) : Value(position) {
         isConstexpr = true;
     }
     std::vector<std::unique_ptr<Value>> values;
 };
 struct FunctionValue : Value {
-    FunctionValue(FunctionType* functionType, Scope* parentScope) : 
-        Value(functionType),
-        body(Scope::Owner::Function, parentScope)
+    FunctionValue(const CodePosition& position, Scope* parentScope) : 
+        Value(position),
+        body(position, Scope::Owner::Function, parentScope)
     {
         isConstexpr = true;
     }
     std::vector<Variable> arguments;
-    Type* returnType;
+    std::unique_ptr<Type> returnType;
     CodeScope body;
 };

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <optional>
 #include "../C$/parsing.cpp"
+#include "../C$/globalVariables.cpp"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace std;
@@ -37,8 +38,8 @@ wstring toWstring(const Token& token) {
     case Token::Type::Float: typeStr         = "Float";         break;
     case Token::Type::Symbol: typeStr        = "Symbol";        break;
     }
-    string filePosStr = to_string(token.lineNumber) + ":" + to_string(token.charNumber);
-    string filePointer = to_string((size_t)token.fileInfo);
+    string filePosStr = to_string(token.codePosition.lineNumber) + ":" + to_string(token.codePosition.charNumber);
+    string filePointer = to_string((size_t)token.codePosition.fileInfo);
 
     return toWstring("["+typeStr+", "+token.value+", "+filePosStr+", "+filePointer+"]");
 
@@ -80,10 +81,10 @@ bool operator==(const SourceStringLine& lhs, const SourceStringLine& rhs) {
 }
 bool operator==(const Token& lhs, const Token& rhs) {
     return lhs.type == rhs.type 
-        && lhs.lineNumber == rhs.lineNumber 
-        && lhs.charNumber == rhs.charNumber 
+        && lhs.codePosition.lineNumber == rhs.codePosition.lineNumber 
+        && lhs.codePosition.charNumber == rhs.codePosition.charNumber 
         && lhs.value == rhs.value 
-        && lhs.fileInfo == rhs.fileInfo;
+        && lhs.codePosition.fileInfo == rhs.codePosition.fileInfo;
 }
 template<typename T> bool operator==(const vector<T>& lhs, const vector<T>& rhs) {
     if (lhs.size() != rhs.size()) {
@@ -115,15 +116,17 @@ namespace Parsing {
 	TEST_CLASS(GetSourceFromFile) {
 	public:
 		TEST_METHOD(fileDoesntExist) {
-            auto [result, _] = getSourceFromFile(randomString);
+            GVARS.clear();
+            auto result = getSourceFromFile(randomString);
 		    Assert::IsFalse(result.has_value(), L"result doesn't have value");
         }
 
         TEST_METHOD(emptyFile) {
+            GVARS.clear();
             ofstream newFile(randomString);
             newFile.close();
             unordered_set<string> includedFiles;
-            auto [result, _] = getSourceFromFile(randomString);
+            auto result = getSourceFromFile(randomString);
             remove(randomString.c_str());
 
             Assert::IsTrue(result.has_value(), L"result has value");
@@ -131,6 +134,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(fewLinesNoInclude) {
+            GVARS.clear();
             vector<string> fileContent = {
                 "// some commented line",
                 "#notInclude",
@@ -144,12 +148,12 @@ namespace Parsing {
             }
             newFile.close();
             unordered_set<string> includedFiles;
-            auto [sourceCode, fileInfos] = getSourceFromFile(randomString);
+            auto sourceCode = getSourceFromFile(randomString);
             remove(randomString.c_str());
 
             vector<SourceStringLine> expected;
             for (int i = 0; i < fileContent.size(); ++i) {
-                expected.emplace_back(fileContent[i], fileInfos[0].get(), i+1);
+                expected.emplace_back(fileContent[i], GVARS.fileInfos[0].get(), i+1);
             }
 
             Assert::IsTrue(sourceCode.has_value(), L"result has value");
@@ -157,6 +161,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(onlyIncludesInFirstFile) {
+            GVARS.clear();
             vector<string> file1Content = {
                 "file 1 line 0",
                 "file 1 line 1",
@@ -187,7 +192,7 @@ namespace Parsing {
             newFile3.close();
 
             unordered_set<string> includedFiles;
-            auto [result, fileInfos] = getSourceFromFile(randomString);
+            auto result = getSourceFromFile(randomString);
 
             remove(randomString.c_str());
             remove((randomString1).c_str());
@@ -196,10 +201,10 @@ namespace Parsing {
 
             vector<SourceStringLine> expected;
             for (int i = 0; i < file1Content.size(); ++i) {
-                expected.emplace_back(file1Content[i], fileInfos[1].get(), i+1);
+                expected.emplace_back(file1Content[i], GVARS.fileInfos[1].get(), i+1);
             }
             for (int i = 0; i < file2Content.size(); ++i) {
-                expected.emplace_back(file2Content[i], fileInfos[2].get(), i+1);
+                expected.emplace_back(file2Content[i], GVARS.fileInfos[2].get(), i+1);
             }
 
             Assert::IsTrue(result.has_value(), L"result has value");
@@ -207,6 +212,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(recursiveInclude) {
+            GVARS.clear();
             vector<SourceStringLine> expectedSource = {};
             unordered_set<string> expectedIncludedFiles = {
                 {randomString}
@@ -214,12 +220,12 @@ namespace Parsing {
 
             ofstream newFile(randomString);
             newFile.close();
-            auto [sourceCode, fileInfos] = getSourceFromFile(randomString);
+            auto sourceCode = getSourceFromFile(randomString);
             remove(randomString.c_str());
 
             Assert::IsTrue(sourceCode.has_value(), L"result has value");
             Assert::AreEqual(expectedSource, sourceCode.value());
-            Assert::AreEqual(fileInfos.size(), (size_t)1);
+            Assert::AreEqual(GVARS.fileInfos.size(), (size_t)1);
         }
 
 
@@ -229,12 +235,14 @@ namespace Parsing {
     TEST_CLASS(CreateTokens) {
     public:
         TEST_METHOD(emptyCode) {
+            GVARS.clear();
             vector<SourceStringLine> sourceCode = {};
             auto tokens = createTokens(sourceCode);
             Assert::IsTrue(tokens.has_value() && tokens.value().empty());
         }
 
         TEST_METHOD(justLabels) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"label1 label_2",   &fileInfo, 1},
@@ -255,6 +263,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(justNumbers) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"3 4.0",  &fileInfo, 1},
@@ -274,6 +283,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(incorrectNumberMultipleDots) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"3.4.0",  &fileInfo, 1}
@@ -284,6 +294,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(justCharsAndStringLiterals) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"\"str ing\"",                  &fileInfo, 1},
@@ -308,6 +319,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(justSymbols) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"{ <\t\t%\t! }", &fileInfo, 1},
@@ -326,6 +338,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(comments) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"label1 //label2", &fileInfo, 1},
@@ -342,6 +355,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(nestedComments) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"a/*/**/",  &fileInfo, 1},
@@ -360,6 +374,7 @@ namespace Parsing {
         }
 
         TEST_METHOD(incorrectNestedComments) {
+            GVARS.clear();
             FileInfo fileInfo("fileName");
             vector<SourceStringLine> sourceCode = {
                 {"a/*/**/", &fileInfo, 1},

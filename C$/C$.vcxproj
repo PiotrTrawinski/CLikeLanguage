@@ -116,12 +116,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="globalVariables.cpp" />
     <ClCompile Include="interpreting.cpp" />
+    <ClCompile Include="Keywords.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="parsing.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CodePosition.h" />
     <ClInclude Include="FileInfo.h" />
+    <ClInclude Include="globalVariables.h" />
+    <ClInclude Include="interpreting.h" />
+    <ClInclude Include="keywords.h" />
     <ClInclude Include="parsing.h" />
     <ClInclude Include="CodeTreeTypes.h" />
     <ClInclude Include="SourceStringLine.h" />
