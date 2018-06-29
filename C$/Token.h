@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include "FileInfo.h"
+#include "CodePosition.h"
 
 struct Token {
     enum class Type {
@@ -15,14 +16,10 @@ struct Token {
     Token(Type type, const std::string& value, int lineNumber, int charNumber, const FileInfo* fileInfo) : 
         type(type),
         value(value),
-        lineNumber(lineNumber),
-        charNumber(charNumber),
-        fileInfo(fileInfo)
+        codePosition(fileInfo, lineNumber, charNumber)
     {}
     
     Type type;
     std::string value;
-    int lineNumber;
-    int charNumber;
-    const FileInfo* fileInfo;
+    CodePosition codePosition;
 };
