@@ -133,7 +133,7 @@ struct FunctionType : Type {
     std::vector<Type*> argumentTypes;
 };
 struct IntegerType : Type {
-    enum class Size { I8, I16, I32, I64 };
+    enum class Size { I8, I16, I32, I64, U8, U16, U32, U64 };
     IntegerType() : Type(Type::Kind::Integer) {}
     Size size;
 };
@@ -220,21 +220,39 @@ struct Scope : Statement {
         parentScope(parentScope)
     {}
 
+    static std::optional<Owner> keywordToOwner(Keyword keyword) {
+        switch (keyword) {
+        case Keyword::Class:  return Owner::Class;
+        case Keyword::For:    return Owner::For;
+        case Keyword::While:  return Owner::While;
+        case Keyword::If:     return Owner::If;
+        case Keyword::ElseIf: return Owner::ElseIf;
+        case Keyword::Else:   return Owner::Else;
+        case Keyword::Defer:  return Owner::Defer;
+        default: return std::nullopt;
+        }
+    }
+
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
+    virtual bool interpret(const std::vector<Token>& tokens, int& i)=0;
 };
 
 struct CodeScope : Scope {
-    CodeScope(const CodePosition& position, Scope::Owner owner, Scope* parentScope) : 
-        Scope(position, owner, parentScope) 
+    CodeScope(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false) : 
+        Scope(position, owner, parentScope),
+        isGlobalScope(isGlobalScope)
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 
+    bool isGlobalScope;
     std::vector<std::unique_ptr<Statement>> statements;
 };
 struct ClassScope : Scope {
     ClassScope(const CodePosition& position, Scope* parentScope) : 
         Scope(position, Scope::Owner::Class, parentScope) 
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 
     std::vector<Declaration> declarations;
 };
@@ -243,33 +261,39 @@ struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope) : 
         CodeScope(position, Scope::Owner::For, parentScope) 
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 struct WhileScope : CodeScope {
     WhileScope(const CodePosition& position, Scope* parentScope) : 
         CodeScope(position, Scope::Owner::While, parentScope) 
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 struct IfScope : CodeScope {
     IfScope(const CodePosition& position, Scope* parentScope) :
         CodeScope(position, Scope::Owner::If, parentScope) 
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
     std::unique_ptr<Value> conditionExpression;
 };
 struct ElseIfScope : CodeScope {
     ElseIfScope(const CodePosition& position, Scope* parentScope) : 
         CodeScope(position, Scope::Owner::ElseIf, parentScope) 
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
     std::unique_ptr<Value> conditionExpression;
 };
 struct ElseScope : CodeScope {
     ElseScope(const CodePosition& position, Scope* parentScope) : 
         CodeScope(position, Scope::Owner::Else, parentScope) 
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 struct DeferScope : CodeScope {
     DeferScope(const CodePosition& position, Scope* parentScope) : 
         CodeScope(position, Scope::Owner::Defer, parentScope) 
     {}
+    virtual bool interpret(const std::vector<Token>& tokens, int& i);
 };
 
 

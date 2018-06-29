@@ -24,6 +24,9 @@
     <ClCompile Include="interpreting.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Keywords.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parsing.h">
@@ -43,6 +46,12 @@
     </ClInclude>
     <ClInclude Include="CodePosition.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="interpreting.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="keywords.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
