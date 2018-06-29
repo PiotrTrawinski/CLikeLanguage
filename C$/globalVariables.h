@@ -7,12 +7,12 @@
 // this variables hold data, that others can point to. 
 struct GlobalVariables {
     std::vector<std::unique_ptr<FileInfo>> fileInfos;
-    std::unordered_set<std::unique_ptr<Type>> types;
+   // std::unordered_set<std::unique_ptr<Type>> types;
     
     // for testing only
     void clear() {
         fileInfos.clear();
-        types.clear();
+        //types.clear();
     }
 };
 extern GlobalVariables GVARS;

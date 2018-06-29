@@ -21,6 +21,7 @@ struct Type {
         Function,
         Integer,
         Float,
+        Void,
         Template,
         TemplateClass,
         TemplateFunction
@@ -51,7 +52,7 @@ struct Value : Statement {
     Value(const CodePosition& position) : 
         Statement(position, Statement::Kind::Value)
     {}
-    Type* type = nullptr;
+    std::unique_ptr<Type> type = nullptr;
     bool isConstexpr;
 };
 
@@ -95,32 +96,32 @@ struct Operation : Value {
 
 struct OwnerPointerType : Type {
     OwnerPointerType() : Type(Type::Kind::OwnerPointer) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct RawPointerType : Type {
     RawPointerType() : Type(Type::Kind::RawPointer) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct MaybeErrorType : Type {
     MaybeErrorType() : Type(Type::Kind::MaybeError) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct ReferenceType : Type {
     ReferenceType() : Type(Type::Kind::Reference) {}
-    Type* underlyingType;
+    std::unique_ptr<Type> underlyingType;
 };
 struct StaticArrayType : Type {
     StaticArrayType() : Type(Type::Kind::StaticArray) {}
-    Type* elementType;
+    std::unique_ptr<Type> elementType;
     int size;
 };
 struct DynamicArrayType : Type {
     DynamicArrayType() : Type(Type::Kind::DynamicArray) {}
-    Type* elementType;
+    std::unique_ptr<Type> elementType;
 };
 struct ArrayViewType : Type {
     ArrayViewType() : Type(Type::Kind::ArrayView) {}
-    Type* elementType;
+    std::unique_ptr<Type> elementType;
 };
 struct StringType : Type {
     StringType() : Type(Type::Kind::String) {}
@@ -128,12 +129,12 @@ struct StringType : Type {
 struct ClassType : Type {
     ClassType() : Type(Type::Kind::Class) {}
     std::string name;
-    std::vector<Variable> variables;
+    //std::vector<Variable> variables;
 };
 struct FunctionType : Type {
     FunctionType() : Type(Type::Kind::Function) {}
-    Type* returnType;
-    std::vector<Type*> argumentTypes;
+    std::unique_ptr<Type> returnType;
+    std::vector<std::unique_ptr<Type>> argumentTypes;
 };
 struct IntegerType : Type {
     enum class Size { I8, I16, I32, I64, U8, U16, U32, U64 };
@@ -149,17 +150,17 @@ struct TemplateType : Type {
     TemplateType() : Type(Type::Kind::Template) {}
     std::string name;
 };
-struct TempalteClassType : ClassType {
+/*struct TempalteClassType : ClassType {
     TempalteClassType() {
         kind = Type::Kind::TemplateClass;
     }
-    std::vector<TemplateType*> templateTypes;
-};
+    std::vector<std::unique_ptr<TemplateType>> templateTypes;
+};*/
 struct TemplateFunctionType : FunctionType {
     TemplateFunctionType() {
         kind = Type::Kind::TemplateFunction;
     }
-    std::vector<TemplateType*> templateTypes;
+    std::vector<std::unique_ptr<TemplateType>> templateTypes;
 };
 
 
@@ -168,17 +169,16 @@ struct TemplateFunctionType : FunctionType {
     Operations
 */
 struct CastOperation : Operation {
-    CastOperation(const CodePosition& position, Type* argType) : 
-        Operation(position, Operation::Kind::Cast),
-        argType(argType)
+    CastOperation(const CodePosition& position) : 
+        Operation(position, Operation::Kind::Cast)
     {}
 
-    Type* argType;
+    std::unique_ptr<Type> argType;
 };
 struct FunctionCallOperation : Operation {
-    FunctionCallOperation(const CodePosition& position, const Variable& function) : 
-        Operation(position, Operation::Kind::FunctionCall), 
-        function(function)
+    FunctionCallOperation(const CodePosition& position) : 
+        Operation(position, Operation::Kind::FunctionCall),
+        function(position)
     {}
 
     Variable function;
@@ -233,6 +233,8 @@ struct ClassScope : Scope {
     {}
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
 
+    std::string name;
+    std::vector<std::unique_ptr<TemplateType>> templateTypes;
     std::vector<Declaration> declarations;
 };
 
@@ -311,6 +313,6 @@ struct FunctionValue : Value {
         isConstexpr = true;
     }
     std::vector<Variable> arguments;
-    Type* returnType;
+    std::unique_ptr<Type> returnType;
     CodeScope body;
 };

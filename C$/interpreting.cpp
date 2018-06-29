@@ -25,6 +25,10 @@ unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& de
     return value;
 }
 
+unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters) {
+    return nullptr;
+}
+
 bool ForScope::interpret(const vector<Token>& tokens, int& i) {
     return true;
 }
@@ -71,6 +75,13 @@ bool CodeScope::interpret(const vector<Token>& tokens, int& i) {
                     token.codePosition, Scope::Owner::None, this
                 ));
                 ((Scope*)this->statements.back().get())->interpret(tokens, i);
+            }
+            else {
+                auto value = getValue(tokens, i);
+                if (!value) {
+                    return false;
+                }
+                statements.push_back(move(value));
             }
             break;
         case Token::Type::Label:
@@ -141,31 +152,44 @@ bool CodeScope::interpret(const vector<Token>& tokens, int& i) {
                 return errorMessage("unexpected end of file", token.codePosition);
             }
             else if (tokens[i + 1].value == ":" || tokens[i + 1].value == "&") {
-                // assignment
+                // declaration
                 if (i + 3 >= tokens.size()) {
                     return errorMessage("unexpected end of assignment", token.codePosition);
                 }
                 if (tokens[i + 3].value == "class") {
-                    // class declaration
+                    // class declaration/scope
                     if (tokens[i + 1].value + tokens[i+2].value != "::") {
                         return errorMessage("unexpected symbols in class declaration. Did you mean to use '::'?", tokens[i+1].codePosition);
                     }
-
-
+                    i += 4;
+                    this->statements.push_back(make_unique<ClassScope>(token.codePosition, this));
+                    ((Scope*)this->statements.back().get())->interpret(tokens, i);
                 } else {
                     // variable declaration
-                    if (tokens[i+2].value != ":" && tokens[i+2].value != "=") {
-
+                    i += 2;
+                    unique_ptr<Type> type = nullptr;
+                    if (tokens[i].value != ":" && tokens[i].value != "=") {
+                        type = getType(tokens, i, {":", "="});
+                        if (!type) {
+                            return false;
+                        }
                     }
-                    bool declareByReference = tokens[i + 1].value == "&";
+                    bool declareByReference = tokens[i - 1].value == "&";
                     auto declaration = make_unique<Declaration>(token.codePosition);
-                    declaration->variable.isConst = tokens[i+2].value == ":";
+                    declaration->variable.isConst = tokens[i].value == ":";
                     declaration->variable.name = token.value;
-                    //declaration->variable.type
+                    declaration->variable.type = move(type);
+                    i += 1;
+                    declaration->value = getValue(tokens, i);
+                    statements.push_back(move(declaration));
                 }
             }
             else {
-                statements.push_back(getValue(tokens, i));
+                auto value = getValue(tokens, i);
+                if (!value) {
+                    return false;
+                }
+                statements.push_back(move(value));
             }
 
             break;
