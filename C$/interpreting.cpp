@@ -20,7 +20,7 @@ bool internalError(string message, const CodePosition& codePosition) {
     return false;
 }
 
-unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& delimiter=";") {
+unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& skipDelimiter=";") {
     unique_ptr<Value> value;
     return value;
 }
@@ -29,20 +29,104 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
     return nullptr;
 }
 
+struct ForScopeDeclarationType {
+    bool isConst;
+    bool byValue;
+};
+optional<ForScopeDeclarationType> readForScopeDeclarationType(const vector<Token>& tokens, int& i) {
+    if ((tokens[i].value != ":" && tokens[i].value != "&") || (tokens[i].value == "&" && (tokens[i+1].value != ":" && tokens[i+1].value != "="))) {
+        errorMessage("expected declaration of for-each array element (:: or := or &: or &= or :)", tokens[i].codePosition);
+        return nullopt;
+    }
+
+    ForScopeDeclarationType declarationType;
+    declarationType.isConst = tokens[i+1].value != "=";
+    declarationType.byValue = tokens[i].value == ":" && (tokens[i+1].value == ":" || tokens[i+1].value == "=");
+    
+    if (tokens[i].value == ":" && (tokens[i].value != ":" && tokens[i].value != "=")) {
+        i += 1;
+    } else {
+        i += 2;
+    }
+    
+    return declarationType;
+}
 bool ForScope::interpret(const vector<Token>& tokens, int& i) {
+    /// Possible legal uses of a for loop:
+    // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+    // 2. for _array_ {}
+    // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+    // 4. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
+    auto firstValue = getValue(tokens, i);
+    if (tokens[i].value == "{") {
+        // 2. for _array_ {}
+        ForEachData forEachData;
+        forEachData.arrayValue = move(firstValue);
+        forEachData.it = make_unique<Variable>(tokens[i].codePosition);
+        forEachData.it->name = "it";
+        forEachData.it->isConst = true;
+        forEachData.index = make_unique<Variable>(tokens[i].codePosition);
+        forEachData.index->name = "index";
+        forEachData.index->isConst = true;
+        data = move(forEachData);
+    } else if(tokens[i].value == ",") {
+        // 4. for var1, var2 _declarationType_ _array_ {}
+        unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
+        if (!firstValue) {
+            return errorMessage("expected a new element iterator variable name", tokens[i-1].codePosition);
+        }
+        if (i + 5 >= tokens.size()) {
+            return errorMessage("unexpected end of a file (tried to interpret a for loop)", tokens[tokens.size()-1].codePosition);
+        }
+        i += 1; // now is on the start of var2
+        auto var2Value = getValue(tokens, i);
+        unique_ptr<Variable> var2(static_cast<Variable*>(var2Value.release()));
+        if (!var2) {
+            return errorMessage("expected a new index variable name", tokens[i-1].codePosition);
+        }
+        // now i shows start of _declarationType_
+        auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
+        if (!declarationTypeOpt) {
+            return false;
+        }
+        auto declarationType = declarationTypeOpt.value();
+
+        auto arrayValue = getValue(tokens, i);
+        if (i >= tokens.size() || tokens[i].value != "{") {
+            return errorMessage("expected '{' (opening for scope)", tokens[i-1].codePosition);
+        }
+  
+        ForEachData forEachData;
+        forEachData.arrayValue = move(arrayValue);
+        forEachData.it = move(var1);
+        forEachData.it->isConst = declarationType.isConst;
+        forEachData.index = move(var2);
+        forEachData.index->isConst = true;
+        data = move(forEachData);
+    } else {
+        auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
+        if (!declarationTypeOpt) {
+            return false;
+        }
+        auto declarationType = declarationTypeOpt.value();
+    }
+    
     return true;
 }
 
 bool WhileScope::interpret(const vector<Token>& tokens, int& i) {
-    return true;
+    this->conditionExpression = getValue(tokens, i, "{");
+    return CodeScope::interpret(tokens, i);
 }
 
 bool IfScope::interpret(const vector<Token>& tokens, int& i) {
-    return true;
+    this->conditionExpression = getValue(tokens, i, "{");
+    return CodeScope::interpret(tokens, i);
 }
 
 bool ElseIfScope::interpret(const vector<Token>& tokens, int& i) {
-    return true;
+    this->conditionExpression = getValue(tokens, i, "{");
+    return CodeScope::interpret(tokens, i);
 }
 
 bool ElseScope::interpret(const vector<Token>& tokens, int& i) {
@@ -50,11 +134,46 @@ bool ElseScope::interpret(const vector<Token>& tokens, int& i) {
 }
 
 bool ClassScope::interpret(const vector<Token>& tokens, int& i) {
+    if (tokens[i].value != "{") {
+        return errorMessage("expected '{' (class scope opening)", tokens[i].codePosition);
+    }
+    i += 1;
+
+    while (i < tokens.size()) {
+        auto statementValue = readStatement(tokens, i);
+        if (statementValue) {
+            if (statementValue.isScopeEnd) {
+                break;
+            } else {
+                if (statementValue.statement->kind == Statement::Kind::Declaration) {
+                    unique_ptr<Declaration> declaration(static_cast<Declaration*>(statementValue.statement.release()));
+                    declarations.push_back(move(declaration));
+                } else {
+                    return errorMessage("non-declaration statement found in class scope", tokens[i-1].codePosition);
+                }
+            }
+        } else {
+            return false;
+        }
+    }
+
     return true;
 }
 
 bool DeferScope::interpret(const vector<Token>& tokens, int& i) {
-    return CodeScope::interpret(tokens, i);
+    if (tokens[i].value == "{") {
+        i += 1;
+        return CodeScope::interpret(tokens, i);
+    } else {
+        auto statementValue = readStatement(tokens, i);
+        if (statementValue.isScopeEnd) {
+            return errorMessage("unexpected '}' (trying to close unopened defer scope)", tokens[i-1].codePosition);
+        } else if (!statementValue.statement) {
+            return false;
+        }
+        statements.push_back(move(statementValue.statement));
+        return true;
+    }
 }
 
 Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int& i) {
@@ -70,9 +189,15 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
         return errorMessage("statement cannot start with a float value", token.codePosition);
     case Token::Type::Symbol:
         if (token.value == "{") {
-            auto statement = make_unique<CodeScope>(token.codePosition, Scope::Owner::None, this);
-            statement->interpret(tokens, i);
-            return Scope::ReadStatementValue(move(statement));
+            i += 1;
+            auto codeScope = make_unique<CodeScope>(token.codePosition, Scope::Owner::None, this);
+            codeScope->interpret(tokens, i);
+            return Scope::ReadStatementValue(move(codeScope));
+        }
+        else if (token.value == "}") {
+            // end of scope
+            i += 1;
+            return Scope::ReadStatementValue(true);
         }
         else {
             auto value = getValue(tokens, i);
@@ -189,7 +314,11 @@ bool CodeScope::interpret(const vector<Token>& tokens, int& i) {
         auto statementValue = readStatement(tokens, i);
         if (statementValue) {
             if (statementValue.isScopeEnd) {
-                break;
+                if (isGlobalScope) {
+                    return errorMessage("unexpected '}'. (trying to close global scope)", tokens[i-1].codePosition);
+                } else {
+                    break;
+                }
             } else {
                 statements.push_back(move(statementValue.statement));
             }

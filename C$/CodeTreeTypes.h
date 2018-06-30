@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <optional>
+#include <variant>
 
 #include "CodePosition.h"
 #include "Token.h"
@@ -250,20 +251,37 @@ struct ClassScope : Scope {
 
     std::string name;
     std::vector<std::unique_ptr<TemplateType>> templateTypes;
-    std::vector<Declaration> declarations;
+    std::vector<std::unique_ptr<Declaration>> declarations;
 };
 
+struct ForIterData {
+    enum class Direction {
+        Up,
+        Down
+    };
+    std::unique_ptr<Declaration> iterDeclaration;
+    std::unique_ptr<Value> step;
+    std::unique_ptr<Value> lastValue;
+    Direction direction;
+};
+struct ForEachData {
+    std::unique_ptr<Value> arrayValue;
+    std::unique_ptr<Variable> it;
+    std::unique_ptr<Variable> index;
+};
 struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope) : 
-        CodeScope(position, Scope::Owner::For, parentScope) 
+        CodeScope(position, Scope::Owner::For, parentScope)
     {}
-    virtual bool interpret(const std::vector<Token>& tokens, int& i);
+    bool interpret(const std::vector<Token>& tokens, int& i);
+    std::variant<ForIterData, ForEachData> data;
 };
 struct WhileScope : CodeScope {
     WhileScope(const CodePosition& position, Scope* parentScope) : 
         CodeScope(position, Scope::Owner::While, parentScope) 
     {}
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
+    std::unique_ptr<Value> conditionExpression;
 };
 struct IfScope : CodeScope {
     IfScope(const CodePosition& position, Scope* parentScope) :
