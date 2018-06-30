@@ -193,6 +193,7 @@ struct Declaration : Statement {
     Variable variable;
     std::unique_ptr<Value> value;
 };
+
 struct Scope : Statement {
     enum class Owner {
         None,
@@ -215,6 +216,19 @@ struct Scope : Statement {
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
     virtual bool interpret(const std::vector<Token>& tokens, int& i)=0;
+
+    struct ReadStatementValue {
+        ReadStatementValue(std::unique_ptr<Statement>&& statement) : statement(std::move(statement)) {}
+        ReadStatementValue(bool isScopeEnd) : isScopeEnd(isScopeEnd) {}
+
+        operator bool() {
+            return statement || isScopeEnd;
+        }
+
+        std::unique_ptr<Statement> statement = nullptr;
+        bool isScopeEnd = false;
+    };
+    ReadStatementValue readStatement(const std::vector<Token>& tokens, int& i);
 };
 
 struct CodeScope : Scope {
@@ -222,6 +236,7 @@ struct CodeScope : Scope {
         Scope(position, owner, parentScope),
         isGlobalScope(isGlobalScope)
     {}
+
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
 
     bool isGlobalScope;
