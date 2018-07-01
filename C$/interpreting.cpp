@@ -26,7 +26,69 @@ unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& sk
 }
 
 unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters) {
-    return nullptr;
+    unique_ptr<Type> type = nullptr;
+    if (tokens[i].value == "!") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<OwnerPointerType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "*") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<RawPointerType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "&") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<ReferenceType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "?") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<MaybeErrorType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "[") {
+        if (tokens[i + 1].value == "]") {
+            i += 2;
+            auto elementType = getType(tokens, i, delimiters);
+            if (elementType) {
+                type = make_unique<DynamicArrayType>(move(elementType));
+            }
+        } else if (tokens[i+1].value == "*" && tokens[i+2].value == "]") {
+            i += 3;
+            auto elementType = getType(tokens, i, delimiters);
+            if (elementType) {
+                type = make_unique<ArrayViewType>(move(elementType));
+            }
+        } else {
+            i += 1;
+            auto sizeValue = getValue(tokens, i, "]");
+            auto elementType = getType(tokens, i, delimiters);
+            if (elementType && sizeValue) {
+                type = make_unique<StaticArrayType>(move(elementType), move(sizeValue));
+            }
+        }
+    } else if (tokens[i].value == "<") {
+        auto templateFunctionType = make_unique<TemplateFunctionType>();
+        //templateFunctionType->templateTypes.push_back();
+        type = move(templateFunctionType);
+    } else if (tokens[i].value == "(") {
+
+    } else if (tokens[i].type == Token::Type::Label) {
+
+    } else {
+        return nullptr;
+    }
+
+    if (type && find(delimiters.begin(), delimiters.end(), tokens[i].value) != delimiters.end()) {
+        return type;
+    } else {
+        return nullptr;
+    }
 }
 
 struct ForScopeDeclarationType {
@@ -69,6 +131,7 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
         forEachData.index->name = "index";
         forEachData.index->isConst = true;
         data = move(forEachData);
+        i += 1;
     } else if(tokens[i].value == ",") {
         // 4. for var1, var2 _declarationType_ _array_ {}
         unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
@@ -103,15 +166,49 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
         forEachData.index = move(var2);
         forEachData.index->isConst = true;
         data = move(forEachData);
+        i += 1;
     } else {
+        // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+        // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+        unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
+        if (!firstValue) {
+            return errorMessage("expected a new for loop iterator variable name", tokens[i-1].codePosition);
+        }
+        
         auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
         if (!declarationTypeOpt) {
             return false;
         }
         auto declarationType = declarationTypeOpt.value();
+
+        auto secondValue = getValue(tokens, i, "");
+        if (tokens[i].value == "{") {
+            // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+            ForEachData forEachData;
+            forEachData.arrayValue = move(secondValue);
+            forEachData.it = move(var1);
+            forEachData.it->isConst = declarationType.isConst;
+            forEachData.index = make_unique<Variable>(tokens[i].codePosition);
+            forEachData.index->name = "index";
+            forEachData.index->isConst = true;
+            data = move(forEachData);
+            i += 1;
+        }
+        else if (tokens[i].value == ":") {
+            // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+            i += 1;
+            ForIterData forIterData;
+            forIterData.iterVariable = move(var1);
+            forIterData.iterVariable->isConst = declarationType.isConst;
+            forIterData.firstValue = move(secondValue);
+            forIterData.step = getValue(tokens, i, ":");
+            forIterData.lastValue = getValue(tokens, i, "{");
+        } else {
+            return errorMessage("expected '{' or ':', got " + tokens[i].value, tokens[i].codePosition);
+        }
     }
-    
-    return true;
+
+    return CodeScope::interpret(tokens, i);
 }
 
 bool WhileScope::interpret(const vector<Token>& tokens, int& i) {
