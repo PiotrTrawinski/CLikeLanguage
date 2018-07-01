@@ -96,32 +96,54 @@ struct Operation : Value {
 
 
 struct OwnerPointerType : Type {
-    OwnerPointerType() : Type(Type::Kind::OwnerPointer) {}
+    OwnerPointerType(std::unique_ptr<Type>&& underlyingType) : 
+        Type(Type::Kind::OwnerPointer),
+        underlyingType(move(underlyingType))
+    {}
     std::unique_ptr<Type> underlyingType;
 };
 struct RawPointerType : Type {
-    RawPointerType() : Type(Type::Kind::RawPointer) {}
+    RawPointerType(std::unique_ptr<Type>&& underlyingType) : 
+        Type(Type::Kind::RawPointer),
+        underlyingType(move(underlyingType))
+    {}
     std::unique_ptr<Type> underlyingType;
 };
 struct MaybeErrorType : Type {
-    MaybeErrorType() : Type(Type::Kind::MaybeError) {}
+    MaybeErrorType(std::unique_ptr<Type>&& underlyingType) : 
+        Type(Type::Kind::MaybeError),
+        underlyingType(move(underlyingType))
+    {}
     std::unique_ptr<Type> underlyingType;
 };
 struct ReferenceType : Type {
-    ReferenceType() : Type(Type::Kind::Reference) {}
+    ReferenceType(std::unique_ptr<Type>&& underlyingType) : 
+        Type(Type::Kind::Reference),
+        underlyingType(move(underlyingType))
+    {}
     std::unique_ptr<Type> underlyingType;
 };
 struct StaticArrayType : Type {
-    StaticArrayType() : Type(Type::Kind::StaticArray) {}
+    StaticArrayType(std::unique_ptr<Type>&& elementType, std::unique_ptr<Value>&& size) : 
+        Type(Type::Kind::StaticArray),
+        elementType(move(elementType)),
+        size(move(size))
+    {}
     std::unique_ptr<Type> elementType;
-    int size;
+    std::unique_ptr<Value> size;
 };
 struct DynamicArrayType : Type {
-    DynamicArrayType() : Type(Type::Kind::DynamicArray) {}
+    DynamicArrayType(std::unique_ptr<Type>&& elementType) : 
+        Type(Type::Kind::DynamicArray),
+        elementType(move(elementType))
+    {}
     std::unique_ptr<Type> elementType;
 };
 struct ArrayViewType : Type {
-    ArrayViewType() : Type(Type::Kind::ArrayView) {}
+    ArrayViewType(std::unique_ptr<Type>&& elementType) : 
+        Type(Type::Kind::ArrayView),
+        elementType(move(elementType))
+    {}
     std::unique_ptr<Type> elementType;
 };
 struct StringType : Type {

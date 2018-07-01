@@ -26,7 +26,69 @@ unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& sk
 }
 
 unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters) {
-    return nullptr;
+    unique_ptr<Type> type = nullptr;
+    if (tokens[i].value == "!") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<OwnerPointerType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "*") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<RawPointerType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "&") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<ReferenceType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "?") {
+        i += 1;
+        auto underlyingType = getType(tokens, i, delimiters);
+        if (underlyingType) {
+            type = make_unique<MaybeErrorType>(move(underlyingType));
+        }
+    } else if (tokens[i].value == "[") {
+        if (tokens[i + 1].value == "]") {
+            i += 2;
+            auto elementType = getType(tokens, i, delimiters);
+            if (elementType) {
+                type = make_unique<DynamicArrayType>(move(elementType));
+            }
+        } else if (tokens[i+1].value == "*" && tokens[i+2].value == "]") {
+            i += 3;
+            auto elementType = getType(tokens, i, delimiters);
+            if (elementType) {
+                type = make_unique<ArrayViewType>(move(elementType));
+            }
+        } else {
+            i += 1;
+            auto sizeValue = getValue(tokens, i, "]");
+            auto elementType = getType(tokens, i, delimiters);
+            if (elementType && sizeValue) {
+                type = make_unique<StaticArrayType>(move(elementType), move(sizeValue));
+            }
+        }
+    } else if (tokens[i].value == "<") {
+        auto templateFunctionType = make_unique<TemplateFunctionType>();
+        //templateFunctionType->templateTypes.push_back();
+        type = move(templateFunctionType);
+    } else if (tokens[i].value == "(") {
+
+    } else if (tokens[i].type == Token::Type::Label) {
+
+    } else {
+        return nullptr;
+    }
+
+    if (type && find(delimiters.begin(), delimiters.end(), tokens[i].value) != delimiters.end()) {
+        return type;
+    } else {
+        return nullptr;
+    }
 }
 
 struct ForScopeDeclarationType {
