@@ -69,6 +69,7 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
         forEachData.index->name = "index";
         forEachData.index->isConst = true;
         data = move(forEachData);
+        i += 1;
     } else if(tokens[i].value == ",") {
         // 4. for var1, var2 _declarationType_ _array_ {}
         unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
@@ -103,15 +104,49 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
         forEachData.index = move(var2);
         forEachData.index->isConst = true;
         data = move(forEachData);
+        i += 1;
     } else {
+        // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+        // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+        unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
+        if (!firstValue) {
+            return errorMessage("expected a new for loop iterator variable name", tokens[i-1].codePosition);
+        }
+        
         auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
         if (!declarationTypeOpt) {
             return false;
         }
         auto declarationType = declarationTypeOpt.value();
+
+        auto secondValue = getValue(tokens, i, "");
+        if (tokens[i].value == "{") {
+            // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+            ForEachData forEachData;
+            forEachData.arrayValue = move(secondValue);
+            forEachData.it = move(var1);
+            forEachData.it->isConst = declarationType.isConst;
+            forEachData.index = make_unique<Variable>(tokens[i].codePosition);
+            forEachData.index->name = "index";
+            forEachData.index->isConst = true;
+            data = move(forEachData);
+            i += 1;
+        }
+        else if (tokens[i].value == ":") {
+            // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+            i += 1;
+            ForIterData forIterData;
+            forIterData.iterVariable = move(var1);
+            forIterData.iterVariable->isConst = declarationType.isConst;
+            forIterData.firstValue = move(secondValue);
+            forIterData.step = getValue(tokens, i, ":");
+            forIterData.lastValue = getValue(tokens, i, "{");
+        } else {
+            return errorMessage("expected '{' or ':', got " + tokens[i].value, tokens[i].codePosition);
+        }
     }
-    
-    return true;
+
+    return CodeScope::interpret(tokens, i);
 }
 
 bool WhileScope::interpret(const vector<Token>& tokens, int& i) {

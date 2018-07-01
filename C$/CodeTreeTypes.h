@@ -255,14 +255,10 @@ struct ClassScope : Scope {
 };
 
 struct ForIterData {
-    enum class Direction {
-        Up,
-        Down
-    };
-    std::unique_ptr<Declaration> iterDeclaration;
+    std::unique_ptr<Variable> iterVariable;
+    std::unique_ptr<Value> firstValue;
     std::unique_ptr<Value> step;
     std::unique_ptr<Value> lastValue;
-    Direction direction;
 };
 struct ForEachData {
     std::unique_ptr<Value> arrayValue;
