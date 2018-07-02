@@ -20,6 +20,7 @@ struct Type {
         String,
         Class,
         Function,
+        Bool,
         Integer,
         Float,
         Void,
@@ -146,13 +147,16 @@ struct ArrayViewType : Type {
     {}
     std::unique_ptr<Type> elementType;
 };
-struct StringType : Type {
+/*struct StringType : Type {
     StringType() : Type(Type::Kind::String) {}
-};
+};*/
 struct ClassType : Type {
-    ClassType() : Type(Type::Kind::Class) {}
+    ClassType(const std::string& name) : 
+        Type(Type::Kind::Class),
+        name(name)
+    {}
     std::string name;
-    //std::vector<Variable> variables;
+    std::vector<std::unique_ptr<Type>> templateTypes;
 };
 struct FunctionType : Type {
     FunctionType() : Type(Type::Kind::Function) {}
@@ -161,16 +165,25 @@ struct FunctionType : Type {
 };
 struct IntegerType : Type {
     enum class Size { I8, I16, I32, I64, U8, U16, U32, U64 };
-    IntegerType() : Type(Type::Kind::Integer) {}
+    IntegerType(Size size) : 
+        Type(Type::Kind::Integer), 
+        size(size) 
+    {}
     Size size;
 };
 struct FloatType : Type {
     enum class Size { F32, F64 };
-    FloatType() : Type(Type::Kind::Float) {}
+    FloatType(Size size) : 
+        Type(Type::Kind::Float),
+        size(size)
+    {}
     Size size;
 };
 struct TemplateType : Type {
-    TemplateType() : Type(Type::Kind::Template) {}
+    TemplateType(const std::string& name) : 
+        Type(Type::Kind::Template),
+        name(name)
+    {}
     std::string name;
 };
 /*struct TempalteClassType : ClassType {
