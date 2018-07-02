@@ -25,6 +25,36 @@ unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& sk
     return value;
 }
 
+
+unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters);
+
+optional<vector<unique_ptr<Type>>> getFunctionArgumentTypes(const vector<Token>& tokens, int& i) {
+    vector<unique_ptr<Type>> types;
+    while (tokens[i].value != ")") {
+        auto type = getType(tokens, i, {",", ")"});
+        if (!type) {
+            return nullopt;
+        }
+        types.push_back(move(type));
+        if (tokens[i+1].value == "," && tokens[i+2].value != ")") {
+            i += 2;
+        } else if (tokens[i+1].value == ")") {
+            i += 1;
+        } else if (tokens[i+1].value == "," && tokens[i + 2].value == ")") {
+            errorMessage("expected function argument type, got ')'", tokens[i+2].codePosition);
+            return nullopt;
+        }
+        else {
+            errorMessage(
+                "during interpreting function arguments expected ',' or ')', got " + tokens[i+1].value, 
+                tokens[i+1].codePosition
+            );
+            return nullopt;
+        }
+    }
+    return types;
+}
+
 unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters) {
     unique_ptr<Type> type = nullptr;
     if (tokens[i].value == "!") {
@@ -74,13 +104,118 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
         }
     } else if (tokens[i].value == "<") {
         auto templateFunctionType = make_unique<TemplateFunctionType>();
-        //templateFunctionType->templateTypes.push_back();
+        i += 1;
+        while (tokens[i].type == Token::Type::Label && tokens[i+1].value == ",") {
+            templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+            i += 2;
+        }
+        if (tokens[i].type != Token::Type::Label) {
+            errorMessage("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
+            return nullptr;
+        }
+        if (tokens[i + 1].value != ">") {
+            errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
+            return nullptr;
+        }
+        templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+        i += 2;
+
+        if (tokens[i].value != "(") {
+            errorMessage("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
+            return nullptr;
+        }
+        i += 1;
+        auto argumentTypesOpt = getFunctionArgumentTypes(tokens, i);
+        if (!argumentTypesOpt) {
+            return nullptr;
+        }
+        templateFunctionType->argumentTypes = move(argumentTypesOpt.value());
+        if (tokens[i].value + tokens[i+1].value != "->") {
+            templateFunctionType->returnType = make_unique<Type>(Type::Kind::Void);
+        } else {
+            i += 2;
+            templateFunctionType->returnType = getType(tokens, i, delimiters);
+            if (!templateFunctionType->returnType) {
+                return nullptr;
+            }
+        }
         type = move(templateFunctionType);
     } else if (tokens[i].value == "(") {
-
+        i += 1;
+        auto functionType = make_unique<FunctionType>();
+        auto argumentTypesOpt = getFunctionArgumentTypes(tokens, i);
+        if (!argumentTypesOpt) {
+            return nullptr;
+        }
+        functionType->argumentTypes = move(argumentTypesOpt.value());
+        if (tokens[i].value + tokens[i+1].value != "->") {
+            functionType->returnType = make_unique<Type>(Type::Kind::Void);
+        } else {
+            i += 2;
+            functionType->returnType = getType(tokens, i, delimiters);
+            if (!functionType->returnType) {
+                return nullptr;
+            }
+        }
+        type = move(functionType);
     } else if (tokens[i].type == Token::Type::Label) {
-
+        auto keyword = Keyword::get(tokens[i].value);
+        if (keyword && keyword->kind == Keyword::Kind::TypeName) {
+            auto typeValue = ((TypeKeyword*)keyword)->value;
+            switch (typeValue) {
+            case TypeKeyword::Value::Int:
+                type = make_unique<IntegerType>(IntegerType::Size::I32); break;
+            case TypeKeyword::Value::I8:
+                type = make_unique<IntegerType>(IntegerType::Size::I8);  break;
+            case TypeKeyword::Value::I16:
+                type = make_unique<IntegerType>(IntegerType::Size::I16); break;
+            case TypeKeyword::Value::I32:
+                type = make_unique<IntegerType>(IntegerType::Size::I32); break;
+            case TypeKeyword::Value::I64:
+                type = make_unique<IntegerType>(IntegerType::Size::I64); break;
+            case TypeKeyword::Value::U8:
+                type = make_unique<IntegerType>(IntegerType::Size::U8);  break;
+            case TypeKeyword::Value::U16:
+                type = make_unique<IntegerType>(IntegerType::Size::U16); break;
+            case TypeKeyword::Value::U32:
+                type = make_unique<IntegerType>(IntegerType::Size::U32); break;
+            case TypeKeyword::Value::U64:
+                type = make_unique<IntegerType>(IntegerType::Size::U64); break;
+            case TypeKeyword::Value::Float:
+                type = make_unique<FloatType>(FloatType::Size::F64); break;
+            case TypeKeyword::Value::F32:
+                type = make_unique<FloatType>(FloatType::Size::F64); break;
+            case TypeKeyword::Value::F64:
+                type = make_unique<FloatType>(FloatType::Size::F64); break;
+            case TypeKeyword::Value::Bool:
+                type = make_unique<Type>(Type::Kind::Bool); break;
+            case TypeKeyword::Value::String:
+                type = make_unique<Type>(Type::Kind::String); break;
+            case TypeKeyword::Value::Void:
+                type = make_unique<Type>(Type::Kind::Void); break;
+            default:
+                break;
+            }
+        } else {
+            auto className = make_unique<ClassType>(tokens[i].value);
+            i += 1;
+            if (tokens[i].value == "<") {
+                while (true) {
+                    auto templateType = getType(tokens, i, {",", ">"});
+                    if (!templateType) {
+                        return nullptr;
+                    }
+                    className->templateTypes.push_back(move(templateType));
+                    if (tokens[i].value == ">") {
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            type = move(className);
+        }
     } else {
+        errorMessage("unexpected '" + tokens[i].value + "' during type interpreting", tokens[i].codePosition);
         return nullptr;
     }
 
