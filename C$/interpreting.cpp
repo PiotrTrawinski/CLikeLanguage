@@ -20,18 +20,345 @@ bool internalError(string message, const CodePosition& codePosition) {
     return false;
 }
 
-unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& skipDelimiter=";") {
-    unique_ptr<Value> value;
-    return value;
+unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool writeError=true);
+unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& skipDelimiter=";");
+
+void appendOperator(vector<unique_ptr<Operation>>& stack, vector<unique_ptr<Value>>& out, unique_ptr<Operation> operation) {
+    if (operation->getIsLeftAssociative()) {
+        while (stack.size() > 0 && operation->getPriority() <= stack.back()->getPriority()) {
+            out.push_back(move(stack.back()));
+            stack.pop_back();
+        }
+    } else {
+        while (stack.size() > 0 && operation->getPriority() < stack.back()->getPriority()) {
+            out.push_back(move(stack.back()));
+            stack.pop_back();
+        }
+    }
+    stack.push_back(move(operation));
+}
+void appendOperator(vector<unique_ptr<Operation>>& stack, vector<unique_ptr<Value>>& out, Operation::Kind kind, const CodePosition& codePosition) {
+    appendOperator(stack, out, make_unique<Operation>(codePosition, kind));
+}
+optional<vector<unique_ptr<Value>>> getReversePolishNotation(const vector<Token>& tokens, int& i, const string& skipDelimiter) {
+    vector<unique_ptr<Operation>> stack;
+    vector<unique_ptr<Value>> out;
+    bool endOfExpression = false;
+    bool expectValue = true;
+    while (!endOfExpression) {
+        switch (tokens[i].type) {
+        case Token::Type::Integer:
+            out.push_back(make_unique<IntegerValue>(tokens[i].codePosition, stoi(tokens[i].value)));
+            break;
+        case Token::Type::Float:
+            out.push_back(make_unique<FloatValue>(tokens[i].codePosition, stod(tokens[i].value)));
+            break;
+        case Token::Type::Char:
+            out.push_back(make_unique<CharValue>(tokens[i].codePosition, stoi(tokens[i].value)));
+            break;
+        case Token::Type::StringLiteral:
+            out.push_back(make_unique<StringValue>(tokens[i].codePosition, tokens[i].value));
+            break;
+        case Token::Type::Label:{
+            bool isTemplateFunctionCall = true;
+            if (tokens[i + 1].value == "<") {
+                // either 'less then' operator or function call template arguments
+                // assume its template arguments and check if it makes sense
+                int openTemplateCount = 1;
+                int j = i + 2;
+                while (j < tokens.size() && openTemplateCount != 0) {
+                    if (tokens[j].value == "<") {
+                        openTemplateCount += 1;
+                    } else if (tokens[j].value == ">") {
+                        openTemplateCount -= 1;
+                    }
+                    j += 1;
+                }
+                if (j < tokens.size()) {
+                    vector<unique_ptr<Type>> templateTypes;
+                    int k = i+2;
+                    while (k < j) {
+                        auto type = getType(tokens, k, {",", ">"}, false);
+                        if (type) {
+                            templateTypes.push_back(move(type));
+                            k += 1;
+                        } else {
+                            isTemplateFunctionCall = false;
+                            break;
+                        }
+                    }
+
+                    // its template call
+                    i = k;
+                    if (tokens[i].value == "(") {
+                        // read function arguments
+                    } else {
+                        errorMessage("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
+                        return nullopt;
+                    }
+                } else {
+                    isTemplateFunctionCall = false;
+                }
+            } 
+            if (!isTemplateFunctionCall) {
+                // its either (special operator; variable; non-template function call)
+                if (tokens[i].value == "alloc") {
+                    appendOperator(stack, out, Operation::Kind::Allocation, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "dealloc") {
+                    appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
+                }
+                else if (tokens[i + 1].value == "(") {
+                    // function call
+                    // read function arguments
+                } else {
+                    // variable
+                    auto variable = make_unique<Variable>(tokens[i].codePosition);
+                    variable->name = tokens[i].value;
+                    out.push_back(move(variable));
+                }
+            }
+            break;
+        }
+        case Token::Type::Symbol:
+            if (expectValue) {
+                if (tokens[i].value == "[") {
+                    // static array ([x, y, z, ...]) or type cast ([T]())
+                    int openSquereBrackets = 1;
+                    int j = i+1;
+                    while (j < tokens.size() && openSquereBrackets != 0) {
+                        if (tokens[j].value == "[") {
+                            openSquereBrackets += 1;
+                        } else if (tokens[j].value == "]") {
+                            openSquereBrackets -= 1;
+                        }
+                        j += 1;
+                    }
+                    if (openSquereBrackets != 0) {
+                        errorMessage("missing closing ']'", tokens[i].codePosition);
+                        return nullopt;
+                    }
+
+                    if (tokens[j].value == "(") {
+                        // type cast
+                        i += 1;
+                        auto type = getType(tokens, i, {"]"});
+                        if (!type) {
+                            return nullopt;
+                        }
+                        i += 1;
+                        auto argument = getValue(tokens, i, ")");
+                        if (!argument) {
+                            return nullopt;
+                        }
+                        auto castOperation = make_unique<CastOperation>(tokens[i].codePosition, move(type));
+                        castOperation->arguments.push_back(move(argument));
+                        appendOperator(stack, out, move(castOperation));
+                    } else {
+                        // static array
+                        auto staticArray = make_unique<StaticArrayValue>(tokens[i].codePosition);
+                        // get values seperated with ',' ended with ']'
+                        out.push_back(move(staticArray));
+                    }
+                } 
+                else if (tokens[i].value == "-") {
+                    appendOperator(stack, out, Operation::Kind::Minus, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "!") {
+                    appendOperator(stack, out, Operation::Kind::LogicalNot, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "&") {
+                    appendOperator(stack, out, Operation::Kind::Reference, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "@") {
+                    appendOperator(stack, out, Operation::Kind::Address, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "$") {
+                    appendOperator(stack, out, Operation::Kind::GetValue, tokens[i++].codePosition);
+                } else {
+                    // end of expression
+                }
+            } else {
+                if (tokens[i].value == "[") {
+                    // array index/offset ([x]) or subarray indexing ([x:y])
+                    bool isSubArrayIndexing = false;
+                    int openSquereBrackets = 1;
+                    int j = i+1;
+                    while (j < tokens.size() && openSquereBrackets != 0) {
+                        if (isSubArrayIndexing)
+                        if (tokens[j].value == ":" && openSquereBrackets == 1) {
+                            if (isSubArrayIndexing) {
+                                errorMessage("unexpected ':' symbol in subarray indexing", tokens[j].codePosition);
+                                return nullopt;
+                            }
+                            isSubArrayIndexing = true;
+                        }
+                        if (tokens[j].value == "[") {
+                            openSquereBrackets += 1;
+                        } else if (tokens[j].value == "]") {
+                            openSquereBrackets -= 1;
+                        }
+                        j += 1;
+                    }
+                    if (isSubArrayIndexing) {
+                        // subarray indexing ([x:y])
+                        i += 1;
+                        auto value1 = getValue(tokens, i, ":");
+                        if (!value1) { return nullopt; }
+
+                        auto value2 = getValue(tokens, i, "]");
+                        if (!value2) { return nullopt; }
+
+                        auto subArrayOperation = make_unique<Operation>(tokens[i-1].codePosition, Operation::Kind::ArraySubArray);
+                        subArrayOperation->arguments.push_back(move(value1));
+                        subArrayOperation->arguments.push_back(move(value2));
+                        appendOperator(stack, out, move(subArrayOperation));
+                    } else {
+                        // array index/offset ([x])
+                        i += 1;
+                        auto value = getValue(tokens, i, "]");
+                        if (!value) {
+                            return nullopt;
+                        }
+                        auto indexingOperation = make_unique<Operation>(tokens[i-1].codePosition, Operation::Kind::ArrayIndex);
+                        indexingOperation->arguments.push_back(move(value));
+                        appendOperator(stack, out, move(indexingOperation));
+                    }
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "&&") {
+                    appendOperator(stack, out, Operation::Kind::LogicalAnd, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "||") {
+                    appendOperator(stack, out, Operation::Kind::LogicalOr, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "==") {
+                    appendOperator(stack, out, Operation::Kind::Eq, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "!=") {
+                    appendOperator(stack, out, Operation::Kind::Neq, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "<=") {
+                    appendOperator(stack, out, Operation::Kind::Lte, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == ">=") {
+                    appendOperator(stack, out, Operation::Kind::Gte, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "+=") {
+                    appendOperator(stack, out, Operation::Kind::AddAssign, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "-=") {
+                    appendOperator(stack, out, Operation::Kind::SubAssign, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "*=") {
+                    appendOperator(stack, out, Operation::Kind::MulAssign, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "/=") {
+                    appendOperator(stack, out, Operation::Kind::DivAssign, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "%=") {
+                    appendOperator(stack, out, Operation::Kind::ModAssign, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "|=") {
+                    appendOperator(stack, out, Operation::Kind::BitOrAssign, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value == "^=") {
+                    appendOperator(stack, out, Operation::Kind::BitXorAssign, tokens[i].codePosition);
+                    i += 2;
+                }
+                else if (tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == "<<=") {
+                    appendOperator(stack, out, Operation::Kind::ShlAssign, tokens[i].codePosition);
+                    i += 3;
+                }
+                else if (tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == ">>=") {
+                    appendOperator(stack, out, Operation::Kind::ShrAssign, tokens[i].codePosition);
+                    i += 3;
+                }
+                else if (tokens[i].value+tokens[i+1].value+tokens[i+2].value+tokens[i+3].value == "<<<=") {
+                    appendOperator(stack, out, Operation::Kind::SalAssign, tokens[i].codePosition);
+                    i += 4;
+                }
+                else if (tokens[i].value+tokens[i+1].value+tokens[i+2].value+tokens[i+3].value == ">>>=") {
+                    appendOperator(stack, out, Operation::Kind::SarAssign, tokens[i].codePosition);
+                    i += 4;
+                }
+                else if (tokens[i].value == "+") {
+                    appendOperator(stack, out, Operation::Kind::Add, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "-") {
+                    appendOperator(stack, out, Operation::Kind::Sub, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "*") {
+                    appendOperator(stack, out, Operation::Kind::Mul, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "/") {
+                    appendOperator(stack, out, Operation::Kind::Div, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "%") {
+                    appendOperator(stack, out, Operation::Kind::Mod, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == ".") {
+                    appendOperator(stack, out, Operation::Kind::Dot, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "|") {
+                    appendOperator(stack, out, Operation::Kind::BitOr, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "&") {
+                    appendOperator(stack, out, Operation::Kind::BitAnd, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "^") {
+                    appendOperator(stack, out, Operation::Kind::BitXor, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "<") {
+                    appendOperator(stack, out, Operation::Kind::Lt, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == ">") {
+                    appendOperator(stack, out, Operation::Kind::Gt, tokens[i++].codePosition);
+                }
+                else if (tokens[i].value == "=") {
+                    appendOperator(stack, out, Operation::Kind::Assign, tokens[i++].codePosition);
+                } else {
+                    // end of expression
+                }
+            }
+            break;
+        }
+    }
+
+    return out;
+}
+
+unique_ptr<Value> solveReversePolishNotation(const vector<unique_ptr<Value>>& stack) {
+    return nullptr;
+}
+
+unique_ptr<Value> getValue(const vector<Token>& tokens, int& i, const string& skipDelimiter) {
+    auto reversePolishNotation = getReversePolishNotation(tokens, i, skipDelimiter);
+    if (!reversePolishNotation) {
+        return nullptr;
+    }
+    if (reversePolishNotation.value().empty()) {
+        return make_unique<Value>(tokens[i].codePosition, true);
+    }
+    return solveReversePolishNotation(reversePolishNotation.value());
 }
 
 
-unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters);
-
-optional<vector<unique_ptr<Type>>> getFunctionArgumentTypes(const vector<Token>& tokens, int& i) {
+optional<vector<unique_ptr<Type>>> getFunctionArgumentTypes(const vector<Token>& tokens, int& i, bool writeError=true) {
     vector<unique_ptr<Type>> types;
     while (tokens[i].value != ")") {
-        auto type = getType(tokens, i, {",", ")"});
+        auto type = getType(tokens, i, {",", ")"}, writeError);
         if (!type) {
             return nullopt;
         }
@@ -41,63 +368,63 @@ optional<vector<unique_ptr<Type>>> getFunctionArgumentTypes(const vector<Token>&
         } else if (tokens[i+1].value == ")") {
             i += 1;
         } else if (tokens[i+1].value == "," && tokens[i + 2].value == ")") {
-            errorMessage("expected function argument type, got ')'", tokens[i+2].codePosition);
+            writeError ? errorMessage("expected function argument type, got ')'", tokens[i+2].codePosition) : false;
             return nullopt;
         }
         else {
-            errorMessage(
+            writeError ? errorMessage(
                 "during interpreting function arguments expected ',' or ')', got " + tokens[i+1].value, 
                 tokens[i+1].codePosition
-            );
+            ) : false;
             return nullopt;
         }
     }
     return types;
 }
 
-unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters) {
+unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool writeError) {
     unique_ptr<Type> type = nullptr;
     if (tokens[i].value == "!") {
         i += 1;
-        auto underlyingType = getType(tokens, i, delimiters);
+        auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
             type = make_unique<OwnerPointerType>(move(underlyingType));
         }
     } else if (tokens[i].value == "*") {
         i += 1;
-        auto underlyingType = getType(tokens, i, delimiters);
+        auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
             type = make_unique<RawPointerType>(move(underlyingType));
         }
     } else if (tokens[i].value == "&") {
         i += 1;
-        auto underlyingType = getType(tokens, i, delimiters);
+        auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
             type = make_unique<ReferenceType>(move(underlyingType));
         }
     } else if (tokens[i].value == "?") {
         i += 1;
-        auto underlyingType = getType(tokens, i, delimiters);
+        auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
             type = make_unique<MaybeErrorType>(move(underlyingType));
         }
     } else if (tokens[i].value == "[") {
         if (tokens[i + 1].value == "]") {
             i += 2;
-            auto elementType = getType(tokens, i, delimiters);
+            auto elementType = getType(tokens, i, delimiters, writeError);
             if (elementType) {
                 type = make_unique<DynamicArrayType>(move(elementType));
             }
         } else if (tokens[i+1].value == "*" && tokens[i+2].value == "]") {
             i += 3;
-            auto elementType = getType(tokens, i, delimiters);
+            auto elementType = getType(tokens, i, delimiters, writeError);
             if (elementType) {
                 type = make_unique<ArrayViewType>(move(elementType));
             }
         } else {
             i += 1;
             auto sizeValue = getValue(tokens, i, "]");
-            auto elementType = getType(tokens, i, delimiters);
+            auto elementType = getType(tokens, i, delimiters, writeError);
             if (elementType && sizeValue) {
                 type = make_unique<StaticArrayType>(move(elementType), move(sizeValue));
             }
@@ -110,22 +437,22 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
             i += 2;
         }
         if (tokens[i].type != Token::Type::Label) {
-            errorMessage("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
+            writeError ? errorMessage("expected template type name, got " + tokens[i].value, tokens[i].codePosition) : false;
             return nullptr;
         }
         if (tokens[i + 1].value != ">") {
-            errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
+            writeError ? errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition) : false;
             return nullptr;
         }
         templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
         i += 2;
 
         if (tokens[i].value != "(") {
-            errorMessage("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
+            writeError ? errorMessage("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition) : false;
             return nullptr;
         }
         i += 1;
-        auto argumentTypesOpt = getFunctionArgumentTypes(tokens, i);
+        auto argumentTypesOpt = getFunctionArgumentTypes(tokens, i, writeError);
         if (!argumentTypesOpt) {
             return nullptr;
         }
@@ -134,7 +461,7 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
             templateFunctionType->returnType = make_unique<Type>(Type::Kind::Void);
         } else {
             i += 2;
-            templateFunctionType->returnType = getType(tokens, i, delimiters);
+            templateFunctionType->returnType = getType(tokens, i, delimiters, writeError);
             if (!templateFunctionType->returnType) {
                 return nullptr;
             }
@@ -143,7 +470,7 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
     } else if (tokens[i].value == "(") {
         i += 1;
         auto functionType = make_unique<FunctionType>();
-        auto argumentTypesOpt = getFunctionArgumentTypes(tokens, i);
+        auto argumentTypesOpt = getFunctionArgumentTypes(tokens, i, writeError);
         if (!argumentTypesOpt) {
             return nullptr;
         }
@@ -152,7 +479,7 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
             functionType->returnType = make_unique<Type>(Type::Kind::Void);
         } else {
             i += 2;
-            functionType->returnType = getType(tokens, i, delimiters);
+            functionType->returnType = getType(tokens, i, delimiters, writeError);
             if (!functionType->returnType) {
                 return nullptr;
             }
@@ -201,7 +528,7 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
             i += 1;
             if (tokens[i].value == "<") {
                 while (true) {
-                    auto templateType = getType(tokens, i, {",", ">"});
+                    auto templateType = getType(tokens, i, {",", ">"}, writeError);
                     if (!templateType) {
                         return nullptr;
                     }
@@ -215,7 +542,7 @@ unique_ptr<Type> getType(const vector<Token>& tokens, int& i, const vector<strin
             type = move(className);
         }
     } else {
-        errorMessage("unexpected '" + tokens[i].value + "' during type interpreting", tokens[i].codePosition);
+        writeError ? errorMessage("unexpected '" + tokens[i].value + "' during type interpreting", tokens[i].codePosition) : false;
         return nullptr;
     }
 

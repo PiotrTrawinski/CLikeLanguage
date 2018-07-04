@@ -38,7 +38,6 @@ namespace {
     unordered_map<string, unique_ptr<Keyword>> initializeKeywordLabelsMap() {
         unordered_map<string, unique_ptr<Keyword>> keywordLabels;
         keywordLabels["while"]    = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::While);
-        keywordLabels["while"]    = std::unique_ptr<ScopeStartKeyword>(new ScopeStartKeyword(ScopeStartKeyword::Value::While));
         keywordLabels["for"]      = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::For);
         keywordLabels["if"]       = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::If);
         keywordLabels["elseIf"]   = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::ElseIf);

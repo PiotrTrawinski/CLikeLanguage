@@ -51,11 +51,13 @@ struct Statement {
 };
 
 struct Value : Statement {
-    Value(const CodePosition& position) : 
-        Statement(position, Statement::Kind::Value)
+    Value(const CodePosition& position, bool isEmpty=false) : 
+        Statement(position, Statement::Kind::Value),
+        isEmpty(isEmpty)
     {}
     std::unique_ptr<Type> type = nullptr;
     bool isConstexpr;
+    bool isEmpty;
 };
 
 struct Variable : Value {
@@ -68,28 +70,138 @@ struct Variable : Value {
 struct Operation : Value {
     enum class Kind {
         Add, Sub, Mul, Div, Mod,
-        Neg,
-        And, Or,
-        Not,
+        Minus,
+        BitAnd, BitOr, BitNeg, BitXor,
+        LogicalAnd, LogicalOr, LogicalNot,
         Eq, Neq,
         Gt, Lt, Gte, Lte,
         Shl, Shr, Sal, Sar,
         Assign,
+        AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
+        ShlAssign, ShrAssign, SalAssign, SarAssign, 
+        BitAndAssign, BitOrAssign, BitXorAssign,
         Reference, Address, GetValue,
+        Dot,
+        ArrayIndex, ArraySubArray,
         Cast,
         FunctionCall,
         Allocation,
-        ErrorCoding,
+        Deallocation,
+        //ErrorCoding,
         Break,
         Remove,
         Continue,
-        Return
+        Return,
+        LeftBracket // not really operator - only for convinience in reverse polish notation
     };
 
     Operation(const CodePosition& position, Kind kind) : 
         Value(position),
         kind(kind)
     {}
+
+    static int priority(Kind kind) {
+        switch (kind) {
+        case Kind::Dot:
+        case Kind::FunctionCall:
+        case Kind::ArrayIndex:
+        case Kind::ArraySubArray:
+            return 1;
+        case Kind::Reference:
+        case Kind::Address:
+        case Kind::GetValue:
+        case Kind::Allocation:
+        case Kind::Deallocation:
+        case Kind::Cast:
+        case Kind::BitNeg:
+        case Kind::LogicalNot:
+        case Kind::Minus:
+            return 2;
+        case Kind::Mul:
+        case Kind::Div:
+        case Kind::Mod:
+            return 3;
+        case Kind::Add:
+        case Kind::Sub:
+            return 4;
+        case Kind::Shl:
+        case Kind::Shr:
+        case Kind::Sal:
+        case Kind::Sar:
+            return 5;
+        case Kind::Gt:
+        case Kind::Lt:
+        case Kind::Gte:
+        case Kind::Lte:
+            return 6;
+        case Kind::Eq:
+        case Kind::Neq:
+            return 7;
+        case Kind::BitAnd:
+            return 8;
+        case Kind::BitXor:
+            return 9;
+        case Kind::BitOr:
+            return 10;
+        case Kind::LogicalAnd:
+            return 11;
+        case Kind::LogicalOr:
+            return 12;
+        case Kind::Assign:
+        case Kind::AddAssign:
+        case Kind::SubAssign:
+        case Kind::MulAssign:
+        case Kind::DivAssign:
+        case Kind::ModAssign:
+        case Kind::ShlAssign:
+        case Kind::ShrAssign:
+        case Kind::SalAssign:
+        case Kind::SarAssign:
+        case Kind::BitAndAssign:
+        case Kind::BitOrAssign:
+        case Kind::BitXorAssign:
+            return 13;
+        default: 
+            return 14;
+        }
+    }
+    static bool isLeftAssociative(Kind kind) {
+        switch (kind) {
+        case Kind::Dot:
+        case Kind::FunctionCall:
+        case Kind::ArrayIndex:
+        case Kind::ArraySubArray:
+        case Kind::Mul:
+        case Kind::Div:
+        case Kind::Mod:
+        case Kind::Add:
+        case Kind::Sub:
+        case Kind::Shl:
+        case Kind::Shr:
+        case Kind::Sal:
+        case Kind::Sar:
+        case Kind::Gt:
+        case Kind::Lt:
+        case Kind::Gte:
+        case Kind::Lte:
+        case Kind::Eq:
+        case Kind::Neq:
+        case Kind::BitAnd:
+        case Kind::BitXor:
+        case Kind::BitOr:
+        case Kind::LogicalAnd:
+        case Kind::LogicalOr:
+            return true;
+        default: 
+            return false;
+        }
+    }
+    int getPriority() {
+        return priority(kind);
+    }
+    bool getIsLeftAssociative() {
+        return isLeftAssociative(kind);
+    }
 
     Kind kind;
     std::vector<std::unique_ptr<Value>> arguments;
@@ -205,8 +317,9 @@ struct TemplateFunctionType : FunctionType {
     Operations
 */
 struct CastOperation : Operation {
-    CastOperation(const CodePosition& position) : 
-        Operation(position, Operation::Kind::Cast)
+    CastOperation(const CodePosition& position, std::unique_ptr<Type>&& argType) : 
+        Operation(position, Operation::Kind::Cast),
+        argType(move(argType))
     {}
 
     std::unique_ptr<Type> argType;
@@ -346,20 +459,42 @@ struct DeferScope : CodeScope {
     Values
 */
 struct IntegerValue : Value {
-    IntegerValue(const CodePosition& position) : Value(position) {
+    IntegerValue(const CodePosition& position, int32_t value) : 
+        Value(position),
+        value(value)
+    {
         isConstexpr = true;
+        type = std::make_unique<IntegerType>(IntegerType::Size::I32);
     }
-    int64_t value;
+    int32_t value;
+};
+struct CharValue : Value {
+    CharValue(const CodePosition& position, uint8_t value) : 
+        Value(position),
+        value(value)
+    {
+        isConstexpr = true;
+        type = std::make_unique<IntegerType>(IntegerType::Size::U8);
+    }
+    uint8_t value;
 };
 struct FloatValue : Value {
-    FloatValue(const CodePosition& position) : Value(position) {
+    FloatValue(const CodePosition& position, double value) :
+        Value(position),
+        value(value)
+    {
         isConstexpr = true;
+        type = std::make_unique<FloatType>(FloatType::Size::F64);
     }
     double value;
 };
 struct StringValue : Value {
-    StringValue(const CodePosition& position) : Value(position) {
+    StringValue(const CodePosition& position, const std::string& value) : 
+        Value(position),
+        value(value)
+    {
         isConstexpr = true;
+        type = std::make_unique<Type>(Type::Kind::String);
     }
     std::string value;
 };
