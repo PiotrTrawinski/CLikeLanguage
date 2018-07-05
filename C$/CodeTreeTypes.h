@@ -85,6 +85,7 @@ struct Operation : Value {
         ArrayIndex, ArraySubArray,
         Cast,
         FunctionCall,
+        TemplateFunctionCall,
         Allocation,
         Deallocation,
         //ErrorCoding,
@@ -332,6 +333,15 @@ struct FunctionCallOperation : Operation {
 
     Variable function;
 };
+struct TemplateFunctionCallOperation : FunctionCallOperation {
+    TemplateFunctionCallOperation(const CodePosition& position) : 
+        FunctionCallOperation(position)
+    {
+        kind = Operation::Kind::TemplateFunctionCall;
+    }
+
+    std::vector<std::unique_ptr<Type>> templateTypes;
+};
 
 struct Declaration : Statement {
     Declaration(const CodePosition& position) : 
@@ -511,7 +521,8 @@ struct FunctionValue : Value {
     {
         isConstexpr = true;
     }
-    std::vector<Variable> arguments;
+    std::vector<std::unique_ptr<Variable>> arguments;
     std::unique_ptr<Type> returnType;
+    std::vector<std::unique_ptr<TemplateType>> templateTypes;
     CodeScope body;
 };
