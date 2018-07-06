@@ -30,6 +30,16 @@ struct Type {
     };
 
     Type (Kind kind) : kind(kind) {}
+    
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const Type& other = static_cast<const Type&>(type);
+            return this->kind == other.kind;
+        }
+        else {
+            return false;
+        }
+    }
 
     Kind kind;
 };
@@ -51,20 +61,57 @@ struct Statement {
 };
 
 struct Value : Statement {
-    Value(const CodePosition& position, bool isEmpty=false) : 
+    enum class ValueKind {
+        Empty,
+        Integer,
+        Float,
+        Char,
+        String,
+        StaticArray,
+        FunctionValue,
+        Variable,
+        Operation
+    };
+
+    Value(const CodePosition& position, ValueKind valueKind) : 
         Statement(position, Statement::Kind::Value),
-        isEmpty(isEmpty)
+        valueKind(valueKind)
     {}
+
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const Value&>(value);
+            return this->valueKind == other.valueKind
+                && (this->type == other.type || *this->type == *other.type)
+                && this->isConstexpr == other.isConstexpr;
+        }
+        else {
+            return false;
+        }
+    }
+
+    ValueKind valueKind;
     std::unique_ptr<Type> type = nullptr;
-    bool isConstexpr;
-    bool isEmpty;
+    bool isConstexpr = false;
 };
 
 struct Variable : Value {
-    Variable(const CodePosition& position) : Value(position) {}
+    Variable(const CodePosition& position) : Value(position, Value::ValueKind::Variable) {}
+
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const Variable&>(value);
+            return this->name == other.name
+                && this->isConst == other.isConst
+                && Value::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
 
     std::string name;
-    bool isConst;
+    bool isConst = false;
 };
 
 struct Operation : Value {
@@ -85,6 +132,7 @@ struct Operation : Value {
         ArrayIndex, ArraySubArray,
         Cast,
         FunctionCall,
+        TemplateFunctionCall,
         Allocation,
         Deallocation,
         //ErrorCoding,
@@ -96,7 +144,7 @@ struct Operation : Value {
     };
 
     Operation(const CodePosition& position, Kind kind) : 
-        Value(position),
+        Value(position, Value::ValueKind::Operation),
         kind(kind)
     {}
 
@@ -196,11 +244,88 @@ struct Operation : Value {
             return false;
         }
     }
+    static int numberOfArguments(Kind kind) {
+        switch (kind) {
+        case Kind::FunctionCall:
+            return 0;
+        case Kind::ArrayIndex:
+        case Kind::ArraySubArray:
+        case Kind::Reference:
+        case Kind::Address:
+        case Kind::GetValue:
+        case Kind::Allocation:
+        case Kind::Deallocation:
+        case Kind::Cast:
+        case Kind::BitNeg:
+        case Kind::LogicalNot:
+        case Kind::Minus:
+            return 1;
+        case Kind::Dot:
+        case Kind::Mul:
+        case Kind::Div:
+        case Kind::Mod:
+        case Kind::Add:
+        case Kind::Sub:
+        case Kind::Shl:
+        case Kind::Shr:
+        case Kind::Sal:
+        case Kind::Sar:
+        case Kind::Gt:
+        case Kind::Lt:
+        case Kind::Gte:
+        case Kind::Lte:
+        case Kind::Eq:
+        case Kind::Neq:
+        case Kind::BitAnd:
+        case Kind::BitXor:
+        case Kind::BitOr:
+        case Kind::LogicalAnd:
+        case Kind::LogicalOr:
+        case Kind::Assign:
+        case Kind::AddAssign:
+        case Kind::SubAssign:
+        case Kind::MulAssign:
+        case Kind::DivAssign:
+        case Kind::ModAssign:
+        case Kind::ShlAssign:
+        case Kind::ShrAssign:
+        case Kind::SalAssign:
+        case Kind::SarAssign:
+        case Kind::BitAndAssign:
+        case Kind::BitOrAssign:
+        case Kind::BitXorAssign:
+            return 2;
+        default: 
+            return 0;
+        }
+    }
     int getPriority() {
         return priority(kind);
     }
     bool getIsLeftAssociative() {
         return isLeftAssociative(kind);
+    }
+    int getNumberOfArguments() {
+        return numberOfArguments(kind);
+    }
+
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const Operation&>(value);
+            if (this->arguments.size() != other.arguments.size()) {
+                return false;
+            }
+            for (int i = 0; i < this->arguments.size(); ++i) {
+                if (!(*this->arguments[i] == *other.arguments[i])) {
+                    return false;
+                }
+            }
+            return this->kind == other.kind
+                && Value::operator==(other);
+        }
+        else {
+            return false;
+        }
     }
 
     Kind kind;
@@ -213,6 +338,14 @@ struct OwnerPointerType : Type {
         Type(Type::Kind::OwnerPointer),
         underlyingType(move(underlyingType))
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const OwnerPointerType&>(type);
+            return *this->underlyingType == *other.underlyingType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> underlyingType;
 };
 struct RawPointerType : Type {
@@ -220,6 +353,14 @@ struct RawPointerType : Type {
         Type(Type::Kind::RawPointer),
         underlyingType(move(underlyingType))
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const RawPointerType&>(type);
+            return *this->underlyingType == *other.underlyingType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> underlyingType;
 };
 struct MaybeErrorType : Type {
@@ -227,6 +368,14 @@ struct MaybeErrorType : Type {
         Type(Type::Kind::MaybeError),
         underlyingType(move(underlyingType))
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const MaybeErrorType&>(type);
+            return *this->underlyingType == *other.underlyingType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> underlyingType;
 };
 struct ReferenceType : Type {
@@ -234,6 +383,14 @@ struct ReferenceType : Type {
         Type(Type::Kind::Reference),
         underlyingType(move(underlyingType))
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const ReferenceType&>(type);
+            return *this->underlyingType == *other.underlyingType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> underlyingType;
 };
 struct StaticArrayType : Type {
@@ -242,6 +399,14 @@ struct StaticArrayType : Type {
         elementType(move(elementType)),
         size(move(size))
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const StaticArrayType&>(type);
+            return *this->elementType == *other.elementType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> elementType;
     std::unique_ptr<Value> size;
 };
@@ -250,6 +415,14 @@ struct DynamicArrayType : Type {
         Type(Type::Kind::DynamicArray),
         elementType(move(elementType))
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const DynamicArrayType&>(type);
+            return *this->elementType == *other.elementType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> elementType;
 };
 struct ArrayViewType : Type {
@@ -257,6 +430,14 @@ struct ArrayViewType : Type {
         Type(Type::Kind::ArrayView),
         elementType(move(elementType))
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const ArrayViewType&>(type);
+            return *this->elementType == *other.elementType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> elementType;
 };
 /*struct StringType : Type {
@@ -268,10 +449,42 @@ struct ClassType : Type {
         name(name)
     {}
     std::string name;
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const ClassType&>(type);
+            if (this->templateTypes.size() != other.templateTypes.size()) {
+                return false;
+            }
+            for (int i = 0; i < this->templateTypes.size(); ++i) {
+                if (!(*this->templateTypes[i] == *other.templateTypes[i])) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            return false;
+        }
+    }
     std::vector<std::unique_ptr<Type>> templateTypes;
 };
 struct FunctionType : Type {
     FunctionType() : Type(Type::Kind::Function) {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const FunctionType&>(type);
+            if (this->argumentTypes.size() != other.argumentTypes.size()) {
+                return false;
+            }
+            for (int i = 0; i < this->argumentTypes.size(); ++i) {
+                if (!(*this->argumentTypes[i] == *other.argumentTypes[i])) {
+                    return false;
+                }
+            }
+            return *this->returnType == *other.returnType;
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Type> returnType;
     std::vector<std::unique_ptr<Type>> argumentTypes;
 };
@@ -281,6 +494,14 @@ struct IntegerType : Type {
         Type(Type::Kind::Integer), 
         size(size) 
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const IntegerType&>(type);
+            return this->size == other.size;
+        } else {
+            return false;
+        }
+    }
     Size size;
 };
 struct FloatType : Type {
@@ -289,6 +510,14 @@ struct FloatType : Type {
         Type(Type::Kind::Float),
         size(size)
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const FloatType&>(type);
+            return this->size == other.size;
+        } else {
+            return false;
+        }
+    }
     Size size;
 };
 struct TemplateType : Type {
@@ -296,6 +525,13 @@ struct TemplateType : Type {
         Type(Type::Kind::Template),
         name(name)
     {}
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            return true;
+        } else {
+            return false;
+        }
+    }
     std::string name;
 };
 /*struct TempalteClassType : ClassType {
@@ -307,6 +543,22 @@ struct TemplateType : Type {
 struct TemplateFunctionType : FunctionType {
     TemplateFunctionType() {
         kind = Type::Kind::TemplateFunction;
+    }
+    virtual bool operator==(const Type& type) const {
+        if(typeid(type) == typeid(*this)){
+            const auto& other = static_cast<const TemplateFunctionType&>(type);
+            if (this->templateTypes.size() != other.templateTypes.size()) {
+                return false;
+            }
+            for (int i = 0; i < this->templateTypes.size(); ++i) {
+                if (!(*this->templateTypes[i] == *other.templateTypes[i])) {
+                    return false;
+                }
+            }
+            return FunctionType::operator==(type);
+        } else {
+            return false;
+        }
     }
     std::vector<std::unique_ptr<TemplateType>> templateTypes;
 };
@@ -321,6 +573,16 @@ struct CastOperation : Operation {
         Operation(position, Operation::Kind::Cast),
         argType(move(argType))
     {}
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const CastOperation&>(value);
+            return *this->argType == *other.argType
+                && Operation::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
 
     std::unique_ptr<Type> argType;
 };
@@ -329,8 +591,44 @@ struct FunctionCallOperation : Operation {
         Operation(position, Operation::Kind::FunctionCall),
         function(position)
     {}
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const FunctionCallOperation&>(value);
+            return this->function == other.function
+                && Operation::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
 
     Variable function;
+};
+struct TemplateFunctionCallOperation : FunctionCallOperation {
+    TemplateFunctionCallOperation(const CodePosition& position) : 
+        FunctionCallOperation(position)
+    {
+        kind = Operation::Kind::TemplateFunctionCall;
+    }
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const TemplateFunctionCallOperation&>(value);
+            if (this->templateTypes.size() != other.templateTypes.size()) {
+                return false;
+            }
+            for (int i = 0; i < this->templateTypes.size(); ++i) {
+                if (!(*this->templateTypes[i] == *other.templateTypes[i])) {
+                    return false;
+                }
+            }
+            return FunctionCallOperation::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
+
+    std::vector<std::unique_ptr<Type>> templateTypes;
 };
 
 struct Declaration : Statement {
@@ -460,58 +758,132 @@ struct DeferScope : CodeScope {
 */
 struct IntegerValue : Value {
     IntegerValue(const CodePosition& position, int32_t value) : 
-        Value(position),
+        Value(position, Value::ValueKind::Integer),
         value(value)
     {
         isConstexpr = true;
         type = std::make_unique<IntegerType>(IntegerType::Size::I32);
     }
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const IntegerValue&>(value);
+            return this->value == other.value
+                && Value::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
     int32_t value;
 };
 struct CharValue : Value {
     CharValue(const CodePosition& position, uint8_t value) : 
-        Value(position),
+        Value(position, Value::ValueKind::Char),
         value(value)
     {
         isConstexpr = true;
         type = std::make_unique<IntegerType>(IntegerType::Size::U8);
     }
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const CharValue&>(value);
+            return this->value == other.value
+                && Value::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
     uint8_t value;
 };
 struct FloatValue : Value {
     FloatValue(const CodePosition& position, double value) :
-        Value(position),
+        Value(position, Value::ValueKind::Float),
         value(value)
     {
         isConstexpr = true;
         type = std::make_unique<FloatType>(FloatType::Size::F64);
     }
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const FloatValue&>(value);
+            return this->value == other.value
+                && Value::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
     double value;
 };
 struct StringValue : Value {
     StringValue(const CodePosition& position, const std::string& value) : 
-        Value(position),
+        Value(position, Value::ValueKind::String),
         value(value)
     {
         isConstexpr = true;
         type = std::make_unique<Type>(Type::Kind::String);
     }
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const StringValue&>(value);
+            return this->value == other.value
+                && Value::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
     std::string value;
 };
 struct StaticArrayValue : Value {
-    StaticArrayValue(const CodePosition& position) : Value(position) {
+    StaticArrayValue(const CodePosition& position) : Value(position, Value::ValueKind::StaticArray) {
         isConstexpr = true;
+    }
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const StaticArrayValue&>(value);
+            if (this->values.size() != other.values.size()) {
+                return false;
+            }
+            for (int i = 0; i < this->values.size(); ++i) {
+                if (!(*this->values[i] == *other.values[i])) {
+                    return false;
+                }
+            }
+            return Value::operator==(other);
+        }
+        else {
+            return false;
+        }
     }
     std::vector<std::unique_ptr<Value>> values;
 };
 struct FunctionValue : Value {
-    FunctionValue(const CodePosition& position, Scope* parentScope) : 
-        Value(position),
+    FunctionValue(const CodePosition& position, std::unique_ptr<Type>&& type, Scope* parentScope) : 
+        Value(position, Value::ValueKind::FunctionValue),
         body(position, Scope::Owner::Function, parentScope)
     {
         isConstexpr = true;
+        this->type = move(type);
     }
-    std::vector<Variable> arguments;
-    std::unique_ptr<Type> returnType;
+    virtual bool operator==(const Value& value) const {
+        if(typeid(value) == typeid(*this)){
+            const auto& other = static_cast<const FunctionValue&>(value);
+            if (this->argumentNames.size() != other.argumentNames.size()) {
+                return false;
+            }
+            for (int i = 0; i < this->argumentNames.size(); ++i) {
+                if (this->argumentNames[i] != other.argumentNames[i]) {
+                    return false;
+                }
+            }
+            return Value::operator==(other);
+        }
+        else {
+            return false;
+        }
+    }
+    std::vector<std::string> argumentNames;
     CodeScope body;
 };
