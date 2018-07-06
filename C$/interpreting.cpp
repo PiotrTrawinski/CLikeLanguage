@@ -3,8 +3,8 @@
 using namespace std;
 
 void printErrorCodePosition(const CodePosition& codePosition) {
-    cerr << "in file: " << codePosition.fileInfo->name << " "
-         << "at line: " << codePosition.lineNumber << " "
+    cerr << "in file: " << codePosition.fileInfo->name << "\n"
+         << "at line: " << codePosition.lineNumber << "\n"
          << "at char: " << codePosition.charNumber << "\n";
 }
 
@@ -60,10 +60,11 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
             out.push_back(make_unique<StringValue>(tokens[i].codePosition, tokens[i].value));
             break;
         case Token::Type::Label:{
-            bool isTemplateFunctionCall = true;
+            bool isTemplateFunctionCall = false;
             if (tokens[i + 1].value == "<") {
                 // either 'less then' operator or function call template arguments
                 // assume its template arguments and check if it makes sense
+                isTemplateFunctionCall = true;
                 int openTemplateCount = 1;
                 int j = i + 2;
                 while (j < tokens.size() && openTemplateCount != 0) {
@@ -87,34 +88,34 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                             break;
                         }
                     }
-
-                    // its template call
-                    auto templateCall = make_unique<TemplateFunctionCallOperation>(tokens[i].codePosition);
-                    templateCall->templateTypes = move(templateTypes);
-                    templateCall->function.name = tokens[i].value;
-                    i = k;
-                    if (tokens[i].value == "(") {
-                        // read function arguments
-                        i += 1;
-                        if (tokens[i].value == ")") {
+                    if (isTemplateFunctionCall) {
+                        auto templateCall = make_unique<TemplateFunctionCallOperation>(tokens[i].codePosition);
+                        templateCall->templateTypes = move(templateTypes);
+                        templateCall->function.name = tokens[i].value;
+                        i = k;
+                        if (tokens[i].value == "(") {
+                            // read function arguments
                             i += 1;
-                        } else {
-                            bool endOfArguments = false;
-                            do {
-                                auto value = getValue(scope, tokens, i, "");
-                                if (tokens[i].value == ")") {
-                                    endOfArguments = true;
-                                } else if (tokens[i].value != ",") {
-                                    errorMessage("expected ',' or ')' in function call, got " + tokens[i].value, tokens[i].codePosition);
-                                }
-                                templateCall->arguments.push_back(move(value));
+                            if (tokens[i].value == ")") {
                                 i += 1;
-                            } while(!endOfArguments);
+                            } else {
+                                bool endOfArguments = false;
+                                do {
+                                    auto value = getValue(scope, tokens, i, "");
+                                    if (tokens[i].value == ")") {
+                                        endOfArguments = true;
+                                    } else if (tokens[i].value != ",") {
+                                        errorMessage("expected ',' or ')' in function call, got " + tokens[i].value, tokens[i].codePosition);
+                                    }
+                                    templateCall->arguments.push_back(move(value));
+                                    i += 1;
+                                } while(!endOfArguments);
+                            }
+                            out.push_back(move(templateCall));
+                        } else {
+                            errorMessage("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
+                            return nullopt;
                         }
-                        out.push_back(move(templateCall));
-                    } else {
-                        errorMessage("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
-                        return nullopt;
                     }
                 } else {
                     isTemplateFunctionCall = false;
@@ -153,6 +154,7 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                     auto variable = make_unique<Variable>(tokens[i].codePosition);
                     variable->name = tokens[i].value;
                     out.push_back(move(variable));
+                    i += 1;
                 }
             }
             break;
@@ -499,7 +501,6 @@ unique_ptr<Value> solveReversePolishNotation(vector<unique_ptr<Value>>&& values)
             stack.push_back(move(values[i]));
         }
     }
-
     return move(stack.back());
 }
 
