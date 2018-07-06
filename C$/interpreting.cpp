@@ -173,7 +173,8 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                     }
                     if (j+1 < tokens.size() && (tokens[j].value+tokens[j+1].value == "->" || tokens[j].value == "{")) {
                         // function value (lambda)
-                        auto lambda = make_unique<FunctionValue>(tokens[i].codePosition, scope);   
+                        auto lambda = make_unique<FunctionValue>(tokens[i].codePosition, nullptr, scope);
+                        auto lambdaType = make_unique<FunctionType>();
                         i += 1;
                         while (tokens[i].value != ")") {
                             if (tokens[i].type != Token::Type::Label) {
@@ -184,24 +185,25 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                                 errorMessage("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
                                 return nullopt;
                             }
-                            auto variable = make_unique<Variable>(tokens[i].codePosition);
-                            variable->name = tokens[i].value;
-                            variable->type = getType(scope, tokens, i, {",", ")"});
-                            if (!variable->type) { return nullopt; }
-                            lambda->arguments.push_back(move(variable));
+                            auto type = getType(scope, tokens, i, {",", ")"});
+                            if (!type) { return nullopt; }
+                            lambdaType->argumentTypes.push_back(move(type));
+                            lambda->argumentNames.push_back(tokens[i].value);
                         }
                         i += 1;
                         if (tokens[i].value + tokens[i + 1].value == "->") {
                             i += 2;
-                            lambda->returnType = getType(scope, tokens, i, {"{"});
-                            if (!lambda->returnType) { return nullopt; }
+                            lambdaType->returnType = getType(scope, tokens, i, {"{"});
+                            if (!lambdaType->returnType) { return nullopt; }
                         } else {
-                            lambda->returnType = make_unique<Type>(Type::Kind::Void);
+                            lambdaType->returnType = make_unique<Type>(Type::Kind::Void);
                         }
                         i += 1;
+                        lambda->type = move(lambdaType);
                         if (!lambda->body.interpret(tokens, i)) {
                             return nullopt;
                         }
+                        out.push_back(move(lambda));
                     } else {
                         // normal opening bracket
                         stack.push_back(make_unique<Operation>(tokens[i++].codePosition, Operation::Kind::LeftBracket));
@@ -209,10 +211,11 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                 }
                 else if (tokens[i].value == "<") {
                     // template function value
-                    auto templateFunction = make_unique<FunctionValue>(tokens[i].codePosition, scope);
+                    auto templateFunction = make_unique<FunctionValue>(tokens[i].codePosition, nullptr, scope);
+                    auto templateFunctionType = make_unique<TemplateFunctionType>();
                     i += 1;
                     while (tokens[i].type == Token::Type::Label && tokens[i+1].value == ",") {
-                        templateFunction->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+                        templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
                         i += 2;
                     }
                     if (tokens[i].type != Token::Type::Label) {
@@ -223,7 +226,7 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                         errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
                         return nullopt;
                     }
-                    templateFunction->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+                    templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
                     i += 2;
                     if (tokens[i].value != "(") {
                         errorMessage("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
@@ -239,24 +242,25 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                             errorMessage("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
                             return nullopt;
                         }
-                        auto variable = make_unique<Variable>(tokens[i].codePosition);
-                        variable->name = tokens[i].value;
-                        variable->type = getType(scope, tokens, i, {",", ")"});
-                        if (!variable->type) { return nullopt; }
-                        templateFunction->arguments.push_back(move(variable));
+                        auto type = getType(scope, tokens, i, {",", ")"});
+                        if (!type) { return nullopt; }
+                        templateFunction->argumentNames.push_back(tokens[i].value);
+                        templateFunctionType->argumentTypes.push_back(move(type));
                     }
                     i += 1;
                     if (tokens[i].value + tokens[i + 1].value == "->") {
                         i += 2;
-                        templateFunction->returnType = getType(scope, tokens, i, {"{"});
-                        if (!templateFunction->returnType) { return nullopt; }
+                        templateFunctionType->returnType = getType(scope, tokens, i, {"{"});
+                        if (!templateFunctionType->returnType) { return nullopt; }
                     } else {
-                        templateFunction->returnType = make_unique<Type>(Type::Kind::Void);
+                        templateFunctionType->returnType = make_unique<Type>(Type::Kind::Void);
                     }
                     i += 1;
+                    templateFunction->type = move(templateFunctionType);
                     if (!templateFunction->body.interpret(tokens, i)) {
                         return nullopt;
                     }
+                    out.push_back(move(templateFunction));
                 }
                 else if (tokens[i].value == "[") {
                     // static array ([x, y, z, ...]) or type cast ([T]())
@@ -474,8 +478,29 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
     return out;
 }
 
-unique_ptr<Value> solveReversePolishNotation(const vector<unique_ptr<Value>>& stack) {
-    return nullptr;
+unique_ptr<Value> solveReversePolishNotation(vector<unique_ptr<Value>>&& values) {
+    vector<unique_ptr<Value>> stack;
+
+    for (int i = 0; i < values.size(); ++i) {
+        if (values[i]->valueKind == Value::ValueKind::Operation) {
+            unique_ptr<Operation> operation(static_cast<Operation*>(values[i].release()));
+            int numberOfArguments = operation->getNumberOfArguments();
+            vector<unique_ptr<Value>> arguments;
+            for (int i = 0; i < numberOfArguments; ++i) {
+                arguments.push_back(move(stack.back()));
+                stack.pop_back();
+            }
+            for (int i = 0; i < numberOfArguments; ++i) {
+                operation->arguments.push_back(move(arguments.back()));
+                arguments.pop_back();
+            }
+            stack.push_back(move(operation));
+        } else {
+            stack.push_back(move(values[i]));
+        }
+    }
+
+    return move(stack.back());
 }
 
 unique_ptr<Value> getValue(Scope* scope, const vector<Token>& tokens, int& i, const string& skipDelimiter) {
@@ -484,9 +509,9 @@ unique_ptr<Value> getValue(Scope* scope, const vector<Token>& tokens, int& i, co
         return nullptr;
     }
     if (reversePolishNotation.value().empty()) {
-        return make_unique<Value>(tokens[i].codePosition, true);
+        return make_unique<Value>(tokens[i].codePosition, Value::ValueKind::Empty);
     }
-    return solveReversePolishNotation(reversePolishNotation.value());
+    return solveReversePolishNotation(move(reversePolishNotation.value()));
 }
 
 

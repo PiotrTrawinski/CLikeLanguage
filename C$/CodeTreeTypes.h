@@ -51,17 +51,32 @@ struct Statement {
 };
 
 struct Value : Statement {
-    Value(const CodePosition& position, bool isEmpty=false) : 
+    enum class ValueKind {
+        Empty,
+        Integer,
+        Float,
+        Char,
+        String,
+        StaticArray,
+        FunctionValue,
+        Variable,
+        Operation
+    };
+
+    Value(const CodePosition& position, ValueKind valueKind) : 
         Statement(position, Statement::Kind::Value),
+        valueKind(valueKind),
         isEmpty(isEmpty)
     {}
+
+    ValueKind valueKind;
     std::unique_ptr<Type> type = nullptr;
     bool isConstexpr;
     bool isEmpty;
 };
 
 struct Variable : Value {
-    Variable(const CodePosition& position) : Value(position) {}
+    Variable(const CodePosition& position) : Value(position, Value::ValueKind::Variable) {}
 
     std::string name;
     bool isConst;
@@ -97,7 +112,7 @@ struct Operation : Value {
     };
 
     Operation(const CodePosition& position, Kind kind) : 
-        Value(position),
+        Value(position, Value::ValueKind::Operation),
         kind(kind)
     {}
 
@@ -197,11 +212,69 @@ struct Operation : Value {
             return false;
         }
     }
+    static int numberOfArguments(Kind kind) {
+        switch (kind) {
+        case Kind::FunctionCall:
+            return 0;
+        case Kind::ArrayIndex:
+        case Kind::ArraySubArray:
+        case Kind::Reference:
+        case Kind::Address:
+        case Kind::GetValue:
+        case Kind::Allocation:
+        case Kind::Deallocation:
+        case Kind::Cast:
+        case Kind::BitNeg:
+        case Kind::LogicalNot:
+        case Kind::Minus:
+            return 1;
+        case Kind::Dot:
+        case Kind::Mul:
+        case Kind::Div:
+        case Kind::Mod:
+        case Kind::Add:
+        case Kind::Sub:
+        case Kind::Shl:
+        case Kind::Shr:
+        case Kind::Sal:
+        case Kind::Sar:
+        case Kind::Gt:
+        case Kind::Lt:
+        case Kind::Gte:
+        case Kind::Lte:
+        case Kind::Eq:
+        case Kind::Neq:
+        case Kind::BitAnd:
+        case Kind::BitXor:
+        case Kind::BitOr:
+        case Kind::LogicalAnd:
+        case Kind::LogicalOr:
+        case Kind::Assign:
+        case Kind::AddAssign:
+        case Kind::SubAssign:
+        case Kind::MulAssign:
+        case Kind::DivAssign:
+        case Kind::ModAssign:
+        case Kind::ShlAssign:
+        case Kind::ShrAssign:
+        case Kind::SalAssign:
+        case Kind::SarAssign:
+        case Kind::BitAndAssign:
+        case Kind::BitOrAssign:
+        case Kind::BitXorAssign:
+            return 2;
+        default: 
+            return 0;
+        }
+    }
     int getPriority() {
         return priority(kind);
     }
     bool getIsLeftAssociative() {
         return isLeftAssociative(kind);
+    }
+    int getNumberOfArguments() {
+        return numberOfArguments(kind);
     }
 
     Kind kind;
@@ -470,7 +543,7 @@ struct DeferScope : CodeScope {
 */
 struct IntegerValue : Value {
     IntegerValue(const CodePosition& position, int32_t value) : 
-        Value(position),
+        Value(position, Value::ValueKind::Integer),
         value(value)
     {
         isConstexpr = true;
@@ -480,7 +553,7 @@ struct IntegerValue : Value {
 };
 struct CharValue : Value {
     CharValue(const CodePosition& position, uint8_t value) : 
-        Value(position),
+        Value(position, Value::ValueKind::Char),
         value(value)
     {
         isConstexpr = true;
@@ -490,7 +563,7 @@ struct CharValue : Value {
 };
 struct FloatValue : Value {
     FloatValue(const CodePosition& position, double value) :
-        Value(position),
+        Value(position, Value::ValueKind::Float),
         value(value)
     {
         isConstexpr = true;
@@ -500,7 +573,7 @@ struct FloatValue : Value {
 };
 struct StringValue : Value {
     StringValue(const CodePosition& position, const std::string& value) : 
-        Value(position),
+        Value(position, Value::ValueKind::String),
         value(value)
     {
         isConstexpr = true;
@@ -509,20 +582,19 @@ struct StringValue : Value {
     std::string value;
 };
 struct StaticArrayValue : Value {
-    StaticArrayValue(const CodePosition& position) : Value(position) {
+    StaticArrayValue(const CodePosition& position) : Value(position, Value::ValueKind::StaticArray) {
         isConstexpr = true;
     }
     std::vector<std::unique_ptr<Value>> values;
 };
 struct FunctionValue : Value {
-    FunctionValue(const CodePosition& position, Scope* parentScope) : 
-        Value(position),
+    FunctionValue(const CodePosition& position, std::unique_ptr<Type>&& type, Scope* parentScope) : 
+        Value(position, Value::ValueKind::FunctionValue),
         body(position, Scope::Owner::Function, parentScope)
     {
         isConstexpr = true;
+        type = move(type);
     }
-    std::vector<std::unique_ptr<Variable>> arguments;
-    std::unique_ptr<Type> returnType;
-    std::vector<std::unique_ptr<TemplateType>> templateTypes;
+    std::vector<std::string> argumentNames;
     CodeScope body;
 };
