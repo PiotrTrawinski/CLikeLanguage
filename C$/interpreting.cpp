@@ -21,7 +21,7 @@ bool internalError(string message, const CodePosition& codePosition) {
 }
 
 unique_ptr<Type> getType(Scope* scope, const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool writeError=true);
-unique_ptr<Value> getValue(Scope* scope, const vector<Token>& tokens, int& i, const string& skipDelimiter=";");
+unique_ptr<Value> getValue(Scope* scope, const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool skipOnGoodDelimiter=false);
 
 void appendOperator(vector<unique_ptr<Operation>>& stack, vector<unique_ptr<Value>>& out, unique_ptr<Operation> operation) {
     if (operation->getIsLeftAssociative()) {
@@ -40,7 +40,7 @@ void appendOperator(vector<unique_ptr<Operation>>& stack, vector<unique_ptr<Valu
 void appendOperator(vector<unique_ptr<Operation>>& stack, vector<unique_ptr<Value>>& out, Operation::Kind kind, const CodePosition& codePosition) {
     appendOperator(stack, out, make_unique<Operation>(codePosition, kind));
 }
-optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const vector<Token>& tokens, int& i, const string& skipDelimiter) {
+optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const vector<Token>& tokens, int& i) {
     vector<unique_ptr<Operation>> stack;
     vector<unique_ptr<Value>> out;
     bool endOfExpression = false;
@@ -101,11 +101,9 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                             } else {
                                 bool endOfArguments = false;
                                 do {
-                                    auto value = getValue(scope, tokens, i, "");
+                                    auto value = getValue(scope, tokens, i, {",", ")"});
                                     if (tokens[i].value == ")") {
                                         endOfArguments = true;
-                                    } else if (tokens[i].value != ",") {
-                                        errorMessage("expected ',' or ')' in function call, got " + tokens[i].value, tokens[i].codePosition);
                                     }
                                     templateCall->arguments.push_back(move(value));
                                     i += 1;
@@ -138,11 +136,9 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                     } else {
                         bool endOfArguments = false;
                         do {
-                            auto value = getValue(scope, tokens, i, "");
+                            auto value = getValue(scope, tokens, i, {",", ")"});
                             if (tokens[i].value == ")") {
                                 endOfArguments = true;
-                            } else if (tokens[i].value != ",") {
-                                errorMessage("expected ',' or ')' in function call, got " + tokens[i].value, tokens[i].codePosition);
                             }
                             functionCall->arguments.push_back(move(value));
                             i += 1;
@@ -289,7 +285,7 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                             return nullopt;
                         }
                         i += 1;
-                        auto argument = getValue(scope, tokens, i, ")");
+                        auto argument = getValue(scope, tokens, i, {")"}, true);
                         if (!argument) {
                             return nullopt;
                         }
@@ -301,11 +297,9 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                         auto staticArray = make_unique<StaticArrayValue>(tokens[i].codePosition);
                         bool endOfArray = false;
                         do {
-                            auto value = getValue(scope, tokens, i, "");
+                            auto value = getValue(scope, tokens, i, {",", "]"});
                             if (tokens[i].value == "]") {
                                 endOfArray = true;
-                            } else if (tokens[i].value != ",") {
-                                errorMessage("expected ',' or ']' in static array value, got " + tokens[i].value, tokens[i].codePosition);
                             }
                             staticArray->values.push_back(move(value));
                             i += 1;
@@ -361,10 +355,10 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                     if (isSubArrayIndexing) {
                         // subarray indexing ([x:y])
                         i += 1;
-                        auto value1 = getValue(scope, tokens, i, ":");
+                        auto value1 = getValue(scope, tokens, i, {":"}, true);
                         if (!value1) { return nullopt; }
 
-                        auto value2 = getValue(scope, tokens, i, "]");
+                        auto value2 = getValue(scope, tokens, i, {"]"}, true);
                         if (!value2) { return nullopt; }
 
                         auto subArrayOperation = make_unique<Operation>(tokens[i-1].codePosition, Operation::Kind::ArraySubArray);
@@ -374,7 +368,7 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                     } else {
                         // array index/offset ([x])
                         i += 1;
-                        auto value = getValue(scope, tokens, i, "]");
+                        auto value = getValue(scope, tokens, i, {"]"}, true);
                         if (!value) {
                             return nullopt;
                         }
@@ -464,9 +458,6 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
             break;
         }
     }
-    if (tokens[i].value == skipDelimiter) {
-        i += 1;
-    }
 
     while (stack.size() > 0) {
         if (stack.back()->kind == Operation::Kind::LeftBracket) {
@@ -504,10 +495,16 @@ unique_ptr<Value> solveReversePolishNotation(vector<unique_ptr<Value>>&& values)
     return move(stack.back());
 }
 
-unique_ptr<Value> getValue(Scope* scope, const vector<Token>& tokens, int& i, const string& skipDelimiter) {
-    auto reversePolishNotation = getReversePolishNotation(scope, tokens, i, skipDelimiter);
+unique_ptr<Value> getValue(Scope* scope, const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool skipOnGoodDelimiter) {
+    auto reversePolishNotation = getReversePolishNotation(scope, tokens, i);
     if (!reversePolishNotation) {
         return nullptr;
+    }
+    if (find(delimiters.begin(), delimiters.end(), tokens[i].value) != delimiters.end()) {
+        return nullptr;
+    }
+    if (skipOnGoodDelimiter) {
+        i += 1;
     }
     if (reversePolishNotation.value().empty()) {
         return make_unique<Value>(tokens[i].codePosition, Value::ValueKind::Empty);
@@ -584,7 +581,7 @@ unique_ptr<Type> getType(Scope* scope, const vector<Token>& tokens, int& i, cons
             }
         } else {
             i += 1;
-            auto sizeValue = getValue(scope, tokens, i, "]");
+            auto sizeValue = getValue(scope, tokens, i, {"]"}, true);
             auto elementType = getType(scope, tokens, i, delimiters, writeError);
             if (elementType && sizeValue) {
                 type = make_unique<StaticArrayType>(move(elementType), move(sizeValue));
@@ -742,7 +739,7 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
     // 2. for _array_ {}
     // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
     // 4. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
-    auto firstValue = getValue(this, tokens, i);
+    auto firstValue = getValue(this, tokens, i, {"{", ":", "&", ","});
     if (tokens[i].value == "{") {
         // 2. for _array_ {}
         ForEachData forEachData;
@@ -765,7 +762,7 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
             return errorMessage("unexpected end of a file (tried to interpret a for loop)", tokens[tokens.size()-1].codePosition);
         }
         i += 1; // now is on the start of var2
-        auto var2Value = getValue(this, tokens, i);
+        auto var2Value = getValue(this, tokens, i, {":", "&"});
         unique_ptr<Variable> var2(static_cast<Variable*>(var2Value.release()));
         if (!var2) {
             return errorMessage("expected a new index variable name", tokens[i-1].codePosition);
@@ -776,12 +773,8 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
             return false;
         }
         auto declarationType = declarationTypeOpt.value();
+        auto arrayValue = getValue(this, tokens, i, {"{"}, true);
 
-        auto arrayValue = getValue(this, tokens, i);
-        if (i >= tokens.size() || tokens[i].value != "{") {
-            return errorMessage("expected '{' (opening for scope)", tokens[i-1].codePosition);
-        }
-  
         ForEachData forEachData;
         forEachData.arrayValue = move(arrayValue);
         forEachData.it = move(var1);
@@ -789,22 +782,20 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
         forEachData.index = move(var2);
         forEachData.index->isConst = true;
         data = move(forEachData);
-        i += 1;
     } else {
         // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
         // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
         unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
-        if (!firstValue) {
+        if (!var1) {
             return errorMessage("expected a new for loop iterator variable name", tokens[i-1].codePosition);
         }
         
         auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
-        if (!declarationTypeOpt) {
-            return false;
-        }
+        if (!declarationTypeOpt) { return false; }
         auto declarationType = declarationTypeOpt.value();
 
-        auto secondValue = getValue(this, tokens, i, "");
+        auto secondValue = getValue(this, tokens, i, {":", "{"});
+        if (!secondValue) { return false; }
         if (tokens[i].value == "{") {
             // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
             ForEachData forEachData;
@@ -820,14 +811,21 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
         else if (tokens[i].value == ":") {
             // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
             i += 1;
+            auto thirdValue = getValue(this, tokens, i, {":", "{"});
+            if (!thirdValue) { return false; }
             ForIterData forIterData;
             forIterData.iterVariable = move(var1);
             forIterData.iterVariable->isConst = declarationType.isConst;
             forIterData.firstValue = move(secondValue);
-            forIterData.step = getValue(this, tokens, i, ":");
-            forIterData.lastValue = getValue(this, tokens, i, "{");
-        } else {
-            return errorMessage("expected '{' or ':', got " + tokens[i].value, tokens[i].codePosition);
+            if (tokens[i].value == "{") {
+                forIterData.step = make_unique<IntegerValue>(tokens[i].codePosition, 1);
+                forIterData.lastValue = move(thirdValue);
+            } else {
+                forIterData.step = move(thirdValue);
+                forIterData.lastValue = getValue(this, tokens, i, {"{"});
+                if (!forIterData.lastValue) { return false; }
+            }
+            i += 1; // skip '{'
         }
     }
 
@@ -835,17 +833,17 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
 }
 
 bool WhileScope::interpret(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(this, tokens, i, "{");
+    this->conditionExpression = getValue(this, tokens, i, {"{"}, true);
     return CodeScope::interpret(tokens, i);
 }
 
 bool IfScope::interpret(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(this, tokens, i, "{");
+    this->conditionExpression = getValue(this, tokens, i, {"{"}, true);
     return CodeScope::interpret(tokens, i);
 }
 
 bool ElseIfScope::interpret(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(this, tokens, i, "{");
+    this->conditionExpression = getValue(this, tokens, i, {"{"}, true);
     return CodeScope::interpret(tokens, i);
 }
 
@@ -920,7 +918,7 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
             return Scope::ReadStatementValue(true);
         }
         else {
-            auto value = getValue(this, tokens, i);
+            auto value = getValue(this, tokens, i, {";"}, true);
             if (!value) {
                 return false;
             }
@@ -975,7 +973,7 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                     operation = make_unique<Operation>(token.codePosition, Operation::Kind::Return);   break;
                 }
                 i += 1;
-                auto value = getValue(this, tokens, i);
+                auto value = getValue(this, tokens, i, {";"}, true);
                 if (value) {
                     operation->arguments.push_back(move(value));
                 }
@@ -1015,12 +1013,12 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                 declaration->variable.name = token.value;
                 declaration->variable.type = move(type);
                 i += 1;
-                declaration->value = getValue(this, tokens, i);
+                declaration->value = getValue(this, tokens, i, {";"}, true);
                 return Scope::ReadStatementValue(move(declaration));
             }
         }
         else {
-            auto value = getValue(this, tokens, i);
+            auto value = getValue(this, tokens, i, {";"}, true);
             if (!value) {
                 return false;
             }
