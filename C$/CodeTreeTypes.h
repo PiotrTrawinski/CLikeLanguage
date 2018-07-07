@@ -704,6 +704,17 @@ struct Scope : Statement {
         parentScope(parentScope)
     {}
 
+    virtual bool operator==(const Statement& scope) const {
+        if(typeid(scope) == typeid(*this)){
+            const auto& other = static_cast<const Scope&>(scope);
+            return this->owner == other.owner
+                //&& this->parentScope == other.parentScope
+                && Statement::operator==(other);
+        } else {
+            return false;
+        }
+    }
+
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
     virtual bool interpret(const std::vector<Token>& tokens, int& i)=0;
@@ -730,6 +741,17 @@ struct CodeScope : Scope {
 
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
 
+    virtual bool operator==(const Statement& scope) const {
+        if(typeid(scope) == typeid(*this)){
+            const auto& other = static_cast<const CodeScope&>(scope);
+            return this->isGlobalScope == other.isGlobalScope
+                && this->statements == other.statements
+                && Scope::operator==(other);
+        } else {
+            return false;
+        }
+    }
+
     bool isGlobalScope;
     std::vector<std::unique_ptr<Statement>> statements;
 };
@@ -738,6 +760,18 @@ struct ClassScope : Scope {
         Scope(position, Scope::Owner::Class, parentScope) 
     {}
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
+
+    virtual bool operator==(const Statement& scope) const {
+        if(typeid(scope) == typeid(*this)){
+            const auto& other = static_cast<const ClassScope&>(scope);
+            return this->name == other.name
+                && this->templateTypes == other.templateTypes
+                && this->declarations == other.declarations
+                && Scope::operator==(other);
+        } else {
+            return false;
+        }
+    }
 
     std::string name;
     std::vector<std::unique_ptr<TemplateType>> templateTypes;
@@ -749,16 +783,40 @@ struct ForIterData {
     std::unique_ptr<Value> firstValue;
     std::unique_ptr<Value> step;
     std::unique_ptr<Value> lastValue;
+
+    bool operator==(const ForIterData& other) const {
+        return this->iterVariable == other.iterVariable
+            && this->firstValue == other.firstValue
+            && this->step == other.step
+            && this->lastValue == other.lastValue;
+    }
 };
 struct ForEachData {
     std::unique_ptr<Value> arrayValue;
     std::unique_ptr<Variable> it;
     std::unique_ptr<Variable> index;
+
+    bool operator==(const ForEachData& other) const {
+        return this->arrayValue == other.arrayValue
+            && this->it == other.it
+            && this->index == other.index;
+    }
 };
 struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope) : 
         CodeScope(position, Scope::Owner::For, parentScope)
     {}
+
+    virtual bool operator==(const Statement& scope) const {
+        if(typeid(scope) == typeid(*this)){
+            const auto& other = static_cast<const ForScope&>(scope);
+            return this->data == other.data
+                && CodeScope::operator==(other);
+        } else {
+            return false;
+        }
+    }
+
     bool interpret(const std::vector<Token>& tokens, int& i);
     std::variant<ForIterData, ForEachData> data;
 };
@@ -767,6 +825,15 @@ struct WhileScope : CodeScope {
         CodeScope(position, Scope::Owner::While, parentScope) 
     {}
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
+    virtual bool operator==(const Statement& scope) const {
+        if(typeid(scope) == typeid(*this)){
+            const auto& other = static_cast<const WhileScope&>(scope);
+            return this->conditionExpression == other.conditionExpression
+                && CodeScope::operator==(other);
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Value> conditionExpression;
 };
 struct IfScope : CodeScope {
@@ -774,6 +841,15 @@ struct IfScope : CodeScope {
         CodeScope(position, Scope::Owner::If, parentScope) 
     {}
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
+    virtual bool operator==(const Statement& scope) const {
+        if(typeid(scope) == typeid(*this)){
+            const auto& other = static_cast<const IfScope&>(scope);
+            return this->conditionExpression == other.conditionExpression
+                && CodeScope::operator==(other);
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Value> conditionExpression;
 };
 struct ElseIfScope : CodeScope {
@@ -781,6 +857,15 @@ struct ElseIfScope : CodeScope {
         CodeScope(position, Scope::Owner::ElseIf, parentScope) 
     {}
     virtual bool interpret(const std::vector<Token>& tokens, int& i);
+    virtual bool operator==(const Statement& scope) const {
+        if(typeid(scope) == typeid(*this)){
+            const auto& other = static_cast<const ElseIfScope&>(scope);
+            return this->conditionExpression == other.conditionExpression
+                && CodeScope::operator==(other);
+        } else {
+            return false;
+        }
+    }
     std::unique_ptr<Value> conditionExpression;
 };
 struct ElseScope : CodeScope {

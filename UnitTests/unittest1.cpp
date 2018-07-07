@@ -18,6 +18,8 @@ wstring toWstring(Type* type, int indent=0, bool isStart=true, bool firstCall=tr
 wstring toWstring(Statement* statement, int indent=0, bool isStart=true, bool firstCall=true);
 wstring toWstring(Declaration* declaration, int indent=0, bool isStart=true, bool firstCall=true);
 wstring toWstring(Scope* scope, int indent=0, bool isStart=true, bool firstCall=true);
+wstring toWstring(CodeScope* scope, int indent=0, bool isStart=true, bool firstCall=true);
+wstring toWstring(ClassScope* scope, int indent=0, bool isStart=true, bool firstCall=true);
 wstring toWstring(Value* value, int indent=0, bool isStart=true, bool firstCall=true);
 wstring toWstring(FunctionValue* functionValue, int indent=0, bool isStart=true, bool firstCall=true);
 wstring toWstring(Operation* operation, int indent=0, bool isStart=true, bool firstCall=true);
@@ -239,7 +241,77 @@ wstring toWstring(Scope* scope, int indent, bool isStart, bool firstCall) {
         return toWstring((Statement*)scope, indent, isStart);
     }
     wstring str = L"";
+    str += strIndent(indent) + L"parentScope = " + toWstring((int)scope->parentScope) + L"\n";
+    if (scope->owner == Scope::Owner::Class){
+        return str + toWstring((ClassScope*)scope, indent, false, false);
+    } else {
+        return str + toWstring((CodeScope*)scope, indent, false, false);
+    }
+}
+wstring toWstring(const ForEachData* forEachData, int indent=0) {
+    wstring str = L"";
+    str += L"ForEachData {\n";
+    indent += INDENT_SIZE;
+    str += strIndent(indent) + L"arrayValue = " + toWstring(forEachData->arrayValue, indent, false) + L"\n";
+    str += strIndent(indent) + L"index = " + toWstring(forEachData->index, indent, false) + L"\n";
+    str += strIndent(indent) + L"it = " + toWstring(forEachData->it, indent, false) + L"\n";
+    return str + strIndent(indent-INDENT_SIZE) + L"}";
+}
+wstring toWstring(const ForIterData* forIterData, int indent=0) {
+    wstring str = L"";
+    str += L"ForIterData {\n";
+    indent += INDENT_SIZE;
+    str += strIndent(indent) + L"firstValue = " + toWstring(forIterData->firstValue, indent, false) + L"\n";
+    str += strIndent(indent) + L"step = " + toWstring(forIterData->step, indent, false) + L"\n";
+    str += strIndent(indent) + L"lastValue = " + toWstring(forIterData->lastValue, indent, false) + L"\n";
+    str += strIndent(indent) + L"iterVariable = " + toWstring(forIterData->iterVariable, indent, false) + L"\n";
+    return str + strIndent(indent-INDENT_SIZE) + L"}";
+}
+wstring toWstring(CodeScope* scope, int indent, bool isStart, bool firstCall) {
+    if (firstCall) {
+        return toWstring((Statement*)scope, indent, isStart);
+    }
+    wstring str = L"";
+    str += strIndent(indent) + L"statements = " + toWstring(scope->statements, indent) + L"\n";
+    switch (scope->owner) {
+    case Scope::Owner::Defer: return str + strIndent(indent-INDENT_SIZE) + L"} #Defer";
+    case Scope::Owner::Else: return str + strIndent(indent-INDENT_SIZE) + L"} #Else";
+    case Scope::Owner::None:
+        str += strIndent(indent) + L"owner = None\n";
+        break;
+    case Scope::Owner::Function:
+        str += strIndent(indent) + L"owner = Function\n";
+        break;
+    case Scope::Owner::If:
+        str += strIndent(indent) + L"condition = " + toWstring(((IfScope*)(scope))->conditionExpression, indent, false) + L"\n";
+        return str + strIndent(indent-INDENT_SIZE) + L"} #If";
+    case Scope::Owner::ElseIf:
+        str += strIndent(indent) + L"condition = " + toWstring(((ElseIfScope*)(scope))->conditionExpression, indent, false) + L"\n";
+        return str + strIndent(indent-INDENT_SIZE) + L"} #ElseIf";
+    case Scope::Owner::While:
+        str += strIndent(indent) + L"condition = " + toWstring(((WhileScope*)(scope))->conditionExpression, indent, false) + L"\n";
+        return str + strIndent(indent-INDENT_SIZE) + L"} #While";
+    case Scope::Owner::For:
+        const auto& data = ((ForScope*)(scope))->data;
+        if (holds_alternative<ForEachData>(data)) {
+            str += strIndent(indent) + L"data = " + toWstring(&get<ForEachData>(data), indent) + L"\n";
+        } else {
+            str += strIndent(indent) + L"data = " + toWstring(&get<ForIterData>(data), indent) + L"\n";
+        }
+        return str + strIndent(indent-INDENT_SIZE) + L"} #For";
+    }
+
     return str + strIndent(indent-INDENT_SIZE) + L"} #Scope";
+}
+wstring toWstring(ClassScope* scope, int indent, bool isStart, bool firstCall) {
+    if (firstCall) {
+        return toWstring((Statement*)scope, indent, isStart);
+    }
+    wstring str = L"";
+    str += strIndent(indent) + L"name = " + toWstring(scope->name) + L"\n";
+    str += strIndent(indent) + L"templateTypes = " + toWstring(scope->templateTypes, indent) + L"\n";
+    str += strIndent(indent) + L"declarations = " + toWstring(scope->declarations, indent) + L"\n";
+    return str + strIndent(indent-INDENT_SIZE) + L"} #ClassScope";
 }
 wstring toWstring(Value* value, int indent, bool isStart, bool firstCall) {
     if (firstCall) {
@@ -982,14 +1054,13 @@ namespace interpreting {
             Assert::AreEqual(i, 13);
         }
         TEST_METHOD(lambdaNoArgumentsImplicitReturnValue) {
-            // (){};
+            // (){}
             FileInfo fileInfo("fileName");
             vector<Token> tokens = {
                 {Token::Type::Symbol,  "(",   1, 1, &fileInfo},
                 {Token::Type::Symbol,  ")",   1, 2, &fileInfo},
                 {Token::Type::Symbol,  "{",   1, 3, &fileInfo},
                 {Token::Type::Symbol,  "}",   1, 4, &fileInfo},
-                {Token::Type::Symbol,  ";",   1, 5, &fileInfo},
             };
             int i = 0;
 
@@ -1003,10 +1074,10 @@ namespace interpreting {
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
-            Assert::AreEqual(i, 4);
+            Assert::AreEqual(i, 3);
         }
         TEST_METHOD(lambdaWithArgumentsImplicitReturnValue) {
-            // (x: i8, y: u8){};
+            // (x: i8, y: u8){}
             FileInfo fileInfo("fileName");
             vector<Token> tokens = {
                 {Token::Type::Symbol,  "(",  1, 1,  &fileInfo},
@@ -1020,7 +1091,6 @@ namespace interpreting {
                 {Token::Type::Symbol,  ")",  1, 9,  &fileInfo},
                 {Token::Type::Symbol,  "{",  1, 10, &fileInfo},
                 {Token::Type::Symbol,  "}",  1, 11, &fileInfo},
-                {Token::Type::Symbol,  ";",  1, 12, &fileInfo},
             };
             int i = 0;
 
@@ -1037,10 +1107,10 @@ namespace interpreting {
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
-            Assert::AreEqual(i, 11);
+            Assert::AreEqual(i, 10);
         }
         TEST_METHOD(lambdaNoArgumentsWithReturnValue) {
-            // ()->i32{};
+            // ()->i32{}
             FileInfo fileInfo("fileName");
             vector<Token> tokens = {
                 {Token::Type::Symbol,  "(",   1, 1, &fileInfo},
@@ -1050,7 +1120,6 @@ namespace interpreting {
                 {Token::Type::Label,  "i32",  1, 5, &fileInfo},
                 {Token::Type::Symbol,  "{",   1, 6, &fileInfo},
                 {Token::Type::Symbol,  "}",   1, 7, &fileInfo},
-                {Token::Type::Symbol,  ";",   1, 8, &fileInfo},
             };
             int i = 0;
 
@@ -1064,7 +1133,7 @@ namespace interpreting {
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
-            Assert::AreEqual(i, 7);
+            Assert::AreEqual(i, 6);
         }
     };
     TEST_CLASS(GetType) {
@@ -1479,6 +1548,252 @@ namespace interpreting {
             Assert::AreEqual(true, readStatement.operator bool());
             Assert::AreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(6, i);
+        }
+        TEST_METHOD(scopeEmpty) {
+            // {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Symbol, "{",   1, 1, &fileInfo},
+                {Token::Type::Symbol, "}",   1, 2, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<CodeScope>(tokens[0].codePosition, Scope::Owner::None, &scope);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(2, i);
+        }
+        TEST_METHOD(scopesInScope) {
+            // {{}{}}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Symbol, "{",   1, 1, &fileInfo},
+                {Token::Type::Symbol, "{",   1, 2, &fileInfo},
+                {Token::Type::Symbol, "}",   1, 3, &fileInfo},
+                {Token::Type::Symbol, "{",   1, 4, &fileInfo},
+                {Token::Type::Symbol, "}",   1, 5, &fileInfo},
+                {Token::Type::Symbol, "}",   1, 6, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<CodeScope>(tokens[0].codePosition, Scope::Owner::None, &scope);
+            statement->statements.push_back(make_unique<CodeScope>(tokens[1].codePosition, Scope::Owner::None, statement.get()));
+            statement->statements.push_back(make_unique<CodeScope>(tokens[3].codePosition, Scope::Owner::None, statement.get()));
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(6, i);
+        }
+        TEST_METHOD(deferScope) {
+            // defer {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Label, "defer", 1, 1, &fileInfo},
+                {Token::Type::Symbol, "{",    1, 6, &fileInfo},
+                {Token::Type::Symbol, "}",    1, 7, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<DeferScope>(tokens[0].codePosition, &scope);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(3, i);
+        }
+        TEST_METHOD(ifScope) {
+            // if 2 {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Label,  "if", 1, 1, &fileInfo},
+                {Token::Type::Integer, "2", 1, 3, &fileInfo},
+                {Token::Type::Symbol,  "{", 1, 4, &fileInfo},
+                {Token::Type::Symbol,  "}", 1, 5, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<IfScope>(tokens[0].codePosition, &scope);
+            statement->conditionExpression = make_unique<IntegerValue>(tokens[1].codePosition, 2);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(4, i);
+        }
+        TEST_METHOD(forScopeForEachImplicitIteratorAndIndex) {
+            // for x {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Label, "for", 1, 1, &fileInfo},
+                {Token::Type::Label,  "x",  1, 4, &fileInfo},
+                {Token::Type::Symbol, "{",  1, 5, &fileInfo},
+                {Token::Type::Symbol, "}",  1, 6, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            ForEachData data;
+            data.arrayValue = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.index = make_unique<Variable>(tokens[2].codePosition, "index");
+            data.index->isConst = true;
+            data.it = make_unique<Variable>(tokens[2].codePosition, "it");
+            data.it->isConst = true;
+            statement->data = move(data);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(4, i);
+        }
+        TEST_METHOD(forScopeForEachImplicitIndex) {
+            // for x := y {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Label, "for", 1, 1, &fileInfo},
+                {Token::Type::Label,  "x",  1, 4, &fileInfo},
+                {Token::Type::Symbol, ":",  1, 5, &fileInfo},
+                {Token::Type::Symbol, "=",  1, 6, &fileInfo},
+                {Token::Type::Label,  "y",  1, 7, &fileInfo},
+                {Token::Type::Symbol, "{",  1, 8, &fileInfo},
+                {Token::Type::Symbol, "}",  1, 9, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            ForEachData data;
+            data.arrayValue = make_unique<Variable>(tokens[4].codePosition, "y");
+            data.index = make_unique<Variable>(tokens[5].codePosition, "index");
+            data.index->isConst = true;
+            data.it = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.it->isConst = false;
+            statement->data = move(data);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(7, i);
+        }
+        TEST_METHOD(forScopeForEachAllExplicit) {
+            // for x, y :: z {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Label, "for", 1, 1,  &fileInfo},
+                {Token::Type::Label,  "x",  1, 4,  &fileInfo},
+                {Token::Type::Symbol, ",",  1, 5,  &fileInfo},
+                {Token::Type::Label,  "y",  1, 6,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 7,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 8,  &fileInfo},
+                {Token::Type::Label,  "z",  1, 9,  &fileInfo},
+                {Token::Type::Symbol, "{",  1, 10, &fileInfo},
+                {Token::Type::Symbol, "}",  1, 11, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            ForEachData data;
+            data.arrayValue = make_unique<Variable>(tokens[6].codePosition, "z");
+            data.index = make_unique<Variable>(tokens[3].codePosition, "y");
+            data.index->isConst = true;
+            data.it = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.it->isConst = true;
+            statement->data = move(data);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(9, i);
+        }
+        TEST_METHOD(forScopeForIterNoStep) {
+            // for x :: 1:5 {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Label, "for", 1, 1,  &fileInfo},
+                {Token::Type::Label,  "x",  1, 4,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 5,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 6,  &fileInfo},
+                {Token::Type::Integer,"1",  1, 7,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 8,  &fileInfo},
+                {Token::Type::Integer,"5",  1, 9,  &fileInfo},
+                {Token::Type::Symbol, "{",  1, 10, &fileInfo},
+                {Token::Type::Symbol, "}",  1, 11, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            ForIterData data;
+            data.iterVariable = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.iterVariable->isConst = true;
+            data.firstValue = make_unique<IntegerValue>(tokens[4].codePosition, 1);
+            data.step = make_unique<IntegerValue>(tokens[7].codePosition, 1);
+            data.lastValue = make_unique<IntegerValue>(tokens[6].codePosition, 5);
+            statement->data = move(data);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(9, i);
+        }
+        TEST_METHOD(forScopeForIterWithStep) {
+            // for x := 1:2:5 {}
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Label, "for", 1, 1,  &fileInfo},
+                {Token::Type::Label,  "x",  1, 4,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 5,  &fileInfo},
+                {Token::Type::Symbol, "=",  1, 6,  &fileInfo},
+                {Token::Type::Integer,"1",  1, 7,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 8,  &fileInfo},
+                {Token::Type::Integer,"2",  1, 9,  &fileInfo},
+                {Token::Type::Symbol, ":",  1, 10, &fileInfo},
+                {Token::Type::Integer,"5",  1, 11, &fileInfo},
+                {Token::Type::Symbol, "{",  1, 12, &fileInfo},
+                {Token::Type::Symbol, "}",  1, 13, &fileInfo},
+            };
+            int i = 0;
+
+            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            ForIterData data;
+            data.iterVariable = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.iterVariable->isConst = false;
+            data.firstValue = make_unique<IntegerValue>(tokens[4].codePosition, 1);
+            data.step = make_unique<IntegerValue>(tokens[6].codePosition, 2);
+            data.lastValue = make_unique<IntegerValue>(tokens[8].codePosition, 5);
+            statement->data = move(data);
+            auto expected = Scope::ReadStatementValue(move(statement));
+
+            auto readStatement = scope.readStatement(tokens, i);
+
+            Assert::AreEqual(true, readStatement.operator bool());
+            Assert::AreEqual(expected.statement, readStatement.statement);
+            Assert::AreEqual(11, i);
         }
     };
 }
