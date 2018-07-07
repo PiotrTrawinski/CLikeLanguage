@@ -74,7 +74,7 @@ unordered_map<string, unique_ptr<Keyword>> Keyword::keywordLabels = initializeKe
 Keyword* Keyword::get(const std::string& str) {
     try {
         return keywordLabels.at(str).get();
-    } catch (const std::out_of_range& oor) {
+    } catch (const std::out_of_range&) {
         return nullptr;
     }
 }
