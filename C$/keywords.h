@@ -42,7 +42,7 @@ struct ScopeStartKeyword : Keyword {
     };
 
     ScopeStartKeyword(Value value) :
-        Keyword(Keyword::Kind::TypeName),
+        Keyword(Keyword::Kind::ScopeStart),
         value(value)
     {}
 
@@ -54,7 +54,7 @@ struct FlowStatementKeyword : Keyword {
     };
 
     FlowStatementKeyword(Value value) :
-        Keyword(Keyword::Kind::TypeName),
+        Keyword(Keyword::Kind::FlowStatement),
         value(value)
     {}
 
@@ -66,7 +66,7 @@ struct SpecialValueKeyword : Keyword {
     };
 
     SpecialValueKeyword(Value value) :
-        Keyword(Keyword::Kind::TypeName),
+        Keyword(Keyword::Kind::SpecialValue),
         value(value)
     {}
 
