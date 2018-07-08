@@ -1,5 +1,6 @@
 #include <iostream>
 #include "parsing.h"
+#include "codeTreeCreating.h"
 #include "interpreting.h"
 
 using namespace std;
@@ -16,10 +17,16 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    auto globalScope = interpret(tokens.value());
+    auto globalScope = createCodeTree(tokens.value());
     if (!globalScope) {
-        cerr << "Compiling failed: there were errors during interpreting\n";
+        cerr << "Compiling failed: there were errors during code tree creating\n";
         return 3;
+    }
+
+    bool statusInterpreting = interpret(globalScope.value());
+    if (!statusInterpreting) {
+        cerr << "Compiling failed: there were errors during interpreting\n";
+        return 4;
     }
 
     return 0;

@@ -279,6 +279,7 @@ struct Operation : Value {
     static int numberOfArguments(Kind kind) {
         switch (kind) {
         case Kind::FunctionCall:
+        case Kind::Cast:
             return 0;
         case Kind::ArrayIndex:
         case Kind::ArraySubArray:
@@ -287,7 +288,6 @@ struct Operation : Value {
         case Kind::GetValue:
         case Kind::Allocation:
         case Kind::Deallocation:
-        case Kind::Cast:
         case Kind::BitNeg:
         case Kind::LogicalNot:
         case Kind::Minus:
