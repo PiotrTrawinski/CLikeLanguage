@@ -377,15 +377,19 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                     } else {
                         // static array
                         auto staticArray = make_unique<StaticArrayValue>(tokens[i].codePosition);
-                        bool endOfArray = false;
                         do {
+                            i += 1;
                             auto value = getValue(scope, tokens, i, {",", "]"});
-                            if (tokens[i].value == "]") {
-                                endOfArray = true;
+                            if (!value) {
+                                return nullopt;
+                            }
+                            if (value->valueKind == Value::ValueKind::Empty) {
+                                errorMessage("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
+                                return nullopt;
                             }
                             staticArray->values.push_back(move(value));
-                            i += 1;
-                        } while(!endOfArray);
+                        } while(tokens[i].value != "]");
+                        i += 1;
                         out.push_back(move(staticArray));
                         expectValue = false;
                     }

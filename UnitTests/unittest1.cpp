@@ -910,6 +910,66 @@ namespace interpreting {
             Assert::AreEqual(expected, actual.value());
             Assert::AreEqual(i, 6);
         }
+        TEST_METHOD(arrayValueSingleIntegerElement) {
+            //[7];
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Symbol, "[", 1, 1, &fileInfo},
+                {Token::Type::Integer,"7", 1, 2, &fileInfo},
+                {Token::Type::Symbol, "]", 1, 3, &fileInfo},
+                {Token::Type::Symbol, ";", 1, 4, &fileInfo},
+            };
+            int i = 0;
+
+            vector<unique_ptr<Value>> expected;
+            auto arrayValue = make_unique<StaticArrayValue>(tokens[0].codePosition);
+            arrayValue->values.push_back(make_unique<IntegerValue>(tokens[1].codePosition, 7));
+            expected.push_back(move(arrayValue));
+
+            auto actual = getReversePolishNotation(nullptr, tokens, i);
+
+            Assert::IsTrue(actual.has_value(), L"has value");
+            Assert::AreEqual(expected, actual.value());
+            Assert::AreEqual(i, 3);
+        }
+        TEST_METHOD(arrayValueMultipleDifferentValues) {
+            //[f(), [int](2.5)];
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Symbol, "[",  1, 1,  &fileInfo},
+                {Token::Type::Label,  "f",  1, 2,  &fileInfo},
+                {Token::Type::Symbol, "(",  1, 3,  &fileInfo},
+                {Token::Type::Symbol, ")",  1, 4,  &fileInfo},
+                {Token::Type::Symbol, ",",  1, 5,  &fileInfo},
+                {Token::Type::Symbol, "[",  1, 6,  &fileInfo},
+                {Token::Type::Label,  "i8", 1, 7,  &fileInfo},
+                {Token::Type::Symbol, "]",  1, 8,  &fileInfo},
+                {Token::Type::Symbol, "(",  1, 9,  &fileInfo},
+                {Token::Type::Float, "2.5", 1, 10, &fileInfo},
+                {Token::Type::Symbol, ")",  1, 11, &fileInfo},
+                {Token::Type::Symbol, "]",  1, 12, &fileInfo},
+                {Token::Type::Symbol, ";",  1, 13, &fileInfo},
+            };
+            int i = 0;
+
+            vector<unique_ptr<Value>> expected;
+            auto arrayValue = make_unique<StaticArrayValue>(tokens[0].codePosition);
+            arrayValue->values.push_back(make_unique<FunctionCallOperation>(tokens[1].codePosition));
+            ((FunctionCallOperation*)arrayValue->values.back().get())->function.name = "f";
+            auto castOperation = make_unique<CastOperation>(
+                tokens[5].codePosition,
+                make_unique<IntegerType>(IntegerType::Size::I8)
+            );
+            castOperation->arguments.push_back(make_unique<FloatValue>(tokens[9].codePosition, 2.5));
+            arrayValue->values.push_back(move(castOperation));
+            expected.push_back(move(arrayValue));
+
+            auto actual = getReversePolishNotation(nullptr, tokens, i);
+
+            Assert::IsTrue(actual.has_value(), L"has value");
+            Assert::AreEqual(expected, actual.value());
+            Assert::AreEqual(i, 12);
+        }
         TEST_METHOD(functionCallNoArguments) {
             FileInfo fileInfo("fileName");
             vector<Token> tokens = {
