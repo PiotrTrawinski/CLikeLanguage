@@ -1222,7 +1222,7 @@ bool CodeScope::interpret(const vector<Token>& tokens, int& i) {
 }
 
 
-optional<CodeScope> interpret(vector<Token> tokens) {
+optional<CodeScope> createCodeTree(vector<Token> tokens) {
     CodeScope globalScope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr, true);
 
     int i = 0;

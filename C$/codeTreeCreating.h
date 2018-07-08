@@ -8,4 +8,4 @@
 #include "CodeTreeTypes.h"
 #include "globalVariables.h"
 
-std::optional<CodeScope> interpret(std::vector<Token> tokens);
+std::optional<CodeScope> createCodeTree(std::vector<Token> tokens);

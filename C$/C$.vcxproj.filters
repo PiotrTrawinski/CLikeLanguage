@@ -30,6 +30,9 @@
     <ClCompile Include="codeTreeCreating.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="interpreting.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parsing.h">
@@ -57,6 +60,9 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="codeTreeCreating.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="interpreting.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
