@@ -882,6 +882,34 @@ namespace interpreting {
             Assert::AreEqual(expected, actual.value());
             Assert::AreEqual(i, 1);
         }
+        TEST_METHOD(castOperation) {
+            //[i8](y);
+            FileInfo fileInfo("fileName");
+            vector<Token> tokens = {
+                {Token::Type::Symbol, "[", 1, 1, &fileInfo},
+                {Token::Type::Label, "i8", 1, 2, &fileInfo},
+                {Token::Type::Symbol, "]", 1, 4, &fileInfo},
+                {Token::Type::Symbol, "(", 1, 5, &fileInfo},
+                {Token::Type::Label,  "y", 1, 6, &fileInfo},
+                {Token::Type::Symbol, ")", 1, 7, &fileInfo},
+                {Token::Type::Symbol, ";", 1, 8, &fileInfo},
+            };
+            int i = 0;
+
+            vector<unique_ptr<Value>> expected;
+            auto castOperation = make_unique<CastOperation>(
+                tokens[0].codePosition,
+                make_unique<IntegerType>(IntegerType::Size::I8)
+            );
+            castOperation->arguments.push_back(make_unique<Variable>(tokens[4].codePosition, "y"));
+            expected.push_back(move(castOperation));
+
+            auto actual = getReversePolishNotation(nullptr, tokens, i);
+
+            Assert::IsTrue(actual.has_value(), L"has value");
+            Assert::AreEqual(expected, actual.value());
+            Assert::AreEqual(i, 6);
+        }
         TEST_METHOD(functionCallNoArguments) {
             FileInfo fileInfo("fileName");
             vector<Token> tokens = {

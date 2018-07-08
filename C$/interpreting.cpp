@@ -341,6 +341,7 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                     expectValue = false;
                 }
                 else if (tokens[i].value == "[") {
+                    int firstSquereBracketIndex = i;
                     // static array ([x, y, z, ...]) or type cast ([T]())
                     int openSquereBrackets = 1;
                     int j = i+1;
@@ -364,15 +365,15 @@ optional<vector<unique_ptr<Value>>> getReversePolishNotation(Scope* scope, const
                         if (!type) {
                             return nullopt;
                         }
-                        i += 1;
+                        i += 2;
                         auto argument = getValue(scope, tokens, i, {")"}, true);
                         if (!argument) {
                             return nullopt;
                         }
-                        auto castOperation = make_unique<CastOperation>(tokens[i].codePosition, move(type));
+                        auto castOperation = make_unique<CastOperation>(tokens[firstSquereBracketIndex].codePosition, move(type));
                         castOperation->arguments.push_back(move(argument));
                         appendOperator(stack, out, move(castOperation));
-                        expectValue = true;
+                        expectValue = false;
                     } else {
                         // static array
                         auto staticArray = make_unique<StaticArrayValue>(tokens[i].codePosition);
