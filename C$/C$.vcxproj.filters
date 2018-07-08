@@ -21,13 +21,13 @@
     <ClCompile Include="parsing.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="interpreting.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Keywords.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="globalVariables.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="codeTreeCreating.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -50,13 +50,13 @@
     <ClInclude Include="CodePosition.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="interpreting.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="keywords.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="globalVariables.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="codeTreeCreating.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

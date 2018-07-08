@@ -5,7 +5,7 @@
 #include <fstream>
 #include <optional>
 #include "../C$/parsing.cpp"
-#include "../C$/interpreting.cpp"
+#include "../C$/codeTreeCreating.cpp"
 #include "../C$/keywords.cpp"
 #include "../C$/globalVariables.cpp"
 
@@ -750,7 +750,7 @@ namespace Parsing {
     };
 }
 
-namespace interpreting {
+namespace codeTreeCreating {
     TEST_CLASS(SolveReversePolishNotation) {
     public:
         TEST_METHOD(singleIntegerValue) {
