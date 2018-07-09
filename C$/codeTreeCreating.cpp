@@ -907,6 +907,7 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
     // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
     // 4. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
     auto firstValue = getValue(this, tokens, i, {"{", ":", "&", ","});
+    if (!firstValue) { return false; }
     if (tokens[i].value == "{") {
         // 2. for _array_ {}
         ForEachData forEachData;
@@ -941,6 +942,7 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
         }
         auto declarationType = declarationTypeOpt.value();
         auto arrayValue = getValue(this, tokens, i, {"{"}, true);
+        if (!arrayValue) { return false; }
 
         ForEachData forEachData;
         forEachData.arrayValue = move(arrayValue);
@@ -1003,11 +1005,17 @@ bool ForScope::interpret(const vector<Token>& tokens, int& i) {
 
 bool WhileScope::interpret(const vector<Token>& tokens, int& i) {
     this->conditionExpression = getValue(this, tokens, i, {"{"}, true);
+    if (!this->conditionExpression) {
+        return false;
+    }
     return CodeScope::interpret(tokens, i);
 }
 
 bool IfScope::interpret(const vector<Token>& tokens, int& i) {
     this->conditionExpression = getValue(this, tokens, i, {"{", "then"});
+    if (!this->conditionExpression) {
+        return false;
+    }
     if (tokens[i].value == "{") {
         i += 1;
         if (!CodeScope::interpret(tokens, i)) {
@@ -1044,7 +1052,6 @@ bool ElseScope::interpret(const vector<Token>& tokens, int& i) {
         statements.push_back(move(statementValue.statement));
         return true;
     }
-    //return CodeScope::interpret(tokens, i);
 }
 
 bool ClassScope::interpret(const vector<Token>& tokens, int& i) {
@@ -1105,7 +1112,9 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
         if (token.value == "{") {
             i += 1;
             auto codeScope = make_unique<CodeScope>(token.codePosition, Scope::Owner::None, this);
-            codeScope->interpret(tokens, i);
+            if (!codeScope->interpret(tokens, i)) {
+                return false;
+            }
             return Scope::ReadStatementValue(move(codeScope));
         }
         else if (token.value == "}") {
@@ -1151,7 +1160,9 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                     scope = make_unique<ForScope>(token.codePosition, this);    break;
                 }
                 i += 1;
-                scope->interpret(tokens, i);
+                if (!scope->interpret(tokens, i)) {
+                    return false;
+                }
                 return Scope::ReadStatementValue(move(scope));
             }
             case Keyword::Kind::FlowStatement:
@@ -1189,7 +1200,9 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                 }
                 i += 4;
                 auto classScope = make_unique<ClassScope>(token.codePosition, this);
-                classScope->interpret(tokens, i);
+                if (!classScope->interpret(tokens, i)) {
+                    return false;
+                }
                 return Scope::ReadStatementValue(move(classScope));
             } else {
                 // variable declaration
