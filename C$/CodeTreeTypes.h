@@ -693,7 +693,6 @@ struct Scope : Statement {
         For,
         While,
         If,
-        ElseIf,
         Else,
         Defer
     };
@@ -851,22 +850,7 @@ struct IfScope : CodeScope {
         }
     }
     std::unique_ptr<Value> conditionExpression;
-};
-struct ElseIfScope : CodeScope {
-    ElseIfScope(const CodePosition& position, Scope* parentScope) : 
-        CodeScope(position, Scope::Owner::ElseIf, parentScope) 
-    {}
-    virtual bool interpret(const std::vector<Token>& tokens, int& i);
-    virtual bool operator==(const Statement& scope) const {
-        if(typeid(scope) == typeid(*this)){
-            const auto& other = static_cast<const ElseIfScope&>(scope);
-            return this->conditionExpression == other.conditionExpression
-                && CodeScope::operator==(other);
-        } else {
-            return false;
-        }
-    }
-    std::unique_ptr<Value> conditionExpression;
+    std::unique_ptr<CodeScope> elseScope;
 };
 struct ElseScope : CodeScope {
     ElseScope(const CodePosition& position, Scope* parentScope) : 

@@ -38,7 +38,7 @@ struct TypeKeyword : Keyword {
 };
 struct ScopeStartKeyword : Keyword {
     enum class Value {
-        While, For, If, ElseIf, Else, Class, Defer
+        While, For, If, Else, Class, Defer
     };
 
     ScopeStartKeyword(Value value) :

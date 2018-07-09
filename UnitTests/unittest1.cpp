@@ -284,10 +284,8 @@ wstring toWstring(CodeScope* scope, int indent, bool isStart, bool firstCall) {
         break;
     case Scope::Owner::If:
         str += strIndent(indent) + L"condition = " + toWstring(((IfScope*)(scope))->conditionExpression, indent, false) + L"\n";
+        str += strIndent(indent) + L"elseScope = " + toWstring(((IfScope*)(scope))->elseScope, indent) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #If";
-    case Scope::Owner::ElseIf:
-        str += strIndent(indent) + L"condition = " + toWstring(((ElseIfScope*)(scope))->conditionExpression, indent, false) + L"\n";
-        return str + strIndent(indent-INDENT_SIZE) + L"} #ElseIf";
     case Scope::Owner::While:
         str += strIndent(indent) + L"condition = " + toWstring(((WhileScope*)(scope))->conditionExpression, indent, false) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #While";

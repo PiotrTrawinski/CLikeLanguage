@@ -40,7 +40,6 @@ namespace {
         keywordLabels["while"]    = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::While);
         keywordLabels["for"]      = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::For);
         keywordLabels["if"]       = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::If);
-        keywordLabels["elseIf"]   = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::ElseIf);
         keywordLabels["else"]     = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::Else);
         keywordLabels["class"]    = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::Class);
         keywordLabels["defer"]    = std::make_unique<ScopeStartKeyword>(ScopeStartKeyword::Value::Defer);

@@ -1007,17 +1007,44 @@ bool WhileScope::interpret(const vector<Token>& tokens, int& i) {
 }
 
 bool IfScope::interpret(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(this, tokens, i, {"{"}, true);
-    return CodeScope::interpret(tokens, i);
-}
-
-bool ElseIfScope::interpret(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(this, tokens, i, {"{"}, true);
-    return CodeScope::interpret(tokens, i);
+    this->conditionExpression = getValue(this, tokens, i, {"{", "then"});
+    if (tokens[i].value == "{") {
+        i += 1;
+        if (!CodeScope::interpret(tokens, i)) {
+            return false;
+        }
+    } else {
+        i += 1;
+        auto statementValue = readStatement(tokens, i);
+        if (statementValue.isScopeEnd) {
+            return errorMessage("unexpected '}' (trying to close unopened if scope)", tokens[i-1].codePosition);
+        } else if (!statementValue.statement) {
+            return false;
+        }
+        statements.push_back(move(statementValue.statement));
+    }
+    if (i < tokens.size() && tokens[i].value == "else") {
+        this->elseScope = make_unique<ElseScope>(tokens[i].codePosition, this->parentScope);
+        i += 1;
+        this->elseScope->interpret(tokens, i);
+    }
 }
 
 bool ElseScope::interpret(const vector<Token>& tokens, int& i) {
-    return CodeScope::interpret(tokens, i);
+    if (tokens[i].value == "{") {
+        i += 1;
+        return CodeScope::interpret(tokens, i);
+    } else {
+        auto statementValue = readStatement(tokens, i);
+        if (statementValue.isScopeEnd) {
+            return errorMessage("unexpected '}' (trying to close unopened else scope)", tokens[i-1].codePosition);
+        } else if (!statementValue.statement) {
+            return false;
+        }
+        statements.push_back(move(statementValue.statement));
+        return true;
+    }
+    //return CodeScope::interpret(tokens, i);
 }
 
 bool ClassScope::interpret(const vector<Token>& tokens, int& i) {
@@ -1116,10 +1143,8 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                     scope = make_unique<DeferScope>(token.codePosition, this);  break;
                 case ScopeStartKeyword::Value::If:
                     scope = make_unique<IfScope>(token.codePosition, this);     break;
-                case ScopeStartKeyword::Value::ElseIf:
-                    scope = make_unique<ElseIfScope>(token.codePosition, this); break;
                 case ScopeStartKeyword::Value::Else:
-                    scope = make_unique<ElseScope>(token.codePosition, this);   break;
+                    return errorMessage("start of an else scope not directly after an if scope", token.codePosition);
                 case ScopeStartKeyword::Value::While:
                     scope = make_unique<WhileScope>(token.codePosition, this);  break;
                 case ScopeStartKeyword::Value::For:
