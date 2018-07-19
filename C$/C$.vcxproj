@@ -116,24 +116,40 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Declaration.cpp" />
+    <ClCompile Include="DeclarationMap.cpp" />
+    <ClCompile Include="errorMessages.cpp" />
     <ClCompile Include="globalVariables.cpp" />
     <ClCompile Include="codeTreeCreating.cpp" />
     <ClCompile Include="interpreting.cpp" />
     <ClCompile Include="Keywords.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Operation.cpp" />
     <ClCompile Include="parsing.cpp" />
+    <ClCompile Include="Scope.cpp" />
+    <ClCompile Include="Statement.cpp" />
+    <ClCompile Include="Type.cpp" />
+    <ClCompile Include="Value.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CodePosition.h" />
+    <ClInclude Include="Declaration.h" />
+    <ClInclude Include="DeclarationMap.h" />
+    <ClInclude Include="errorMessages.h" />
     <ClInclude Include="FileInfo.h" />
     <ClInclude Include="globalVariables.h" />
     <ClInclude Include="codeTreeCreating.h" />
     <ClInclude Include="interpreting.h" />
     <ClInclude Include="keywords.h" />
+    <ClInclude Include="Operation.h" />
+    <ClInclude Include="operator==Utility.h" />
     <ClInclude Include="parsing.h" />
-    <ClInclude Include="CodeTreeTypes.h" />
+    <ClInclude Include="Scope.h" />
     <ClInclude Include="SourceStringLine.h" />
+    <ClInclude Include="Statement.h" />
     <ClInclude Include="Token.h" />
+    <ClInclude Include="Type.h" />
+    <ClInclude Include="Value.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

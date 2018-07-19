@@ -33,6 +33,30 @@
     <ClCompile Include="interpreting.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Operation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Type.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Value.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Statement.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Declaration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Scope.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DeclarationMap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="errorMessages.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parsing.h">
@@ -45,9 +69,6 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="SourceStringLine.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="CodeTreeTypes.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="CodePosition.h">
@@ -63,6 +84,33 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="interpreting.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Operation.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="operator==Utility.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Type.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Value.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Statement.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Declaration.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Scope.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DeclarationMap.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="errorMessages.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,8 +1,9 @@
 #pragma once
 #include <unordered_set>
 #include <memory>
+#include <vector>
 
-#include "CodeTreeTypes.h"
+#include "FileInfo.h"
 
 // this variables hold data, that others can point to. 
 struct GlobalVariables {
