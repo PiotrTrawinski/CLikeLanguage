@@ -5,9 +5,16 @@
 #include <fstream>
 #include <optional>
 #include "../C$/parsing.cpp"
-#include "../C$/codeTreeCreating.cpp"
+#include "../C$/Scope.cpp"
+#include "../C$/Type.cpp"
+#include "../C$/Statement.cpp"
+#include "../C$/errorMessages.cpp"
 #include "../C$/keywords.cpp"
+#include "../C$/Value.cpp"
+#include "../C$/Operation.cpp"
+#include "../C$/Declaration.cpp"
 #include "../C$/globalVariables.cpp"
+#include "../C$/DeclarationMap.cpp"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace std;
@@ -109,6 +116,9 @@ wstring toWstring(char c) {
     return result;
 }
 wstring toWstring(int i) {
+    return toWstring(to_string(i));
+}
+wstring toWstring(uint64_t i) {
     return toWstring(to_string(i));
 }
 wstring toWstring(double i) {
@@ -859,7 +869,8 @@ namespace codeTreeCreating {
             int i = 0;
 
             vector<unique_ptr<Value>> expected = {};
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::AreEqual(expected, actual.value());
             Assert::AreEqual(i, 0);
@@ -875,7 +886,8 @@ namespace codeTreeCreating {
             vector<unique_ptr<Value>> expected;
             expected.push_back(make_unique<FloatValue>(tokens[0].codePosition, 2.5));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::AreEqual(expected, actual.value());
             Assert::AreEqual(i, 1);
@@ -902,7 +914,8 @@ namespace codeTreeCreating {
             castOperation->arguments.push_back(make_unique<Variable>(tokens[4].codePosition, "y"));
             expected.push_back(move(castOperation));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -924,7 +937,8 @@ namespace codeTreeCreating {
             arrayValue->values.push_back(make_unique<IntegerValue>(tokens[1].codePosition, 7));
             expected.push_back(move(arrayValue));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -962,7 +976,8 @@ namespace codeTreeCreating {
             arrayValue->values.push_back(move(castOperation));
             expected.push_back(move(arrayValue));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -982,7 +997,8 @@ namespace codeTreeCreating {
             expected.push_back(make_unique<FunctionCallOperation>(tokens[0].codePosition));
             ((FunctionCallOperation*)expected.back().get())->function.name = "fun";
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::AreEqual(expected, actual.value());
             Assert::AreEqual(i, 3);
@@ -1004,7 +1020,8 @@ namespace codeTreeCreating {
             functionCall->function.name = "fun";
             expected.push_back(move(functionCall));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1030,7 +1047,8 @@ namespace codeTreeCreating {
             functionCall->function.name = "fun";
             expected.push_back(move(functionCall));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1061,7 +1079,8 @@ namespace codeTreeCreating {
             expected.push_back(make_unique<Operation>(tokens[4].codePosition, Operation::Kind::Add));
             expected.push_back(make_unique<Operation>(tokens[1].codePosition, Operation::Kind::ModAssign));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1095,7 +1114,8 @@ namespace codeTreeCreating {
             expected.push_back(make_unique<Operation>(tokens[6].codePosition, Operation::Kind::Sub));
             expected.push_back(make_unique<Operation>(tokens[1].codePosition, Operation::Kind::Lte));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1133,7 +1153,8 @@ namespace codeTreeCreating {
             expected.push_back(make_unique<Operation>(tokens[8].codePosition, Operation::Kind::Mul));
             expected.push_back(make_unique<Operation>(tokens[1].codePosition, Operation::Kind::Assign));
             
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1156,7 +1177,8 @@ namespace codeTreeCreating {
             auto lambda = make_unique<FunctionValue>(tokens[0].codePosition, move(lambdaType), nullptr);
             expected.push_back(move(lambda));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1189,7 +1211,8 @@ namespace codeTreeCreating {
             lambda->argumentNames = {"x", "y"};
             expected.push_back(move(lambda));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1215,7 +1238,8 @@ namespace codeTreeCreating {
             auto lambda = make_unique<FunctionValue>(tokens[0].codePosition, move(lambdaType), nullptr);
             expected.push_back(move(lambda));
 
-            auto actual = getReversePolishNotation(nullptr, tokens, i);
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getReversePolishNotation(tokens, i);
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
@@ -1234,7 +1258,8 @@ namespace codeTreeCreating {
 
             unique_ptr<Type> expected = make_unique<Type>(Type::Kind::Void);
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 1);
@@ -1252,7 +1277,8 @@ namespace codeTreeCreating {
                 make_unique<IntegerType>(IntegerType::Size::U16)
             );
 
-            auto actual = getType(nullptr, tokens, i, {":"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {":"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 2);
@@ -1273,7 +1299,8 @@ namespace codeTreeCreating {
                 make_unique<IntegerValue>(tokens[1].codePosition, 5)
             );
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 4);
@@ -1293,7 +1320,8 @@ namespace codeTreeCreating {
                 make_unique<IntegerType>(IntegerType::Size::I32)
             );
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 4);
@@ -1312,7 +1340,8 @@ namespace codeTreeCreating {
                 make_unique<IntegerType>(IntegerType::Size::I32)
             );
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 3);
@@ -1345,7 +1374,8 @@ namespace codeTreeCreating {
             ));
             unique_ptr<Type> expected = move(expectedFunction);
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 8);
@@ -1367,7 +1397,8 @@ namespace codeTreeCreating {
             expectedFunction->returnType = make_unique<FloatType>(FloatType::Size::F64);
             unique_ptr<Type> expected = move(expectedFunction);
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 5);
@@ -1393,7 +1424,8 @@ namespace codeTreeCreating {
             expectedFunction->argumentTypes.push_back(move(funtionArgument));
             unique_ptr<Type> expected = move(expectedFunction);
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 5);
@@ -1429,7 +1461,8 @@ namespace codeTreeCreating {
             expectedFunction->returnType = move(funtionReturn1);
             unique_ptr<Type> expected = move(expectedFunction);
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 14);
@@ -1476,7 +1509,8 @@ namespace codeTreeCreating {
             expectedFunction->argumentTypes.push_back(make_unique<ClassType>("U"));
             unique_ptr<Type> expected = move(expectedFunction);
 
-            auto actual = getType(nullptr, tokens, i, {";"});
+            CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
+            auto actual = scope.getType(tokens, i, {";"});
 
             Assert::AreEqual(expected, actual);
             Assert::AreEqual(i, 18);
