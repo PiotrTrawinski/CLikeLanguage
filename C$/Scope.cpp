@@ -223,7 +223,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 endOfExpression = true;
                 break;
             }
-            out.push_back(CharValue::Create(tokens[i].codePosition, stoi(tokens[i].value)));
+            out.push_back(CharValue::Create(tokens[i].codePosition, (int)tokens[i].value[0]));
             i += 1;
             expectValue = false;
             break;
