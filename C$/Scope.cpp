@@ -39,11 +39,11 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
     case Token::Type::Symbol:
         if (token.value == "{") {
             i += 1;
-            auto codeScope = make_unique<CodeScope>(token.codePosition, Scope::Owner::None, this);
+            auto codeScope = CodeScope::Create(token.codePosition, Scope::Owner::None, this);
             if (!codeScope->createCodeTree(tokens, i)) {
                 return false;
             }
-            return Scope::ReadStatementValue(move(codeScope));
+            return Scope::ReadStatementValue(codeScope);
         }
         else if (token.value == "}") {
             // end of scope
@@ -55,7 +55,7 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
             if (!value) {
                 return false;
             }
-            return Scope::ReadStatementValue(move(value));
+            return Scope::ReadStatementValue(value);
         }
     case Token::Type::Label:
         /// Possible legal uses of label at start of expression:
@@ -72,45 +72,45 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
             case Keyword::Kind::TypeName:
                 return errorMessage("statement cannot start with type name", token.codePosition);
             case Keyword::Kind::ScopeStart: {
-                unique_ptr<Scope> scope = nullptr;
+                Scope* scope = nullptr;
                 switch (((ScopeStartKeyword*)keyword)->value) {
                 case ScopeStartKeyword::Value::Class:
-                    scope = make_unique<ClassScope>(token.codePosition, this);  break;
+                    scope = ClassScope::Create(token.codePosition, this);  break;
                 case ScopeStartKeyword::Value::Defer:
-                    scope = make_unique<DeferScope>(token.codePosition, this);  break;
+                    scope = DeferScope::Create(token.codePosition, this);  break;
                 case ScopeStartKeyword::Value::If:
-                    scope = make_unique<IfScope>(token.codePosition, this);     break;
+                    scope = IfScope::Create(token.codePosition, this);     break;
                 case ScopeStartKeyword::Value::Else:
                     return errorMessage("start of an else scope not directly after an if scope", token.codePosition);
                 case ScopeStartKeyword::Value::While:
-                    scope = make_unique<WhileScope>(token.codePosition, this);  break;
+                    scope = WhileScope::Create(token.codePosition, this);  break;
                 case ScopeStartKeyword::Value::For:
-                    scope = make_unique<ForScope>(token.codePosition, this);    break;
+                    scope = ForScope::Create(token.codePosition, this);    break;
                 }
                 i += 1;
                 if (!scope->createCodeTree(tokens, i)) {
                     return false;
                 }
-                return Scope::ReadStatementValue(move(scope));
+                return Scope::ReadStatementValue(scope);
             }
             case Keyword::Kind::FlowStatement:
-                unique_ptr<Operation> operation = nullptr;
+                Operation* operation = nullptr;
                 switch (((FlowStatementKeyword*)keyword)->value) {
                 case FlowStatementKeyword::Value::Break:
-                    operation = make_unique<Operation>(token.codePosition, Operation::Kind::Break);    break;
+                    operation = Operation::Create(token.codePosition, Operation::Kind::Break);    break;
                 case FlowStatementKeyword::Value::Continue:
-                    operation = make_unique<Operation>(token.codePosition, Operation::Kind::Continue); break;
+                    operation = Operation::Create(token.codePosition, Operation::Kind::Continue); break;
                 case FlowStatementKeyword::Value::Remove:
-                    operation = make_unique<Operation>(token.codePosition, Operation::Kind::Remove);   break;
+                    operation = Operation::Create(token.codePosition, Operation::Kind::Remove);   break;
                 case FlowStatementKeyword::Value::Return:
-                    operation = make_unique<Operation>(token.codePosition, Operation::Kind::Return);   break;
+                    operation = Operation::Create(token.codePosition, Operation::Kind::Return);   break;
                 }
                 i += 1;
                 auto value = getValue(tokens, i, {";", "}"}, true);
                 if (value) {
-                    operation->arguments.push_back(move(value));
+                    operation->arguments.push_back(value);
                 }
-                return Scope::ReadStatementValue(move(operation));
+                return Scope::ReadStatementValue(operation);
             }
         }
         else if (i + 1 >= tokens.size()) {
@@ -127,26 +127,26 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                     return errorMessage("unexpected symbols in class declaration. Did you mean to use '::'?", tokens[i+1].codePosition);
                 }
                 i += 4;
-                auto classScope = make_unique<ClassScope>(token.codePosition, this);
+                auto classScope = ClassScope::Create(token.codePosition, this);
                 if (!classScope->createCodeTree(tokens, i)) {
                     return false;
                 }
-                return Scope::ReadStatementValue(move(classScope));
+                return Scope::ReadStatementValue(classScope);
             } else {
                 // variable declaration
                 bool declareByReference = tokens[i + 1].value == "&";
                 i += 2;
-                unique_ptr<Type> type = nullptr;
+                Type* type = nullptr;
                 if (tokens[i].value != ":" && tokens[i].value != "=") {
                     type = getType(tokens, i, {":", "=", ";"});
                     if (!type) {
                         return false;
                     }
                 }
-                auto declaration = make_unique<Declaration>(token.codePosition);
-                declaration->variable.isConst = tokens[i].value == ":";
-                declaration->variable.name = token.value;
-                declaration->variable.type = move(type);
+                auto declaration = Declaration::Create(token.codePosition);
+                declaration->variable->isConst = tokens[i].value == ":";
+                declaration->variable->name = token.value;
+                declaration->variable->type = type;
                 i += 1;
                 if (tokens[i - 1].value != ";") {
                     declaration->value = getValue(tokens, i, {";", "}"}, true);
@@ -154,7 +154,7 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                         return false;
                     }
                 }
-                return Scope::ReadStatementValue(move(declaration));
+                return Scope::ReadStatementValue(declaration);
             }
         }
         else {
@@ -162,30 +162,30 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
             if (!value) {
                 return false;
             }
-            return Scope::ReadStatementValue(move(value));
+            return Scope::ReadStatementValue(value);
         }
     }
 }
-void appendOperator(vector<unique_ptr<Operation>>& stack, vector<unique_ptr<Value>>& out, unique_ptr<Operation>&& operation) {
+void appendOperator(vector<Operation*>& stack, vector<Value*>& out, Operation* operation) {
     if (operation->getIsLeftAssociative()) {
         while (stack.size() > 0 && operation->getPriority() > stack.back()->getPriority()) {
-            out.push_back(move(stack.back()));
+            out.push_back(stack.back());
             stack.pop_back();
         }
     } else {
         while (stack.size() > 0 && operation->getPriority() >= stack.back()->getPriority()) {
-            out.push_back(move(stack.back()));
+            out.push_back(stack.back());
             stack.pop_back();
         }
     }
-    stack.push_back(move(operation));
+    stack.push_back(operation);
 }
-void appendOperator(vector<unique_ptr<Operation>>& stack, vector<unique_ptr<Value>>& out, Operation::Kind kind, const CodePosition& codePosition) {
-    appendOperator(stack, out, make_unique<Operation>(codePosition, kind));
+void appendOperator(vector<Operation*>& stack, vector<Value*>& out, Operation::Kind kind, const CodePosition& codePosition) {
+    appendOperator(stack, out, Operation::Create(codePosition, kind));
 }
-optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector<Token>& tokens, int& i) {
-    vector<unique_ptr<Operation>> stack;
-    vector<unique_ptr<Value>> out;
+optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& tokens, int& i) {
+    vector<Operation*> stack;
+    vector<Value*> out;
     bool endOfExpression = false;
     bool expectValue = true;
     int lastWasLambda = 0;
@@ -205,7 +205,7 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                 endOfExpression = true;
                 break;
             }
-            out.push_back(make_unique<IntegerValue>(tokens[i].codePosition, stoi(tokens[i].value)));
+            out.push_back(IntegerValue::Create(tokens[i].codePosition, stoi(tokens[i].value)));
             i += 1;
             expectValue = false;
             break;
@@ -214,7 +214,7 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                 endOfExpression = true;
                 break;
             }
-            out.push_back(make_unique<FloatValue>(tokens[i].codePosition, stod(tokens[i].value)));
+            out.push_back(FloatValue::Create(tokens[i].codePosition, stod(tokens[i].value)));
             i += 1;
             expectValue = false;
             break;
@@ -223,7 +223,7 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                 endOfExpression = true;
                 break;
             }
-            out.push_back(make_unique<CharValue>(tokens[i].codePosition, stoi(tokens[i].value)));
+            out.push_back(CharValue::Create(tokens[i].codePosition, stoi(tokens[i].value)));
             i += 1;
             expectValue = false;
             break;
@@ -232,7 +232,7 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                 endOfExpression = true;
                 break;
             }
-            out.push_back(make_unique<StringValue>(tokens[i].codePosition, tokens[i].value));
+            out.push_back(StringValue::Create(tokens[i].codePosition, tokens[i].value));
             i += 1;
             expectValue = false;
             break;
@@ -257,12 +257,12 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                     j += 1;
                 }
                 if (j < tokens.size()) {
-                    vector<unique_ptr<Type>> templateTypes;
+                    vector<Type*> templateTypes;
                     int k = i+2;
                     while (k < j) {
                         auto type = getType(tokens, k, {",", ">"}, false);
                         if (type) {
-                            templateTypes.push_back(move(type));
+                            templateTypes.push_back(type);
                             k += 1;
                         } else {
                             isTemplateFunctionCall = false;
@@ -270,9 +270,9 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                         }
                     }
                     if (isTemplateFunctionCall) {
-                        auto templateCall = make_unique<TemplateFunctionCallOperation>(tokens[i].codePosition);
-                        templateCall->templateTypes = move(templateTypes);
-                        templateCall->function.name = tokens[i].value;
+                        auto templateCall = TemplateFunctionCallOperation::Create(tokens[i].codePosition);
+                        templateCall->templateTypes = templateTypes;
+                        templateCall->function->name = tokens[i].value;
                         i = k;
                         if (tokens[i].value == "(") {
                             // read function arguments
@@ -287,11 +287,11 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                                     if (tokens[i].value == ")") {
                                         endOfArguments = true;
                                     }
-                                    templateCall->arguments.push_back(move(value));
+                                    templateCall->arguments.push_back(value);
                                     i += 1;
                                 } while(!endOfArguments);
                             }
-                            out.push_back(move(templateCall));
+                            out.push_back(templateCall);
                             lastWasLambda = 1;
                             expectValue = false;
                         } else {
@@ -314,8 +314,8 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                     expectValue = true;
                 } else if (tokens[i + 1].value == "(") {
                     // function call
-                    auto functionCall = make_unique<FunctionCallOperation>(tokens[i].codePosition);
-                    functionCall->function.name = tokens[i].value;
+                    auto functionCall = FunctionCallOperation::Create(tokens[i].codePosition);
+                    functionCall->function->name = tokens[i].value;
                     i += 2;
                     if (tokens[i].value == ")") {
                         i += 1;
@@ -327,17 +327,17 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                             if (tokens[i].value == ")") {
                                 endOfArguments = true;
                             }
-                            functionCall->arguments.push_back(move(value));
+                            functionCall->arguments.push_back(value);
                             i += 1;
                         } while(!endOfArguments);
                     }
-                    out.push_back(move(functionCall));
+                    out.push_back(functionCall);
                     expectValue = false;
                 } else {
                     // variable
-                    auto variable = make_unique<Variable>(tokens[i].codePosition);
+                    auto variable = Variable::Create(tokens[i].codePosition);
                     variable->name = tokens[i].value;
-                    out.push_back(move(variable));
+                    out.push_back(variable);
                     i += 1;
                     expectValue = false;
                 }
@@ -372,8 +372,8 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                     }
                     if ((wasColon || j==i+2) && j+1 < tokens.size() && (tokens[j].value+tokens[j+1].value == "->" || tokens[j].value == "{")) {
                         // function value (lambda)
-                        auto lambda = make_unique<FunctionValue>(tokens[i].codePosition, nullptr, this);
-                        auto lambdaType = make_unique<FunctionType>();
+                        auto lambda = FunctionValue::Create(tokens[i].codePosition, nullptr, this);
+                        auto lambdaType = FunctionType::Create();
                         i += 1;
                         if (tokens[i].value != ")") {
                             while (true) {
@@ -385,11 +385,15 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                                     errorMessage("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
                                     return nullopt;
                                 }
-                                lambda->argumentNames.push_back(tokens[i].value);
+                                int declarationStart = i;
+                                //lambda->argumentNames.push_back(tokens[i].value);
                                 i += 2;
                                 auto type = getType(tokens, i, {",", ")"});
                                 if (!type) { return nullopt; }
-                                lambdaType->argumentTypes.push_back(move(type));
+                                lambdaType->argumentTypes.push_back(type);
+                                lambda->arguments.push_back(Declaration::Create(tokens[declarationStart].codePosition));
+                                lambda->arguments.back()->variable->name = tokens[declarationStart].value;
+                                lambda->arguments.back()->variable->type = type;
                                 if (tokens[i].value == ")") {
                                     break;
                                 } else {
@@ -403,30 +407,30 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                             lambdaType->returnType = getType(tokens, i, {"{"});
                             if (!lambdaType->returnType) { return nullopt; }
                         } else {
-                            lambdaType->returnType = make_unique<Type>(Type::Kind::Void);
+                            lambdaType->returnType = Type::Create(Type::Kind::Void);
                         }
                         i += 1;
-                        lambda->type = move(lambdaType);
-                        if (!lambda->body.createCodeTree(tokens, i)) {
+                        lambda->type = lambdaType;
+                        if (!lambda->body->createCodeTree(tokens, i)) {
                             return nullopt;
                         }
-                        out.push_back(move(lambda));
+                        out.push_back(lambda);
                         lastWasLambda = 1;
                         expectValue = false;
                     } else {
                         // normal opening bracket
-                        stack.push_back(make_unique<Operation>(tokens[i++].codePosition, Operation::Kind::LeftBracket));
+                        stack.push_back(Operation::Create(tokens[i++].codePosition, Operation::Kind::LeftBracket));
                         openBracketsCount += 1;
                         expectValue = true;
                     }
                 }
                 else if (tokens[i].value == "<") {
                     // template function value
-                    auto templateFunction = make_unique<FunctionValue>(tokens[i].codePosition, nullptr, this);
-                    auto templateFunctionType = make_unique<TemplateFunctionType>();
+                    auto templateFunction = FunctionValue::Create(tokens[i].codePosition, nullptr, this);
+                    auto templateFunctionType = TemplateFunctionType::Create();
                     i += 1;
                     while (tokens[i].type == Token::Type::Label && tokens[i+1].value == ",") {
-                        templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+                        templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
                         i += 2;
                     }
                     if (tokens[i].type != Token::Type::Label) {
@@ -437,7 +441,7 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                         errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
                         return nullopt;
                     }
-                    templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+                    templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
                     i += 2;
                     if (tokens[i].value != "(") {
                         errorMessage("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
@@ -454,11 +458,15 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                                 errorMessage("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
                                 return nullopt;
                             }
-                            templateFunction->argumentNames.push_back(tokens[i].value);
+                            int declarationStart = i;
+                            //templateFunction->argumentNames.push_back(tokens[i].value);
                             i += 2;
                             auto type = getType(tokens, i, {",", ")"});
                             if (!type) { return nullopt; }
-                            templateFunctionType->argumentTypes.push_back(move(type));
+                            templateFunctionType->argumentTypes.push_back(type);
+                            templateFunction->arguments.push_back(Declaration::Create(tokens[declarationStart].codePosition));
+                            templateFunction->arguments.back()->variable->name = tokens[declarationStart].value;
+                            templateFunction->arguments.back()->variable->type = type;
                             if (tokens[i].value == ")") {
                                 break;
                             } else {
@@ -472,14 +480,14 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                         templateFunctionType->returnType = getType(tokens, i, {"{"});
                         if (!templateFunctionType->returnType) { return nullopt; }
                     } else {
-                        templateFunctionType->returnType = make_unique<Type>(Type::Kind::Void);
+                        templateFunctionType->returnType = Type::Create(Type::Kind::Void);
                     }
                     i += 1;
-                    templateFunction->type = move(templateFunctionType);
-                    if (!templateFunction->body.createCodeTree(tokens, i)) {
+                    templateFunction->type = templateFunctionType;
+                    if (!templateFunction->body->createCodeTree(tokens, i)) {
                         return nullopt;
                     }
-                    out.push_back(move(templateFunction));
+                    out.push_back(templateFunction);
                     lastWasLambda = 1;
                     expectValue = false;
                 }
@@ -513,13 +521,13 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                         if (!argument) {
                             return nullopt;
                         }
-                        auto castOperation = make_unique<CastOperation>(tokens[firstSquereBracketIndex].codePosition, move(type));
-                        castOperation->arguments.push_back(move(argument));
-                        appendOperator(stack, out, move(castOperation));
+                        auto castOperation = CastOperation::Create(tokens[firstSquereBracketIndex].codePosition, type);
+                        castOperation->arguments.push_back(argument);
+                        appendOperator(stack, out, castOperation);
                         expectValue = false;
                     } else {
                         // static array
-                        auto staticArray = make_unique<StaticArrayValue>(tokens[i].codePosition);
+                        auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);
                         do {
                             i += 1;
                             auto value = getValue(tokens, i, {",", "]"});
@@ -530,10 +538,10 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                                 errorMessage("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
                                 return nullopt;
                             }
-                            staticArray->values.push_back(move(value));
+                            staticArray->values.push_back(value);
                         } while(tokens[i].value != "]");
                         i += 1;
-                        out.push_back(move(staticArray));
+                        out.push_back(staticArray);
                         expectValue = false;
                     }
                 } else if (tokens[i].value == "-") {
@@ -560,7 +568,8 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
             } else {
                 if (tokens[i].value == ")" && openBracketsCount > 0) {
                     while (stack.size() > 0 && stack.back()->kind != Operation::Kind::LeftBracket) {
-                        out.push_back(move(stack.back()));
+                        //wcout << toWstring(stack.back()->kind) << '\n';
+                        out.push_back(stack.back());
                         stack.pop_back();
                     }
                     if (stack.size() <= 0) {
@@ -602,8 +611,8 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                         auto value2 = getValue(tokens, i, {"]"}, true);
                         if (!value2) { return nullopt; }
 
-                        auto subArrayOperation = make_unique<ArraySubArrayOperation>(tokens[i-1].codePosition, move(value1), move(value2));
-                        appendOperator(stack, out, move(subArrayOperation));
+                        auto subArrayOperation = ArraySubArrayOperation::Create(tokens[i-1].codePosition, value1, value2);
+                        appendOperator(stack, out, subArrayOperation);
                     } else {
                         // array index/offset ([x])
                         i += 1;
@@ -611,8 +620,8 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
                         if (!value) {
                             return nullopt;
                         }
-                        auto indexingOperation = make_unique<ArrayIndexOperation>(tokens[i-1].codePosition, move(value));
-                        appendOperator(stack, out, move(indexingOperation));
+                        auto indexingOperation = ArrayIndexOperation::Create(tokens[i-1].codePosition, value);
+                        appendOperator(stack, out, indexingOperation);
                     }
                     expectValue = false;
                 } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "&&") {
@@ -742,36 +751,36 @@ optional<vector<unique_ptr<Value>>> Scope::getReversePolishNotation(const vector
             errorMessage("incorrect bracketing '(' ')'", tokens[i-1].codePosition);
             return nullopt;
         }
-        out.push_back(move(stack.back()));
+        out.push_back(stack.back());
         stack.pop_back();
     }
 
     return out;
 }
-unique_ptr<Value> solveReversePolishNotation(vector<unique_ptr<Value>>&& values) {
-    vector<unique_ptr<Value>> stack;
+Value* solveReversePolishNotation(vector<Value*>& values) {
+    vector<Value*> stack;
 
     for (int i = 0; i < values.size(); ++i) {
         if (values[i]->valueKind == Value::ValueKind::Operation) {
-            unique_ptr<Operation> operation(static_cast<Operation*>(values[i].release()));
+            auto operation = (Operation*)values[i];
             int numberOfArguments = operation->getNumberOfArguments();
-            vector<unique_ptr<Value>> arguments;
+            vector<Value*> arguments;
             for (int i = 0; i < numberOfArguments; ++i) {
-                arguments.push_back(move(stack.back()));
+                arguments.push_back(stack.back());
                 stack.pop_back();
             }
             for (int i = 0; i < numberOfArguments; ++i) {
-                operation->arguments.push_back(move(arguments.back()));
+                operation->arguments.push_back(arguments.back());
                 arguments.pop_back();
             }
-            stack.push_back(move(operation));
+            stack.push_back(operation);
         } else {
-            stack.push_back(move(values[i]));
+            stack.push_back(values[i]);
         }
     }
-    return move(stack.back());
+    return stack.back();
 }
-unique_ptr<Value> Scope::getValue(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool skipOnGoodDelimiter) {
+Value* Scope::getValue(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool skipOnGoodDelimiter) {
     auto reversePolishNotation = getReversePolishNotation(tokens, i);
     if (!reversePolishNotation) {
         return nullptr;
@@ -798,12 +807,12 @@ unique_ptr<Value> Scope::getValue(const vector<Token>& tokens, int& i, const vec
         i += 1;
     }
     if (reversePolishNotation.value().empty()) {
-        return make_unique<Value>(tokens[i-1].codePosition, Value::ValueKind::Empty);
+        return Value::Create(tokens[i-1].codePosition, Value::ValueKind::Empty);
     }
-    return solveReversePolishNotation(move(reversePolishNotation.value()));
+    return solveReversePolishNotation(reversePolishNotation.value());
 }
-optional<vector<unique_ptr<Type>>> Scope::getFunctionArgumentTypes(const vector<Token>& tokens, int& i, bool writeError) {
-    vector<unique_ptr<Type>> types;
+optional<vector<Type*>> Scope::getFunctionArgumentTypes(const vector<Token>& tokens, int& i, bool writeError) {
+    vector<Type*> types;
     if (tokens[i].value == ")") {
         i += 1;
         return types;
@@ -813,7 +822,7 @@ optional<vector<unique_ptr<Type>>> Scope::getFunctionArgumentTypes(const vector<
         if (!type) {
             return nullopt;
         }
-        types.push_back(move(type));
+        types.push_back(type);
         if (tokens[i].value == ")") {
             i += 1;
             break;
@@ -826,58 +835,58 @@ optional<vector<unique_ptr<Type>>> Scope::getFunctionArgumentTypes(const vector<
     }
     return types;
 }
-unique_ptr<Type> Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool writeError) {
-    unique_ptr<Type> type = nullptr;
+Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool writeError) {
+    Type* type = nullptr;
     if (tokens[i].value == "!") {
         i += 1;
         auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
-            type = make_unique<OwnerPointerType>(move(underlyingType));
+            type = OwnerPointerType::Create(underlyingType);
         }
     } else if (tokens[i].value == "*") {
         i += 1;
         auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
-            type = make_unique<RawPointerType>(move(underlyingType));
+            type = RawPointerType::Create(underlyingType);
         }
     } else if (tokens[i].value == "&") {
         i += 1;
         auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
-            type = make_unique<ReferenceType>(move(underlyingType));
+            type = ReferenceType::Create(underlyingType);
         }
     } else if (tokens[i].value == "?") {
         i += 1;
         auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
-            type = make_unique<MaybeErrorType>(move(underlyingType));
+            type = MaybeErrorType::Create(underlyingType);
         }
     } else if (tokens[i].value == "[") {
         if (tokens[i + 1].value == "]") {
             i += 2;
             auto elementType = getType(tokens, i, delimiters, writeError);
             if (elementType) {
-                type = make_unique<DynamicArrayType>(move(elementType));
+                type = DynamicArrayType::Create(elementType);
             }
         } else if (tokens[i+1].value == "*" && tokens[i+2].value == "]") {
             i += 3;
             auto elementType = getType(tokens, i, delimiters, writeError);
             if (elementType) {
-                type = make_unique<ArrayViewType>(move(elementType));
+                type = ArrayViewType::Create(elementType);
             }
         } else {
             i += 1;
             auto sizeValue = getValue(tokens, i, {"]"}, true);
             auto elementType = getType(tokens, i, delimiters, writeError);
             if (elementType && sizeValue) {
-                type = make_unique<StaticArrayType>(move(elementType), move(sizeValue));
+                type = StaticArrayType::Create(elementType, sizeValue);
             }
         }
     } else if (tokens[i].value == "<") {
-        auto templateFunctionType = make_unique<TemplateFunctionType>();
+        auto templateFunctionType = TemplateFunctionType::Create();
         i += 1;
         while (tokens[i].type == Token::Type::Label && tokens[i+1].value == ",") {
-            templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+            templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
             i += 2;
         }
         if (tokens[i].type != Token::Type::Label) {
@@ -888,7 +897,7 @@ unique_ptr<Type> Scope::getType(const vector<Token>& tokens, int& i, const vecto
             if (writeError) errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
             return nullptr;
         }
-        templateFunctionType->templateTypes.push_back(make_unique<TemplateType>(tokens[i].value));
+        templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
         i += 2;
 
         if (tokens[i].value != "(") {
@@ -900,9 +909,9 @@ unique_ptr<Type> Scope::getType(const vector<Token>& tokens, int& i, const vecto
         if (!argumentTypesOpt) {
             return nullptr;
         }
-        templateFunctionType->argumentTypes = move(argumentTypesOpt.value());
+        templateFunctionType->argumentTypes = argumentTypesOpt.value();
         if (i+1 >= tokens.size() || tokens[i].value + tokens[i+1].value != "->") {
-            templateFunctionType->returnType = make_unique<Type>(Type::Kind::Void);
+            templateFunctionType->returnType = Type::Create(Type::Kind::Void);
         } else {
             i += 2;
             templateFunctionType->returnType = getType(tokens, i, delimiters, writeError);
@@ -910,17 +919,17 @@ unique_ptr<Type> Scope::getType(const vector<Token>& tokens, int& i, const vecto
                 return nullptr;
             }
         }
-        type = move(templateFunctionType);
+        type = templateFunctionType;
     } else if (tokens[i].value == "(") {
         i += 1;
-        auto functionType = make_unique<FunctionType>();
+        auto functionType = FunctionType::Create();
         auto argumentTypesOpt = getFunctionArgumentTypes(tokens, i, writeError);
         if (!argumentTypesOpt) {
             return nullptr;
         }
-        functionType->argumentTypes = move(argumentTypesOpt.value());
+        functionType->argumentTypes = argumentTypesOpt.value();
         if (i+1 >= tokens.size() || tokens[i].value + tokens[i+1].value != "->") {
-            functionType->returnType = make_unique<Type>(Type::Kind::Void);
+            functionType->returnType = Type::Create(Type::Kind::Void);
         } else {
             i += 2;
             functionType->returnType = getType(tokens, i, delimiters, writeError);
@@ -928,48 +937,48 @@ unique_ptr<Type> Scope::getType(const vector<Token>& tokens, int& i, const vecto
                 return nullptr;
             }
         }
-        type = move(functionType);
+        type = functionType;
     } else if (tokens[i].type == Token::Type::Label) {
         auto keyword = Keyword::get(tokens[i].value);
         if (keyword && keyword->kind == Keyword::Kind::TypeName) {
             auto typeValue = ((TypeKeyword*)keyword)->value;
             switch (typeValue) {
             case TypeKeyword::Value::Int:
-                type = make_unique<IntegerType>(IntegerType::Size::I32); break;
+                type = IntegerType::Create(IntegerType::Size::I32); break;
             case TypeKeyword::Value::I8:
-                type = make_unique<IntegerType>(IntegerType::Size::I8);  break;
+                type = IntegerType::Create(IntegerType::Size::I8);  break;
             case TypeKeyword::Value::I16:
-                type = make_unique<IntegerType>(IntegerType::Size::I16); break;
+                type = IntegerType::Create(IntegerType::Size::I16); break;
             case TypeKeyword::Value::I32:
-                type = make_unique<IntegerType>(IntegerType::Size::I32); break;
+                type = IntegerType::Create(IntegerType::Size::I32); break;
             case TypeKeyword::Value::I64:
-                type = make_unique<IntegerType>(IntegerType::Size::I64); break;
+                type = IntegerType::Create(IntegerType::Size::I64); break;
             case TypeKeyword::Value::U8:
-                type = make_unique<IntegerType>(IntegerType::Size::U8);  break;
+                type = IntegerType::Create(IntegerType::Size::U8);  break;
             case TypeKeyword::Value::U16:
-                type = make_unique<IntegerType>(IntegerType::Size::U16); break;
+                type = IntegerType::Create(IntegerType::Size::U16); break;
             case TypeKeyword::Value::U32:
-                type = make_unique<IntegerType>(IntegerType::Size::U32); break;
+                type = IntegerType::Create(IntegerType::Size::U32); break;
             case TypeKeyword::Value::U64:
-                type = make_unique<IntegerType>(IntegerType::Size::U64); break;
+                type = IntegerType::Create(IntegerType::Size::U64); break;
             case TypeKeyword::Value::Float:
-                type = make_unique<FloatType>(FloatType::Size::F64); break;
+                type = FloatType::Create(FloatType::Size::F64); break;
             case TypeKeyword::Value::F32:
-                type = make_unique<FloatType>(FloatType::Size::F64); break;
+                type = FloatType::Create(FloatType::Size::F64); break;
             case TypeKeyword::Value::F64:
-                type = make_unique<FloatType>(FloatType::Size::F64); break;
+                type = FloatType::Create(FloatType::Size::F64); break;
             case TypeKeyword::Value::Bool:
-                type = make_unique<Type>(Type::Kind::Bool); break;
+                type = Type::Create(Type::Kind::Bool); break;
             case TypeKeyword::Value::String:
-                type = make_unique<Type>(Type::Kind::String); break;
+                type = Type::Create(Type::Kind::String); break;
             case TypeKeyword::Value::Void:
-                type = make_unique<Type>(Type::Kind::Void); break;
+                type = Type::Create(Type::Kind::Void); break;
             default:
                 break;
             }
             i += 1;
         } else {
-            auto className = make_unique<ClassType>(tokens[i].value);
+            auto className = ClassType::Create(tokens[i].value);
             i += 1;
             if (tokens[i].value == "<") {
                 while (true) {
@@ -978,14 +987,14 @@ unique_ptr<Type> Scope::getType(const vector<Token>& tokens, int& i, const vecto
                     if (!templateType) {
                         return nullptr;
                     }
-                    className->templateTypes.push_back(move(templateType));
+                    className->templateTypes.push_back(templateType);
                     if (tokens[i].value == ">") {
                         break;
                     }
                 }
                 i += 1;
             }
-            type = move(className);
+            type = className;
         }
     } else {
         if (writeError) errorMessage("unexpected '" + tokens[i].value + "' during type interpreting", tokens[i].codePosition);
@@ -1038,7 +1047,7 @@ Declaration* Scope::findDeclaration(Variable* variable) {
             errorMessage("recursive variable dependency", variable->position);
             return nullptr;
         case Declaration::Status::Evaluated:
-            if (declarations[0]->variable.isConstexpr) {
+            if (declarations[0]->variable->isConstexpr) {
                 return declarations[0];
             } else {
                 if (parentScope == nullptr) {
@@ -1071,6 +1080,11 @@ CodeScope::CodeScope(const CodePosition& position, Scope::Owner owner, Scope* pa
     Scope(position, owner, parentScope),
     isGlobalScope(isGlobalScope)
 {}
+vector<unique_ptr<CodeScope>> CodeScope::objects;
+CodeScope* CodeScope::Create(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope) {
+    objects.emplace_back(make_unique<CodeScope>(position, owner, parentScope, isGlobalScope));
+    return objects.back().get();
+}
 bool CodeScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const CodeScope&>(scope);
@@ -1092,7 +1106,7 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
                     break;
                 }
             } else {
-                statements.push_back(move(statementValue.statement));
+                statements.push_back(statementValue.statement);
             }
         } else {
             return false;
@@ -1105,26 +1119,26 @@ bool CodeScope::interpret() {
         auto& statement = statements[i];
         switch (statement->kind) {
         case Statement::Kind::Declaration:{
-            Declaration* declaration = (Declaration*)statement.get();
+            Declaration* declaration = (Declaration*)statement;
             if (!declaration->interpret(this)) {
                 return false;
             }
             break;
         }
         case Statement::Kind::Scope: {
-            Scope* scope = (Scope*)statement.get();
+            Scope* scope = (Scope*)statement;
             if (!scope->interpret()) {
                 return false;
             }
             break;
         }
         case Statement::Kind::Value: {
-            Value* value = (Value*)statement.get();
+            Value* value = (Value*)statement;
             auto valueInterpret = value->interpret(this);
             if (!valueInterpret) {
                 return false;
             } else if (valueInterpret.value()) {
-                statement = move(valueInterpret.value());
+                statement = valueInterpret.value();
             }
             break;
         }
@@ -1135,8 +1149,8 @@ bool CodeScope::interpret() {
 Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
     for (int i = 0; i < statements.size(); ++i) {
         if (statements[i]->kind == Statement::Kind::Declaration) {
-            Declaration* declaration = (Declaration*)statements[i].get();
-            if (declaration->variable.name == name) {
+            Declaration* declaration = (Declaration*)statements[i];
+            if (declaration->variable->name == name) {
                 if (declaration->interpret(this, true)) {
                     return declaration;
                 } else {
@@ -1155,6 +1169,11 @@ Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
 ClassScope::ClassScope(const CodePosition& position, Scope* parentScope) : 
     Scope(position, Scope::Owner::Class, parentScope) 
 {}
+vector<unique_ptr<ClassScope>> ClassScope::objects;
+ClassScope* ClassScope::Create(const CodePosition& position, Scope* parentScope) {
+    objects.emplace_back(make_unique<ClassScope>(position, parentScope));
+    return objects.back().get();
+}
 bool ClassScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const ClassScope&>(scope);
@@ -1179,8 +1198,8 @@ bool ClassScope::createCodeTree(const vector<Token>& tokens, int& i) {
                 break;
             } else {
                 if (statementValue.statement->kind == Statement::Kind::Declaration) {
-                    unique_ptr<Declaration> declaration(static_cast<Declaration*>(statementValue.statement.release()));
-                    declarations.push_back(move(declaration));
+                    auto declaration = (Declaration*)statementValue.statement;
+                    declarations.push_back(declaration);
                 } else {
                     return errorMessage("non-declaration statement found in class scope", tokens[i-1].codePosition);
                 }
@@ -1206,6 +1225,11 @@ Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
 ForScope::ForScope(const CodePosition& position, Scope* parentScope) : 
     CodeScope(position, Scope::Owner::For, parentScope)
 {}
+vector<unique_ptr<ForScope>> ForScope::objects;
+ForScope* ForScope::Create(const CodePosition& position, Scope* parentScope) {
+    objects.emplace_back(make_unique<ForScope>(position, parentScope));
+    return objects.back().get();
+}
 bool ForScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const ForScope&>(scope);
@@ -1248,18 +1272,18 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     if (tokens[i].value == "{") {
         // 2. for _array_ {}
         ForEachData forEachData;
-        forEachData.arrayValue = move(firstValue);
-        forEachData.it = make_unique<Variable>(tokens[i].codePosition);
+        forEachData.arrayValue = firstValue;
+        forEachData.it = Variable::Create(tokens[i].codePosition);
         forEachData.it->name = "it";
         forEachData.it->isConst = true;
-        forEachData.index = make_unique<Variable>(tokens[i].codePosition);
+        forEachData.index = Variable::Create(tokens[i].codePosition);
         forEachData.index->name = "index";
         forEachData.index->isConst = true;
-        data = move(forEachData);
+        data = forEachData;
         i += 1;
     } else if(tokens[i].value == ",") {
         // 4. for var1, var2 _declarationType_ _array_ {}
-        unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
+        auto var1 = (Variable*)firstValue;
         if (!var1) {
             return errorMessage("expected a new element iterator variable name", tokens[i-1].codePosition);
         }
@@ -1268,7 +1292,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         }
         i += 1; // now is on the start of var2
         auto var2Value = getValue(tokens, i, {":", "&"});
-        unique_ptr<Variable> var2(static_cast<Variable*>(var2Value.release()));
+        auto var2 = (Variable*)var2Value;
         if (!var2) {
             return errorMessage("expected a new index variable name", tokens[i-1].codePosition);
         }
@@ -1282,16 +1306,16 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         if (!arrayValue) { return false; }
 
         ForEachData forEachData;
-        forEachData.arrayValue = move(arrayValue);
-        forEachData.it = move(var1);
+        forEachData.arrayValue = arrayValue;
+        forEachData.it = var1;
         forEachData.it->isConst = declarationType.isConst;
-        forEachData.index = move(var2);
+        forEachData.index = var2;
         forEachData.index->isConst = true;
-        data = move(forEachData);
+        data = forEachData;
     } else {
         // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
         // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
-        unique_ptr<Variable> var1(static_cast<Variable*>(firstValue.release()));
+        auto var1 = (Variable*)firstValue;
         if (!var1) {
             return errorMessage("expected a new for loop iterator variable name", tokens[i-1].codePosition);
         }
@@ -1305,13 +1329,13 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         if (tokens[i].value == "{") {
             // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
             ForEachData forEachData;
-            forEachData.arrayValue = move(secondValue);
-            forEachData.it = move(var1);
+            forEachData.arrayValue = secondValue;
+            forEachData.it = var1;
             forEachData.it->isConst = declarationType.isConst;
-            forEachData.index = make_unique<Variable>(tokens[i].codePosition);
+            forEachData.index = Variable::Create(tokens[i].codePosition);
             forEachData.index->name = "index";
             forEachData.index->isConst = true;
-            data = move(forEachData);
+            data = forEachData;
             i += 1;
         }
         else if (tokens[i].value == ":") {
@@ -1320,19 +1344,19 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             auto thirdValue = getValue(tokens, i, {":", "{"});
             if (!thirdValue) { return false; }
             ForIterData forIterData;
-            forIterData.iterVariable = move(var1);
+            forIterData.iterVariable = var1;
             forIterData.iterVariable->isConst = declarationType.isConst;
-            forIterData.firstValue = move(secondValue);
+            forIterData.firstValue = secondValue;
             if (tokens[i].value == "{") {
-                forIterData.step = make_unique<IntegerValue>(tokens[i].codePosition, 1);
-                forIterData.lastValue = move(thirdValue);
+                forIterData.step = IntegerValue::Create(tokens[i].codePosition, 1);
+                forIterData.lastValue = thirdValue;
             } else {
                 i += 1;
-                forIterData.step = move(thirdValue);
+                forIterData.step = thirdValue;
                 forIterData.lastValue = getValue(tokens, i, {"{"});
                 if (!forIterData.lastValue) { return false; }
             }
-            data = move(forIterData);
+            data = forIterData;
             i += 1; // skip '{'
         }
     }
@@ -1340,15 +1364,15 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return CodeScope::createCodeTree(tokens, i);
 }
 bool ForIterData::operator==(const ForIterData& other) const {
-    return this->iterVariable == other.iterVariable
-        && this->firstValue == other.firstValue
-        && this->step == other.step
-        && this->lastValue == other.lastValue;
+    return cmpPtr(this->iterVariable, other.iterVariable)
+        && cmpPtr(this->firstValue, other.firstValue)
+        && cmpPtr(this->step, other.step)
+        && cmpPtr(this->lastValue, other.lastValue);
 }
 bool ForEachData::operator==(const ForEachData& other) const {
-    return this->arrayValue == other.arrayValue
-        && this->it == other.it
-        && this->index == other.index;
+    return cmpPtr(this->arrayValue, other.arrayValue)
+        && cmpPtr(this->it, other.it)
+        && cmpPtr(this->index, other.index);
 }
 
 /*
@@ -1357,10 +1381,15 @@ bool ForEachData::operator==(const ForEachData& other) const {
 WhileScope::WhileScope(const CodePosition& position, Scope* parentScope) : 
     CodeScope(position, Scope::Owner::While, parentScope) 
 {}
+vector<unique_ptr<WhileScope>> WhileScope::objects;
+WhileScope* WhileScope::Create(const CodePosition& position, Scope* parentScope) {
+    objects.emplace_back(make_unique<WhileScope>(position, parentScope));
+    return objects.back().get();
+}
 bool WhileScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const WhileScope&>(scope);
-        return this->conditionExpression == other.conditionExpression
+        return cmpPtr(this->conditionExpression, other.conditionExpression)
             && CodeScope::operator==(other);
     } else {
         return false;
@@ -1381,10 +1410,15 @@ bool WhileScope::createCodeTree(const vector<Token>& tokens, int& i) {
 IfScope::IfScope(const CodePosition& position, Scope* parentScope) :
     CodeScope(position, Scope::Owner::If, parentScope) 
 {}
+vector<unique_ptr<IfScope>> IfScope::objects;
+IfScope* IfScope::Create(const CodePosition& position, Scope* parentScope) {
+    objects.emplace_back(make_unique<IfScope>(position, parentScope));
+    return objects.back().get();
+}
 bool IfScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const IfScope&>(scope);
-        return this->conditionExpression == other.conditionExpression
+        return cmpPtr(this->conditionExpression, other.conditionExpression)
             && CodeScope::operator==(other);
     } else {
         return false;
@@ -1408,10 +1442,10 @@ bool IfScope::createCodeTree(const vector<Token>& tokens, int& i) {
         } else if (!statementValue.statement) {
             return false;
         }
-        statements.push_back(move(statementValue.statement));
+        statements.push_back(statementValue.statement);
     }
     if (i < tokens.size() && tokens[i].value == "else") {
-        this->elseScope = make_unique<ElseScope>(tokens[i].codePosition, this->parentScope);
+        this->elseScope = ElseScope::Create(tokens[i].codePosition, this->parentScope);
         i += 1;
         if (!this->elseScope->createCodeTree(tokens, i)) {
             return false;
@@ -1427,6 +1461,11 @@ bool IfScope::createCodeTree(const vector<Token>& tokens, int& i) {
 ElseScope::ElseScope(const CodePosition& position, Scope* parentScope) : 
     CodeScope(position, Scope::Owner::Else, parentScope) 
 {}
+vector<unique_ptr<ElseScope>> ElseScope::objects;
+ElseScope* ElseScope::Create(const CodePosition& position, Scope* parentScope) {
+    objects.emplace_back(make_unique<ElseScope>(position, parentScope));
+    return objects.back().get();
+}
 bool ElseScope::createCodeTree(const vector<Token>& tokens, int& i) {
     if (tokens[i].value == "{") {
         i += 1;
@@ -1438,7 +1477,7 @@ bool ElseScope::createCodeTree(const vector<Token>& tokens, int& i) {
         } else if (!statementValue.statement) {
             return false;
         }
-        statements.push_back(move(statementValue.statement));
+        statements.push_back(statementValue.statement);
         return true;
     }
 }
@@ -1450,6 +1489,11 @@ bool ElseScope::createCodeTree(const vector<Token>& tokens, int& i) {
 DeferScope::DeferScope(const CodePosition& position, Scope* parentScope) : 
     CodeScope(position, Scope::Owner::Defer, parentScope) 
 {}
+vector<unique_ptr<DeferScope>> DeferScope::objects;
+DeferScope* DeferScope::Create(const CodePosition& position, Scope* parentScope) {
+    objects.emplace_back(make_unique<DeferScope>(position, parentScope));
+    return objects.back().get();
+}
 bool DeferScope::createCodeTree(const vector<Token>& tokens, int& i) {
     if (tokens[i].value == "{") {
         i += 1;
@@ -1461,7 +1505,7 @@ bool DeferScope::createCodeTree(const vector<Token>& tokens, int& i) {
         } else if (!statementValue.statement) {
             return false;
         }
-        statements.push_back(move(statementValue.statement));
+        statements.push_back(statementValue.statement);
         return true;
     }
 }

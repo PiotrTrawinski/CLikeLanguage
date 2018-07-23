@@ -19,69 +19,103 @@ struct Value : Statement {
     };
 
     Value(const CodePosition& position, ValueKind valueKind);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static Value* Create(const CodePosition& position, ValueKind valueKind);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
     ValueKind valueKind;
-    std::unique_ptr<Type> type = nullptr;
+    Type* type = nullptr;
     bool isConstexpr = false;
+    
+private:
+    static std::vector<std::unique_ptr<Value>> objects;
 };
 
 struct Variable : Value {
     Variable(const CodePosition& position, const std::string& name="");
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static Variable* Create(const CodePosition& position, const std::string& name="");
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
     std::string name;
     bool isConst = false;
+    
+private:
+    static std::vector<std::unique_ptr<Variable>> objects;
 };
 struct IntegerValue : Value {
-    IntegerValue(const CodePosition& position, int32_t value);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    IntegerValue(const CodePosition& position, uint64_t value);
+    static IntegerValue* Create(const CodePosition& position, uint64_t value);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
     uint64_t value;
+    
+private:
+    static std::vector<std::unique_ptr<IntegerValue>> objects;
 };
 struct CharValue : Value {
     CharValue(const CodePosition& position, uint8_t value);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static CharValue* Create(const CodePosition& position, uint8_t value);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
     uint8_t value;
+    
+private:
+    static std::vector<std::unique_ptr<CharValue>> objects;
 };
 struct FloatValue : Value {
     FloatValue(const CodePosition& position, double value);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static FloatValue* Create(const CodePosition& position, double value);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
     double value;
+    
+private:
+    static std::vector<std::unique_ptr<FloatValue>> objects;
 };
 struct StringValue : Value {
     StringValue(const CodePosition& position, const std::string& value);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static StringValue* Create(const CodePosition& position, const std::string& value);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
     std::string value;
+    
+private:
+    static std::vector<std::unique_ptr<StringValue>> objects;
 };
 struct StaticArrayValue : Value {
     StaticArrayValue(const CodePosition& position);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static StaticArrayValue* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
-    std::vector<std::unique_ptr<Value>> values;
+    std::vector<Value*> values;
+    
+private:
+    static std::vector<std::unique_ptr<StaticArrayValue>> objects;
 };
 struct FunctionValue : Value {
-    FunctionValue(const CodePosition& position, std::unique_ptr<Type>&& type, Scope* parentScope);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    FunctionValue(const CodePosition& position, Type* type, Scope* parentScope);
+    static FunctionValue* Create(const CodePosition& position, Type* type, Scope* parentScope);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
 
-    std::vector<std::string> argumentNames;
-    CodeScope body;
+    //std::vector<std::string> argumentNames;
+    std::vector<Declaration*> arguments;
+    
+    CodeScope* body = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<FunctionValue>> objects;
 };

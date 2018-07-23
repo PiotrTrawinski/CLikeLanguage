@@ -147,6 +147,9 @@ wstring toWstring(const CodePosition& codePosition, int indent=0) {
     return L"CodePostion("+toWstring((int)codePosition.fileInfo)+L","+toWstring(codePosition.lineNumber)+L","+toWstring(codePosition.charNumber)+ L")";
 }
 wstring toWstring(Type* type, int indent, bool isStart, bool firstCall) {
+    if (!type) {
+        return L"nullptr";
+    }
     wstring str = L"";
     if (isStart) str += L"\n";
     switch (type->kind) {
@@ -226,6 +229,9 @@ wstring toWstring(Type* type, int indent, bool isStart, bool firstCall) {
     }
 }
 wstring toWstring(Statement* statement, int indent, bool isStart, bool firstCall) {
+    if (!statement) {
+        return L"nullptr";
+    }
     wstring str = L"";
     if (isStart) str += L"\n";
     str += L"Statement {\n";
@@ -238,15 +244,21 @@ wstring toWstring(Statement* statement, int indent, bool isStart, bool firstCall
     }
 }
 wstring toWstring(Declaration* declaration, int indent, bool isStart, bool firstCall) {
+    if (!declaration) {
+        return L"nullptr";
+    }
     if (firstCall) {
-        return toWstring((Declaration*)declaration, indent, isStart);
+        return toWstring((Statement*)declaration, indent, isStart);
     }
     wstring str = L"";
-    str += strIndent(indent) + L"variable = " + toWstring(&declaration->variable, indent, false) + L"\n";
+    str += strIndent(indent) + L"variable = " + toWstring(declaration->variable, indent, false) + L"\n";
     str += strIndent(indent) + L"value = " + toWstring(declaration->value, indent, false) + L"\n";
     return str + strIndent(indent-INDENT_SIZE) + L"} #Declaration";
 }
 wstring toWstring(Scope* scope, int indent, bool isStart, bool firstCall) {
+    if (!scope) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)scope, indent, isStart);
     }
@@ -259,6 +271,9 @@ wstring toWstring(Scope* scope, int indent, bool isStart, bool firstCall) {
     }
 }
 wstring toWstring(const ForEachData* forEachData, int indent=0) {
+    if (!forEachData) {
+        return L"nullptr";
+    }
     wstring str = L"";
     str += L"ForEachData {\n";
     indent += INDENT_SIZE;
@@ -268,6 +283,9 @@ wstring toWstring(const ForEachData* forEachData, int indent=0) {
     return str + strIndent(indent-INDENT_SIZE) + L"}";
 }
 wstring toWstring(const ForIterData* forIterData, int indent=0) {
+    if (!forIterData) {
+        return L"nullptr";
+    }
     wstring str = L"";
     str += L"ForIterData {\n";
     indent += INDENT_SIZE;
@@ -278,6 +296,9 @@ wstring toWstring(const ForIterData* forIterData, int indent=0) {
     return str + strIndent(indent-INDENT_SIZE) + L"}";
 }
 wstring toWstring(CodeScope* scope, int indent, bool isStart, bool firstCall) {
+    if (!scope) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)scope, indent, isStart);
     }
@@ -312,6 +333,9 @@ wstring toWstring(CodeScope* scope, int indent, bool isStart, bool firstCall) {
     return str + strIndent(indent-INDENT_SIZE) + L"} #Scope";
 }
 wstring toWstring(ClassScope* scope, int indent, bool isStart, bool firstCall) {
+    if (!scope) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)scope, indent, isStart);
     }
@@ -322,6 +346,9 @@ wstring toWstring(ClassScope* scope, int indent, bool isStart, bool firstCall) {
     return str + strIndent(indent-INDENT_SIZE) + L"} #ClassScope";
 }
 wstring toWstring(Value* value, int indent, bool isStart, bool firstCall) {
+    if (!value) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)value, indent, isStart);
     }
@@ -359,15 +386,21 @@ wstring toWstring(Value* value, int indent, bool isStart, bool firstCall) {
     return str + strIndent(indent-INDENT_SIZE) + L"} #" + toWstring(typeName);
 }
 wstring toWstring(FunctionValue* value, int indent, bool isStart, bool firstCall) {
+    if (!value) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)value, indent, isStart);
     }
     wstring str = L"";
-    str += strIndent(indent) + L"argumentNames = " + toWstring(value->argumentNames) + L"\n";
-    str += strIndent(indent) + L"body = " + toWstring(&value->body, indent, false) + L"\n";
+    str += strIndent(indent) + L"arguments = " + toWstring(value->arguments, indent) + L"\n";
+    str += strIndent(indent) + L"body = " + toWstring(value->body, indent, false) + L"\n";
     return str + strIndent(indent-INDENT_SIZE) + L"} #FunctionValue";
 }
 wstring toWstring(Operation* operation, int indent, bool isStart, bool firstCall) {
+    if (!operation) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)operation, indent, isStart);
     }
@@ -384,10 +417,10 @@ wstring toWstring(Operation* operation, int indent, bool isStart, bool firstCall
         str += strIndent(indent) + L"secondIndex = " + toWstring(((ArraySubArrayOperation*)(operation))->secondIndex, indent, false) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #ArraySubArrayOperation";
     } else if (operation->kind == Operation::Kind::FunctionCall) {
-        str += strIndent(indent) + L"function = " + toWstring(&((FunctionCallOperation*)(operation))->function, indent, false) + L"\n";
+        str += strIndent(indent) + L"function = " + toWstring(((FunctionCallOperation*)(operation))->function, indent, false) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #FunctionCallOperation";
     } else if (operation->kind == Operation::Kind::TemplateFunctionCall) {
-        str += strIndent(indent) + L"function = " + toWstring(&((TemplateFunctionCallOperation*)(operation))->function, indent, false) + L"\n";
+        str += strIndent(indent) + L"function = " + toWstring(((TemplateFunctionCallOperation*)(operation))->function, indent, false) + L"\n";
         str += strIndent(indent) + L"templateTypes = " + toWstring(((TemplateFunctionCallOperation*)(operation))->templateTypes, indent) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #TemplateFunctionCallOperation";
     } else {
@@ -444,6 +477,9 @@ wstring toWstring(Operation* operation, int indent, bool isStart, bool firstCall
     }
 }
 wstring toWstring(StaticArrayValue* value, int indent, bool isStart, bool firstCall) {
+    if (!value) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)value, indent, isStart);
     }
@@ -452,6 +488,9 @@ wstring toWstring(StaticArrayValue* value, int indent, bool isStart, bool firstC
     return str + strIndent(indent-INDENT_SIZE) + L"} #StaticArrayValue";
 }
 wstring toWstring(Variable* value, int indent, bool isStart, bool firstCall) {
+    if (!value) {
+        return L"nullptr";
+    }
     if (firstCall) {
         return toWstring((Statement*)value, indent, isStart);
     }
@@ -482,16 +521,16 @@ namespace Microsoft::VisualStudio::CppUnitTestFramework {
     template<> wstring ToString<unordered_set<string>>(const unordered_set<string>& set) {
         return toWstringNewLines(set);
     }
-    template<> wstring ToString<unique_ptr<Value>>(const unique_ptr<Value>& value) {
+    template<> wstring ToString<Value>(Value* value) {
         return toWstring(value);
     }
-    template<> wstring ToString<vector<unique_ptr<Value>>>(const vector<unique_ptr<Value>>& value) {
+    template<> wstring ToString<vector<Value*>>(const vector<Value*>& value) {
         return toWstring(value);
     }
-    template<> wstring ToString<unique_ptr<Type>>(const unique_ptr<Type>& type) {
+    template<> wstring ToString<Type>(Type* type) {
         return toWstring(type);
     }
-    template<> wstring ToString<unique_ptr<Statement>>(const unique_ptr<Statement>& statement) {
+    template<> wstring ToString<Statement>(Statement* statement) {
         return toWstring(statement);
     }
 }
@@ -758,105 +797,113 @@ namespace Parsing {
     };
 }
 
+template<typename T> void AssertAreEqual(T* expected, T* actual) {
+    if (!cmpPtr(expected, actual)) {
+        Assert::AreEqual(expected, actual);
+    }
+}
+
 namespace codeTreeCreating {
     TEST_CLASS(SolveReversePolishNotation) {
     public:
         TEST_METHOD(singleIntegerValue) {
             CodePosition codePosition(nullptr, 0, 0);
-            vector<vector<unique_ptr<Value>>> values(2); // 0 -> for function; 1 -> for checking
+            vector<vector<Value*>> values(2); // 0 -> for function; 1 -> for checking
 
             for (int i = 0; i < 2; ++i) {
-                values[i].push_back(make_unique<IntegerValue>(codePosition, 3));
+                values[i].push_back(IntegerValue::Create(codePosition, 3));
             }
 
-            unique_ptr<Value> outValue = solveReversePolishNotation(move(values[0]));
-            Assert::AreEqual(values[1][0], outValue);
+            auto outValue = solveReversePolishNotation(values[0]);
+            AssertAreEqual(values[1][0], outValue);
         }
         TEST_METHOD(singleStaticArrayFloatValue) {
             CodePosition codePosition(nullptr, 0, 0);
-            vector<vector<unique_ptr<Value>>> values(2); // 0 -> for function; 1 -> for checking
+            vector<vector<Value*>> values(2); // 0 -> for function; 1 -> for checking
 
             for (int i = 0; i < 2; ++i) {
-                auto arrayValue = make_unique<StaticArrayValue>(codePosition);
-                arrayValue->values.push_back(make_unique<FloatValue>(codePosition, 2.5));
-                arrayValue->values.push_back(make_unique<FloatValue>(codePosition, 1));
-                values[i].push_back(move(arrayValue));
+                auto arrayValue = StaticArrayValue::Create(codePosition);
+                arrayValue->values.push_back(FloatValue::Create(codePosition, 2.5));
+                arrayValue->values.push_back(FloatValue::Create(codePosition, 1));
+                values[i].push_back(arrayValue);
             }
 
-            unique_ptr<Value> outValue = solveReversePolishNotation(move(values[0]));
-            Assert::AreEqual(values[1][0], outValue);
+            auto outValue = solveReversePolishNotation(values[0]);
+            AssertAreEqual(values[1][0], outValue);
         }
         TEST_METHOD(singleFunctionValue) {
             CodePosition codePosition(nullptr, 0, 0);
-            vector<vector<unique_ptr<Value>>> values(2); // 0 -> for function; 1 -> for checking
+            vector<vector<Value*>> values(2); // 0 -> for function; 1 -> for checking
 
             for (int i = 0; i < 2; ++i) {
-                auto functionType = make_unique<FunctionType>();
-                functionType->returnType = make_unique<Type>(Type::Kind::Void);
-                functionType->argumentTypes.push_back(make_unique<IntegerType>(IntegerType::Size::U16));
-                functionType->argumentTypes.push_back(make_unique<FloatType>(FloatType::Size::F32));
-                auto functionValue = make_unique<FunctionValue>(codePosition, move(functionType), nullptr);
-                functionValue->argumentNames.push_back("a");
-                functionValue->argumentNames.push_back("arg2");
-                values[i].push_back(move(functionValue));
+                auto functionType = FunctionType::Create();
+                functionType->returnType = Type::Create(Type::Kind::Void);
+                functionType->argumentTypes.push_back(IntegerType::Create(IntegerType::Size::U16));
+                functionType->argumentTypes.push_back(FloatType::Create(FloatType::Size::F32));
+                auto functionValue = FunctionValue::Create(codePosition, functionType, nullptr);
+                functionValue->arguments.push_back(Declaration::Create(codePosition));
+                functionValue->arguments.back()->variable->name = "a";
+                functionValue->arguments.push_back(Declaration::Create(codePosition));
+                functionValue->arguments.back()->variable->name = "arg2";
+                values[i].push_back(functionValue);
             }
 
-            unique_ptr<Value> outValue = solveReversePolishNotation(move(values[0]));
-            Assert::AreEqual(values[1][0], outValue);
+            auto outValue = solveReversePolishNotation(values[0]);
+            AssertAreEqual(values[1][0], outValue);
         }
         TEST_METHOD(adding2Integers) {
             // 2 + 3  --->  2 3 +
             CodePosition codePosition(nullptr, 0, 0);
 
-            vector<unique_ptr<Value>> values;
-            values.push_back(make_unique<IntegerValue>(codePosition, 2));
-            values.push_back(make_unique<IntegerValue>(codePosition, 3));
-            values.push_back(make_unique<Operation>(codePosition, Operation::Kind::Add));
+            vector<Value*> values;
+            values.push_back(IntegerValue::Create(codePosition, 2));
+            values.push_back(IntegerValue::Create(codePosition, 3));
+            values.push_back(Operation::Create(codePosition, Operation::Kind::Add));
 
-            unique_ptr<Operation> expectedOperation = make_unique<Operation>(codePosition, Operation::Kind::Add);
-            expectedOperation->arguments.push_back(make_unique<IntegerValue>(codePosition, 2));
-            expectedOperation->arguments.push_back(make_unique<IntegerValue>(codePosition, 3));
-            unique_ptr<Value> expected = move(expectedOperation);
+            auto expectedOperation = Operation::Create(codePosition, Operation::Kind::Add);
+            expectedOperation->arguments.push_back(IntegerValue::Create(codePosition, 2));
+            expectedOperation->arguments.push_back(IntegerValue::Create(codePosition, 3));
+            Value* expected = expectedOperation;
 
-            unique_ptr<Value> outValue = solveReversePolishNotation(move(values));
-            Assert::AreEqual(expected, outValue);
+            Value* outValue = solveReversePolishNotation(values);
+            AssertAreEqual(expected, outValue);
         }
         TEST_METHOD(getAddressOfVariable) {
             // @var  --->  var @
             CodePosition codePosition(nullptr, 0, 0);
 
-            vector<unique_ptr<Value>> values;
-            values.push_back(make_unique<Variable>(codePosition));
-            ((Variable*)(values.back().get()))->name = "var";
-            values.push_back(make_unique<Operation>(codePosition, Operation::Kind::Address));
+            vector<Value*> values;
+            values.push_back(Variable::Create(codePosition));
+            ((Variable*)(values.back()))->name = "var";
+            values.push_back(Operation::Create(codePosition, Operation::Kind::Address));
 
-            unique_ptr<Operation> expectedOperation = make_unique<Operation>(codePosition, Operation::Kind::Address);
-            expectedOperation->arguments.push_back(make_unique<Variable>(codePosition));
-            ((Variable*)(expectedOperation->arguments.back().get()))->name = "var";
-            unique_ptr<Value> expected = move(expectedOperation);
+            auto expectedOperation = Operation::Create(codePosition, Operation::Kind::Address);
+            expectedOperation->arguments.push_back(Variable::Create(codePosition));
+            ((Variable*)(expectedOperation->arguments.back()))->name = "var";
+            Value* expected = expectedOperation;
 
-            unique_ptr<Value> outValue = solveReversePolishNotation(move(values));
-            Assert::AreEqual(expected, outValue);
+            Value* outValue = solveReversePolishNotation(values);
+            AssertAreEqual(expected, outValue);
         }
         TEST_METHOD(getReferenceOfArrayElement) {
             // &tab[2]  --->  tab [2] &
             CodePosition codePosition(nullptr, 0, 0);
 
-            vector<unique_ptr<Value>> values;
-            values.push_back(make_unique<Variable>(codePosition));
-            ((Variable*)(values.back().get()))->name = "tab";
-            values.push_back(make_unique<ArrayIndexOperation>(codePosition, make_unique<IntegerValue>(codePosition, 2)));
-            values.push_back(make_unique<Operation>(codePosition, Operation::Kind::Reference));
+            vector<Value*> values;
+            values.push_back(Variable::Create(codePosition));
+            ((Variable*)(values.back()))->name = "tab";
+            values.push_back(ArrayIndexOperation::Create(codePosition, IntegerValue::Create(codePosition, 2)));
+            values.push_back(Operation::Create(codePosition, Operation::Kind::Reference));
 
-            unique_ptr<Operation> expectedOperation = make_unique<Operation>(codePosition, Operation::Kind::Reference);
-            expectedOperation->arguments.push_back(make_unique<ArrayIndexOperation>(codePosition, make_unique<IntegerValue>(codePosition, 2)));
-            auto variable = make_unique<Variable>(codePosition);
+            auto expectedOperation = Operation::Create(codePosition, Operation::Kind::Reference);
+            expectedOperation->arguments.push_back(ArrayIndexOperation::Create(codePosition, IntegerValue::Create(codePosition, 2)));
+            auto variable = Variable::Create(codePosition);
             variable->name = "tab";
-            ((Operation*)(expectedOperation->arguments.back().get()))->arguments.push_back(move(variable));
-            unique_ptr<Value> expected = move(expectedOperation);
+            ((Operation*)(expectedOperation->arguments.back()))->arguments.push_back(variable);
+            Value* expected = expectedOperation;
 
-            unique_ptr<Value> outValue = solveReversePolishNotation(move(values));
-            Assert::AreEqual(expected, outValue);
+            Value* outValue = solveReversePolishNotation(values);
+            AssertAreEqual(expected, outValue);
         }
     };
     TEST_CLASS(GetReversePolishNotation) {
@@ -868,7 +915,7 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected = {};
+            vector<Value*> expected = {};
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
 
@@ -883,8 +930,8 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            expected.push_back(make_unique<FloatValue>(tokens[0].codePosition, 2.5));
+            vector<Value*> expected;
+            expected.push_back(FloatValue::Create(tokens[0].codePosition, 2.5));
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -906,13 +953,13 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto castOperation = make_unique<CastOperation>(
+            vector<Value*> expected;
+            auto castOperation = CastOperation::Create(
                 tokens[0].codePosition,
-                make_unique<IntegerType>(IntegerType::Size::I8)
+                IntegerType::Create(IntegerType::Size::I8)
             );
-            castOperation->arguments.push_back(make_unique<Variable>(tokens[4].codePosition, "y"));
-            expected.push_back(move(castOperation));
+            castOperation->arguments.push_back(Variable::Create(tokens[4].codePosition, "y"));
+            expected.push_back(castOperation);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -932,10 +979,10 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto arrayValue = make_unique<StaticArrayValue>(tokens[0].codePosition);
-            arrayValue->values.push_back(make_unique<IntegerValue>(tokens[1].codePosition, 7));
-            expected.push_back(move(arrayValue));
+            vector<Value*> expected;
+            auto arrayValue = StaticArrayValue::Create(tokens[0].codePosition);
+            arrayValue->values.push_back(IntegerValue::Create(tokens[1].codePosition, 7));
+            expected.push_back(arrayValue);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -964,17 +1011,17 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto arrayValue = make_unique<StaticArrayValue>(tokens[0].codePosition);
-            arrayValue->values.push_back(make_unique<FunctionCallOperation>(tokens[1].codePosition));
-            ((FunctionCallOperation*)arrayValue->values.back().get())->function.name = "f";
-            auto castOperation = make_unique<CastOperation>(
+            vector<Value*> expected;
+            auto arrayValue = StaticArrayValue::Create(tokens[0].codePosition);
+            arrayValue->values.push_back(FunctionCallOperation::Create(tokens[1].codePosition));
+            ((FunctionCallOperation*)arrayValue->values.back())->function->name = "f";
+            auto castOperation = CastOperation::Create(
                 tokens[5].codePosition,
-                make_unique<IntegerType>(IntegerType::Size::I8)
+                IntegerType::Create(IntegerType::Size::I8)
             );
-            castOperation->arguments.push_back(make_unique<FloatValue>(tokens[9].codePosition, 2.5));
-            arrayValue->values.push_back(move(castOperation));
-            expected.push_back(move(arrayValue));
+            castOperation->arguments.push_back(FloatValue::Create(tokens[9].codePosition, 2.5));
+            arrayValue->values.push_back(castOperation);
+            expected.push_back(arrayValue);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -993,9 +1040,9 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            expected.push_back(make_unique<FunctionCallOperation>(tokens[0].codePosition));
-            ((FunctionCallOperation*)expected.back().get())->function.name = "fun";
+            vector<Value*> expected;
+            expected.push_back(FunctionCallOperation::Create(tokens[0].codePosition));
+            ((FunctionCallOperation*)expected.back())->function->name = "fun";
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1014,11 +1061,11 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto functionCall = make_unique<FunctionCallOperation>(tokens[0].codePosition);
-            functionCall->arguments.push_back(make_unique<IntegerValue>(tokens[2].codePosition, 27));
-            functionCall->function.name = "fun";
-            expected.push_back(move(functionCall));
+            vector<Value*> expected;
+            auto functionCall = FunctionCallOperation::Create(tokens[0].codePosition);
+            functionCall->arguments.push_back(IntegerValue::Create(tokens[2].codePosition, 27));
+            functionCall->function->name = "fun";
+            expected.push_back(functionCall);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1040,12 +1087,12 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto functionCall = make_unique<FunctionCallOperation>(tokens[0].codePosition);
-            functionCall->arguments.push_back(make_unique<IntegerValue>(tokens[2].codePosition, 27));
-            functionCall->arguments.push_back(make_unique<Variable>(tokens[4].codePosition, "x"));
-            functionCall->function.name = "fun";
-            expected.push_back(move(functionCall));
+            vector<Value*> expected;
+            auto functionCall = FunctionCallOperation::Create(tokens[0].codePosition);
+            functionCall->arguments.push_back(IntegerValue::Create(tokens[2].codePosition, 27));
+            functionCall->arguments.push_back(Variable::Create(tokens[4].codePosition, "x"));
+            functionCall->function->name = "fun";
+            expected.push_back(functionCall);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1070,14 +1117,14 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            expected.push_back(make_unique<Variable>(tokens[0].codePosition, "x"));
-            expected.push_back(make_unique<IntegerValue>(tokens[3].codePosition, 27));
-            expected.push_back(make_unique<FloatValue>(tokens[5].codePosition, 13.25));
-            expected.push_back(make_unique<Variable>(tokens[7].codePosition, "y"));
-            expected.push_back(make_unique<Operation>(tokens[6].codePosition, Operation::Kind::Mul));
-            expected.push_back(make_unique<Operation>(tokens[4].codePosition, Operation::Kind::Add));
-            expected.push_back(make_unique<Operation>(tokens[1].codePosition, Operation::Kind::ModAssign));
+            vector<Value*> expected;
+            expected.push_back(Variable::Create(tokens[0].codePosition, "x"));
+            expected.push_back(IntegerValue::Create(tokens[3].codePosition, 27));
+            expected.push_back(FloatValue::Create(tokens[5].codePosition, 13.25));
+            expected.push_back(Variable::Create(tokens[7].codePosition, "y"));
+            expected.push_back(Operation::Create(tokens[6].codePosition, Operation::Kind::Mul));
+            expected.push_back(Operation::Create(tokens[4].codePosition, Operation::Kind::Add));
+            expected.push_back(Operation::Create(tokens[1].codePosition, Operation::Kind::ModAssign));
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1104,15 +1151,15 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            expected.push_back(make_unique<Variable>(tokens[0].codePosition, "x"));
-            expected.push_back(make_unique<IntegerValue>(tokens[3].codePosition, 27));
-            expected.push_back(make_unique<FloatValue>(tokens[5].codePosition, 13.25));
-            expected.push_back(make_unique<Operation>(tokens[4].codePosition, Operation::Kind::Div));
-            expected.push_back(make_unique<Variable>(tokens[8].codePosition, "y"));
-            expected.push_back(make_unique<Operation>(tokens[7].codePosition, Operation::Kind::Minus));
-            expected.push_back(make_unique<Operation>(tokens[6].codePosition, Operation::Kind::Sub));
-            expected.push_back(make_unique<Operation>(tokens[1].codePosition, Operation::Kind::Lte));
+            vector<Value*> expected;
+            expected.push_back(Variable::Create(tokens[0].codePosition, "x"));
+            expected.push_back(IntegerValue::Create(tokens[3].codePosition, 27));
+            expected.push_back(FloatValue::Create(tokens[5].codePosition, 13.25));
+            expected.push_back(Operation::Create(tokens[4].codePosition, Operation::Kind::Div));
+            expected.push_back(Variable::Create(tokens[8].codePosition, "y"));
+            expected.push_back(Operation::Create(tokens[7].codePosition, Operation::Kind::Minus));
+            expected.push_back(Operation::Create(tokens[6].codePosition, Operation::Kind::Sub));
+            expected.push_back(Operation::Create(tokens[1].codePosition, Operation::Kind::Lte));
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1142,16 +1189,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            expected.push_back(make_unique<Variable>(tokens[0].codePosition, "x"));
-            expected.push_back(make_unique<Variable>(tokens[4].codePosition, "y"));
-            expected.push_back(make_unique<Operation>(tokens[3].codePosition, Operation::Kind::GetValue));
-            expected.push_back(make_unique<IntegerValue>(tokens[6].codePosition, 3));
-            expected.push_back(make_unique<Operation>(tokens[5].codePosition, Operation::Kind::Add));
-            expected.push_back(make_unique<Variable>(tokens[11].codePosition, "x"));
-            expected.push_back(make_unique<Operation>(tokens[9].codePosition, Operation::Kind::Reference));
-            expected.push_back(make_unique<Operation>(tokens[8].codePosition, Operation::Kind::Mul));
-            expected.push_back(make_unique<Operation>(tokens[1].codePosition, Operation::Kind::Assign));
+            vector<Value*> expected;
+            expected.push_back(Variable::Create(tokens[0].codePosition, "x"));
+            expected.push_back(Variable::Create(tokens[4].codePosition, "y"));
+            expected.push_back(Operation::Create(tokens[3].codePosition, Operation::Kind::GetValue));
+            expected.push_back(IntegerValue::Create(tokens[6].codePosition, 3));
+            expected.push_back(Operation::Create(tokens[5].codePosition, Operation::Kind::Add));
+            expected.push_back(Variable::Create(tokens[11].codePosition, "x"));
+            expected.push_back(Operation::Create(tokens[9].codePosition, Operation::Kind::Reference));
+            expected.push_back(Operation::Create(tokens[8].codePosition, Operation::Kind::Mul));
+            expected.push_back(Operation::Create(tokens[1].codePosition, Operation::Kind::Assign));
             
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1171,11 +1218,11 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto lambdaType = make_unique<FunctionType>();
-            lambdaType->returnType = make_unique<Type>(Type::Kind::Void);
-            auto lambda = make_unique<FunctionValue>(tokens[0].codePosition, move(lambdaType), nullptr);
-            expected.push_back(move(lambda));
+            vector<Value*> expected;
+            auto lambdaType = FunctionType::Create();
+            lambdaType->returnType = Type::Create(Type::Kind::Void);
+            auto lambda = FunctionValue::Create(tokens[0].codePosition, lambdaType, nullptr);
+            expected.push_back(lambda);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1202,14 +1249,19 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto lambdaType = make_unique<FunctionType>();
-            lambdaType->returnType = make_unique<Type>(Type::Kind::Void);
-            lambdaType->argumentTypes.push_back(make_unique<IntegerType>(IntegerType::Size::I8));
-            lambdaType->argumentTypes.push_back(make_unique<IntegerType>(IntegerType::Size::U8));
-            auto lambda = make_unique<FunctionValue>(tokens[0].codePosition, move(lambdaType), nullptr);
-            lambda->argumentNames = {"x", "y"};
-            expected.push_back(move(lambda));
+            vector<Value*> expected;
+            auto lambdaType = FunctionType::Create();
+            lambdaType->returnType = Type::Create(Type::Kind::Void);
+            lambdaType->argumentTypes.push_back(IntegerType::Create(IntegerType::Size::I8));
+            lambdaType->argumentTypes.push_back(IntegerType::Create(IntegerType::Size::U8));
+            auto lambda = FunctionValue::Create(tokens[0].codePosition, lambdaType, nullptr);
+            lambda->arguments.push_back(Declaration::Create(tokens[1].codePosition));
+            lambda->arguments.back()->variable->name = "x";
+            lambda->arguments.push_back(Declaration::Create(tokens[5].codePosition));
+            lambda->arguments.back()->variable->name = "y";
+            lambda->arguments[0]->variable->type = lambdaType->argumentTypes[0];
+            lambda->arguments[1]->variable->type = lambdaType->argumentTypes[1];
+            expected.push_back(lambda);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1232,11 +1284,11 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            vector<unique_ptr<Value>> expected;
-            auto lambdaType = make_unique<FunctionType>();
-            lambdaType->returnType = make_unique<IntegerType>(IntegerType::Size::I32);
-            auto lambda = make_unique<FunctionValue>(tokens[0].codePosition, move(lambdaType), nullptr);
-            expected.push_back(move(lambda));
+            vector<Value*> expected;
+            auto lambdaType = FunctionType::Create();
+            lambdaType->returnType = IntegerType::Create(IntegerType::Size::I32);
+            auto lambda = FunctionValue::Create(tokens[0].codePosition, lambdaType, nullptr);
+            expected.push_back(lambda);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1256,12 +1308,14 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            unique_ptr<Type> expected = make_unique<Type>(Type::Kind::Void);
+            Type* expected = Type::Create(Type::Kind::Void);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 1);
         }
         TEST_METHOD(pointerType) {
@@ -1273,14 +1327,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            unique_ptr<Type> expected = make_unique<RawPointerType>(
-                make_unique<IntegerType>(IntegerType::Size::U16)
+            Type* expected = RawPointerType::Create(
+                IntegerType::Create(IntegerType::Size::U16)
             );
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {":"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 2);
         }
         TEST_METHOD(staticArrayType) {
@@ -1294,15 +1350,17 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            unique_ptr<Type> expected = make_unique<StaticArrayType>(
-                make_unique<IntegerType>(IntegerType::Size::I32),
-                make_unique<IntegerValue>(tokens[1].codePosition, 5)
+            Type* expected = StaticArrayType::Create(
+                IntegerType::Create(IntegerType::Size::I32),
+                IntegerValue::Create(tokens[1].codePosition, 5)
             );
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 4);
         }
         TEST_METHOD(arrayViewType) {
@@ -1316,14 +1374,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            unique_ptr<Type> expected = make_unique<ArrayViewType>(
-                make_unique<IntegerType>(IntegerType::Size::I32)
+            Type* expected = ArrayViewType::Create(
+                IntegerType::Create(IntegerType::Size::I32)
             );
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 4);
         }
         TEST_METHOD(dynamicArrayType) {
@@ -1336,14 +1396,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            unique_ptr<Type> expected = make_unique<DynamicArrayType>(
-                make_unique<IntegerType>(IntegerType::Size::I32)
+            Type* expected = DynamicArrayType::Create(
+                IntegerType::Create(IntegerType::Size::I32)
             );
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 3);
         }
         TEST_METHOD(functionTypeImplicitVoidReturn) {
@@ -1362,22 +1424,24 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto expectedFunction = make_unique<FunctionType>();
-            expectedFunction->returnType = make_unique<Type>(Type::Kind::Void);
-            expectedFunction->argumentTypes.push_back(make_unique<MaybeErrorType>(
-                make_unique<IntegerType>(IntegerType::Size::I32)
+            auto expectedFunction = FunctionType::Create();
+            expectedFunction->returnType = Type::Create(Type::Kind::Void);
+            expectedFunction->argumentTypes.push_back(MaybeErrorType::Create(
+                IntegerType::Create(IntegerType::Size::I32)
             ));
-            expectedFunction->argumentTypes.push_back(make_unique<ReferenceType>(
-                make_unique<OwnerPointerType>(
-                    make_unique<Type>(Type::Kind::Void)
+            expectedFunction->argumentTypes.push_back(ReferenceType::Create(
+                OwnerPointerType::Create(
+                    Type::Create(Type::Kind::Void)
                 )
             ));
-            unique_ptr<Type> expected = move(expectedFunction);
+            Type* expected = expectedFunction;
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 8);
         }
         TEST_METHOD(functionTypeNoArgumentsWithReturnType) {
@@ -1393,14 +1457,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto expectedFunction = make_unique<FunctionType>();
-            expectedFunction->returnType = make_unique<FloatType>(FloatType::Size::F64);
-            unique_ptr<Type> expected = move(expectedFunction);
+            auto expectedFunction = FunctionType::Create();
+            expectedFunction->returnType = FloatType::Create(FloatType::Size::F64);
+            Type* expected = expectedFunction;
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 5);
         }
         TEST_METHOD(functionTypeFunctionArgumentImplicitVoidReturns) {
@@ -1416,18 +1482,20 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto expectedFunction = make_unique<FunctionType>();
-            auto funtionArgument = make_unique<FunctionType>();
-            funtionArgument->returnType = make_unique<Type>(Type::Kind::Void);
-            funtionArgument->argumentTypes.push_back(make_unique<IntegerType>(IntegerType::Size::I8));
-            expectedFunction->returnType = make_unique<Type>(Type::Kind::Void);
-            expectedFunction->argumentTypes.push_back(move(funtionArgument));
-            unique_ptr<Type> expected = move(expectedFunction);
+            auto expectedFunction = FunctionType::Create();
+            auto funtionArgument = FunctionType::Create();
+            funtionArgument->returnType = Type::Create(Type::Kind::Void);
+            funtionArgument->argumentTypes.push_back(IntegerType::Create(IntegerType::Size::I8));
+            expectedFunction->returnType = Type::Create(Type::Kind::Void);
+            expectedFunction->argumentTypes.push_back(funtionArgument);
+            Type* expected = expectedFunction;
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 5);
         }
         TEST_METHOD(functionTypeReturingFunctionReturningFuntion) {
@@ -1452,19 +1520,21 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto expectedFunction = make_unique<FunctionType>();
-            auto funtionReturn1 = make_unique<FunctionType>();
-            auto funtionReturn2 = make_unique<FunctionType>();
-            funtionReturn2->returnType = make_unique<Type>(Type::Kind::Void);
-            funtionReturn2->argumentTypes.push_back(make_unique<IntegerType>(IntegerType::Size::I64));
-            funtionReturn1->returnType = move(funtionReturn2);
-            expectedFunction->returnType = move(funtionReturn1);
-            unique_ptr<Type> expected = move(expectedFunction);
+            auto expectedFunction = FunctionType::Create();
+            auto funtionReturn1 = FunctionType::Create();
+            auto funtionReturn2 = FunctionType::Create();
+            funtionReturn2->returnType = Type::Create(Type::Kind::Void);
+            funtionReturn2->argumentTypes.push_back(IntegerType::Create(IntegerType::Size::I64));
+            funtionReturn1->returnType = funtionReturn2;
+            expectedFunction->returnType = funtionReturn1;
+            Type* expected = expectedFunction;
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 14);
         }
         TEST_METHOD(templateFunctionType) {
@@ -1493,30 +1563,32 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto expectedFunction = make_unique<TemplateFunctionType>();
-            expectedFunction->templateTypes.push_back(make_unique<TemplateType>("T"));
-            expectedFunction->templateTypes.push_back(make_unique<TemplateType>("U"));
-            auto returnType = make_unique<ReferenceType>(
-                make_unique<ClassType>("T")
+            auto expectedFunction = TemplateFunctionType::Create();
+            expectedFunction->templateTypes.push_back(TemplateType::Create("T"));
+            expectedFunction->templateTypes.push_back(TemplateType::Create("U"));
+            auto returnType = ReferenceType::Create(
+                ClassType::Create("T")
             );
-            ((ClassType*)(returnType->underlyingType.get()))->templateTypes.push_back(
-                make_unique<IntegerType>(IntegerType::Size::U8)
+            ((ClassType*)(returnType->underlyingType))->templateTypes.push_back(
+                IntegerType::Create(IntegerType::Size::U8)
             );
-            expectedFunction->returnType = move(returnType);
-            expectedFunction->argumentTypes.push_back(make_unique<OwnerPointerType>(
-                make_unique<ClassType>("T")
+            expectedFunction->returnType = returnType;
+            expectedFunction->argumentTypes.push_back(OwnerPointerType::Create(
+                ClassType::Create("T")
             ));
-            expectedFunction->argumentTypes.push_back(make_unique<ClassType>("U"));
-            unique_ptr<Type> expected = move(expectedFunction);
+            expectedFunction->argumentTypes.push_back(ClassType::Create("U"));
+            Type* expected = expectedFunction;
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getType(tokens, i, {";"});
 
-            Assert::AreEqual(expected, actual);
+            if (!cmpPtr(expected, actual)) {
+                Assert::AreEqual(expected, actual);
+            }
             Assert::AreEqual(i, 18);
         }
     };
-    TEST_CLASS(Scope__ReadStatementValue) {
+    TEST_CLASS(Scope__ReadStatement) {
     public:
         TEST_METHOD(declarationConstValueImplicit) {
             // x :: 3;
@@ -1531,16 +1603,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<Declaration>(tokens[0].codePosition);
-            statement->value = make_unique<IntegerValue>(tokens[3].codePosition, 3);
-            statement->variable.name = "x";
-            statement->variable.isConst = true;
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = Declaration::Create(tokens[0].codePosition);
+            statement->value = IntegerValue::Create(tokens[3].codePosition, 3);
+            statement->variable->name = "x";
+            statement->variable->isConst = true;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(5, i);
         }
         TEST_METHOD(declarationConstRefImplicit) {
@@ -1556,16 +1628,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<Declaration>(tokens[0].codePosition);
-            statement->value = make_unique<Variable>(tokens[3].codePosition, "y");
-            statement->variable.name = "x";
-            statement->variable.isConst = true;
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = Declaration::Create(tokens[0].codePosition);
+            statement->value = Variable::Create(tokens[3].codePosition, "y");
+            statement->variable->name = "x";
+            statement->variable->isConst = true;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(5, i);
         }
         TEST_METHOD(declarationValueImplicit) {
@@ -1581,16 +1653,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<Declaration>(tokens[0].codePosition);
-            statement->value = make_unique<Variable>(tokens[3].codePosition, "y");
-            statement->variable.name = "x";
-            statement->variable.isConst = false;
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = Declaration::Create(tokens[0].codePosition);
+            statement->value = Variable::Create(tokens[3].codePosition, "y");
+            statement->variable->name = "x";
+            statement->variable->isConst = false;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(5, i);
         }
         TEST_METHOD(declarationRefImplicit) {
@@ -1606,16 +1678,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<Declaration>(tokens[0].codePosition);
-            statement->value = make_unique<Variable>(tokens[3].codePosition, "y");
-            statement->variable.name = "x";
-            statement->variable.isConst = false;
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = Declaration::Create(tokens[0].codePosition);
+            statement->value = Variable::Create(tokens[3].codePosition, "y");
+            statement->variable->name = "x";
+            statement->variable->isConst = false;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(5, i);
         }
         TEST_METHOD(declarationWithTypeNoValue) {
@@ -1630,16 +1702,16 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<Declaration>(tokens[0].codePosition);
-            statement->variable.name = "x";
-            statement->variable.isConst = false;
-            statement->variable.type = make_unique<IntegerType>(IntegerType::Size::I8);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = Declaration::Create(tokens[0].codePosition);
+            statement->variable->name = "x";
+            statement->variable->isConst = false;
+            statement->variable->type = IntegerType::Create(IntegerType::Size::I8);
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(4, i);
         }
         TEST_METHOD(declarationWithTypeAndValue) {
@@ -1656,17 +1728,17 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<Declaration>(tokens[0].codePosition);
-            statement->variable.name = "x";
-            statement->variable.isConst = true;
-            statement->variable.type = make_unique<IntegerType>(IntegerType::Size::I8);
-            statement->value = make_unique<FloatValue>(tokens[4].codePosition, 2.5);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = Declaration::Create(tokens[0].codePosition);
+            statement->variable->name = "x";
+            statement->variable->isConst = true;
+            statement->variable->type = IntegerType::Create(IntegerType::Size::I8);
+            statement->value = FloatValue::Create(tokens[4].codePosition, 2.5);
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(6, i);
         }
         TEST_METHOD(scopeEmpty) {
@@ -1679,13 +1751,13 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<CodeScope>(tokens[0].codePosition, Scope::Owner::None, &scope);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = CodeScope::Create(tokens[0].codePosition, Scope::Owner::None, &scope);
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(2, i);
         }
         TEST_METHOD(scopesInScope) {
@@ -1702,15 +1774,15 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<CodeScope>(tokens[0].codePosition, Scope::Owner::None, &scope);
-            statement->statements.push_back(make_unique<CodeScope>(tokens[1].codePosition, Scope::Owner::None, statement.get()));
-            statement->statements.push_back(make_unique<CodeScope>(tokens[3].codePosition, Scope::Owner::None, statement.get()));
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = CodeScope::Create(tokens[0].codePosition, Scope::Owner::None, &scope);
+            statement->statements.push_back(CodeScope::Create(tokens[1].codePosition, Scope::Owner::None, statement));
+            statement->statements.push_back(CodeScope::Create(tokens[3].codePosition, Scope::Owner::None, statement));
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(6, i);
         }
         TEST_METHOD(deferScope) {
@@ -1724,13 +1796,13 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<DeferScope>(tokens[0].codePosition, &scope);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = DeferScope::Create(tokens[0].codePosition, &scope);
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(3, i);
         }
         TEST_METHOD(ifScope) {
@@ -1745,14 +1817,14 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<IfScope>(tokens[0].codePosition, &scope);
-            statement->conditionExpression = make_unique<IntegerValue>(tokens[1].codePosition, 2);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            auto statement = IfScope::Create(tokens[0].codePosition, &scope);
+            statement->conditionExpression = IntegerValue::Create(tokens[1].codePosition, 2);
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(4, i);
         }
         TEST_METHOD(forScopeForEachImplicitIteratorAndIndex) {
@@ -1767,20 +1839,20 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            auto statement = ForScope::Create(tokens[0].codePosition, &scope);
             ForEachData data;
-            data.arrayValue = make_unique<Variable>(tokens[1].codePosition, "x");
-            data.index = make_unique<Variable>(tokens[2].codePosition, "index");
+            data.arrayValue = Variable::Create(tokens[1].codePosition, "x");
+            data.index = Variable::Create(tokens[2].codePosition, "index");
             data.index->isConst = true;
-            data.it = make_unique<Variable>(tokens[2].codePosition, "it");
+            data.it = Variable::Create(tokens[2].codePosition, "it");
             data.it->isConst = true;
-            statement->data = move(data);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            statement->data = data;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(4, i);
         }
         TEST_METHOD(forScopeForEachImplicitIndex) {
@@ -1798,20 +1870,20 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            auto statement = ForScope::Create(tokens[0].codePosition, &scope);
             ForEachData data;
-            data.arrayValue = make_unique<Variable>(tokens[4].codePosition, "y");
-            data.index = make_unique<Variable>(tokens[5].codePosition, "index");
+            data.arrayValue = Variable::Create(tokens[4].codePosition, "y");
+            data.index = Variable::Create(tokens[5].codePosition, "index");
             data.index->isConst = true;
-            data.it = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.it = Variable::Create(tokens[1].codePosition, "x");
             data.it->isConst = false;
-            statement->data = move(data);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            statement->data = data;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(7, i);
         }
         TEST_METHOD(forScopeForEachAllExplicit) {
@@ -1831,20 +1903,20 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            auto statement = ForScope::Create(tokens[0].codePosition, &scope);
             ForEachData data;
-            data.arrayValue = make_unique<Variable>(tokens[6].codePosition, "z");
-            data.index = make_unique<Variable>(tokens[3].codePosition, "y");
+            data.arrayValue = Variable::Create(tokens[6].codePosition, "z");
+            data.index = Variable::Create(tokens[3].codePosition, "y");
             data.index->isConst = true;
-            data.it = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.it = Variable::Create(tokens[1].codePosition, "x");
             data.it->isConst = true;
-            statement->data = move(data);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            statement->data = data;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(9, i);
         }
         TEST_METHOD(forScopeForIterNoStep) {
@@ -1864,20 +1936,20 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            auto statement = ForScope::Create(tokens[0].codePosition, &scope);
             ForIterData data;
-            data.iterVariable = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.iterVariable = Variable::Create(tokens[1].codePosition, "x");
             data.iterVariable->isConst = true;
-            data.firstValue = make_unique<IntegerValue>(tokens[4].codePosition, 1);
-            data.step = make_unique<IntegerValue>(tokens[7].codePosition, 1);
-            data.lastValue = make_unique<IntegerValue>(tokens[6].codePosition, 5);
-            statement->data = move(data);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            data.firstValue = IntegerValue::Create(tokens[4].codePosition, 1);
+            data.step = IntegerValue::Create(tokens[7].codePosition, 1);
+            data.lastValue = IntegerValue::Create(tokens[6].codePosition, 5);
+            statement->data = data;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(9, i);
         }
         TEST_METHOD(forScopeForIterWithStep) {
@@ -1899,20 +1971,20 @@ namespace codeTreeCreating {
             };
             int i = 0;
 
-            auto statement = make_unique<ForScope>(tokens[0].codePosition, &scope);
+            auto statement = ForScope::Create(tokens[0].codePosition, &scope);
             ForIterData data;
-            data.iterVariable = make_unique<Variable>(tokens[1].codePosition, "x");
+            data.iterVariable = Variable::Create(tokens[1].codePosition, "x");
             data.iterVariable->isConst = false;
-            data.firstValue = make_unique<IntegerValue>(tokens[4].codePosition, 1);
-            data.step = make_unique<IntegerValue>(tokens[6].codePosition, 2);
-            data.lastValue = make_unique<IntegerValue>(tokens[8].codePosition, 5);
-            statement->data = move(data);
-            auto expected = Scope::ReadStatementValue(move(statement));
+            data.firstValue = IntegerValue::Create(tokens[4].codePosition, 1);
+            data.step = IntegerValue::Create(tokens[6].codePosition, 2);
+            data.lastValue = IntegerValue::Create(tokens[8].codePosition, 5);
+            statement->data = data;
+            auto expected = Scope::ReadStatementValue(statement);
 
             auto readStatement = scope.readStatement(tokens, i);
 
             Assert::AreEqual(true, readStatement.operator bool());
-            Assert::AreEqual(expected.statement, readStatement.statement);
+            AssertAreEqual(expected.statement, readStatement.statement);
             Assert::AreEqual(11, i);
         }
     };

@@ -2,6 +2,6 @@
 
 using namespace std;
 
-bool interpret(CodeScope& globalScope) {
-    return globalScope.interpret();
+bool interpret(CodeScope* globalScope) {
+    return globalScope->interpret();
 }

@@ -1,19 +1,7 @@
 #include "Operation.h"
 
 using namespace std;
-
-bool isSigned(IntegerType::Size size) {
-    switch (size) {
-    case IntegerType::Size::I8:
-    case IntegerType::Size::I16:
-    case IntegerType::Size::I32:
-    case IntegerType::Size::I64:
-        return true;
-    default:
-        return false;
-    }
-}
-
+/*
 optional<IntegerType::Size> getIntegerSize(IntegerType::Size size1, IntegerType::Size size2, CodePosition codePosition) {
     if (isSigned(size1) && isSigned(size2)) {
         if (size1 == IntegerType::Size::I64 || size2 == IntegerType::Size::I64) {
@@ -54,6 +42,7 @@ FloatType::Size getFloatSize(FloatType::Size size1, FloatType::Size size2) {
     }
 }
 
+*/
 
 /*
     Operation
@@ -62,11 +51,14 @@ Operation::Operation(const CodePosition& position, Kind kind) :
     Value(position, Value::ValueKind::Operation),
     kind(kind)
 {}
-
-optional<unique_ptr<Value>> Operation::interpret(Scope* scope) {
-    auto operation = (Operation*)this;
+vector<unique_ptr<Operation>> Operation::objects;
+Operation* Operation::Create(const CodePosition& position, Kind kind) {
+    objects.emplace_back(make_unique<Operation>(position, kind));
+    return objects.back().get();
+}
+optional<Value*> Operation::interpret(Scope* scope) {
     bool allArgsConstexpr = true;
-    for (auto& val : operation->arguments) {
+    for (auto& val : arguments) {
         if (!val->interpret(scope)) {
             return nullopt;
         }
@@ -79,13 +71,13 @@ optional<unique_ptr<Value>> Operation::interpret(Scope* scope) {
     //if (allArgsConstexpr) {
     //evaluate(operation->position, operation->arguments[0].get(), operation->arguments[1].get(), operationAdd);
     //} else {
-    operation->resolveTypeOfOperation();
-    if (!operation->type) {
+    resolveTypeOfOperation();
+    if (!type) {
         return nullopt;
     }
     //}
     if (allArgsConstexpr) {
-        operation->isConstexpr = true;
+        isConstexpr = true;
     }
     return nullptr;
 }
@@ -253,10 +245,15 @@ int Operation::getNumberOfArguments() {
 
 bool Operation::resolveTypeOfOperation() {
     if (getNumberOfArguments() == 2) {
-        auto type1 = this->arguments[0]->type.get();
-        auto type2 = this->arguments[1]->type.get();
+        auto type1 = arguments[0]->type;
+        auto type2 = arguments[1]->type;
 
-        if (type1->kind == Type::Kind::Integer && type2->kind == Type::Kind::Integer) {
+        type = Type::getSuitingArithmeticType(type1, type2);
+        if (type) {
+            return true;
+        }
+
+ /*       if (type1->kind == Type::Kind::Integer && type2->kind == Type::Kind::Integer) {
             auto integerSize = getIntegerSize(((IntegerType*)type1)->size,((IntegerType*)type2)->size, position);
             if (!integerSize) {
                 return false;
@@ -272,12 +269,12 @@ bool Operation::resolveTypeOfOperation() {
         }
         else if (type1->kind == Type::Kind::Float && type2->kind == Type::Kind::Integer) {
             type = type1->copy();
-        }
+        }*/
         else if (type1->kind == Type::Kind::Bool && type2->kind == Type::Kind::Bool) {
-            type = type1->copy();
+            type = type1;
         }
         else if (type1->kind == Type::Kind::String && type2->kind == Type::Kind::String) {
-            type = type1->copy();
+            type = type1;
         } 
         else {
             return errorMessage("cannot do 2 arg operation on thoes types", position);
@@ -301,7 +298,7 @@ bool Operation::operator==(const Statement& value) const {
     }
 }
 
-unique_ptr<Value> Operation::copy() {
+/*unique_ptr<Value> Operation::copy() {
     auto value = make_unique<Operation>(position, kind);
     value->type = type->copy();
     value->isConstexpr = isConstexpr;
@@ -309,31 +306,36 @@ unique_ptr<Value> Operation::copy() {
         value->arguments.push_back(argument->copy());
     }
     return value;
-}
+}*/
 
 
 
 /*
     CastOperation
 */
-CastOperation::CastOperation(const CodePosition& position, unique_ptr<Type>&& argType) : 
+CastOperation::CastOperation(const CodePosition& position, Type* argType) : 
     Operation(position, Operation::Kind::Cast),
-    argType(move(argType))
+    argType(argType)
 {}
-optional<unique_ptr<Value>> CastOperation::interpret(Scope* scope) {
+vector<unique_ptr<CastOperation>> CastOperation::objects;
+CastOperation* CastOperation::Create(const CodePosition& position, Type* argType) {
+    objects.emplace_back(make_unique<CastOperation>(position, argType));
+    return objects.back().get();
+}
+optional<Value*> CastOperation::interpret(Scope* scope) {
     return nullptr;
 }
 bool CastOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const CastOperation&>(value);
-        return this->argType == other.argType
+        return cmpPtr(this->argType, other.argType)
             && Operation::operator==(other);
     }
     else {
         return false;
     }
 }
-unique_ptr<Value> CastOperation::copy() {
+/*unique_ptr<Value> CastOperation::copy() {
     auto value = make_unique<CastOperation>(position, argType->copy());
     value->type = type->copy();
     value->isConstexpr = isConstexpr;
@@ -341,30 +343,35 @@ unique_ptr<Value> CastOperation::copy() {
         value->arguments.push_back(argument->copy());
     }
     return value;
-}
+}*/
 
 
 /*
     ArrayIndexOperation
 */
-ArrayIndexOperation::ArrayIndexOperation(const CodePosition& position, unique_ptr<Value>&& index) : 
+ArrayIndexOperation::ArrayIndexOperation(const CodePosition& position, Value* index) : 
     Operation(position, Operation::Kind::ArrayIndex),
-    index(move(index))
+    index(index)
 {}
-optional<unique_ptr<Value>> ArrayIndexOperation::interpret(Scope* scope) {
+vector<unique_ptr<ArrayIndexOperation>> ArrayIndexOperation::objects;
+ArrayIndexOperation* ArrayIndexOperation::Create(const CodePosition& position, Value* index) {
+    objects.emplace_back(make_unique<ArrayIndexOperation>(position, index));
+    return objects.back().get();
+}
+optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
     return nullptr;
 }
 bool ArrayIndexOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const ArrayIndexOperation&>(value);
-        return this->index == other.index
+        return cmpPtr(this->index, other.index)
             && Operation::operator==(other);
     }
     else {
         return false;
     }
 }
-unique_ptr<Value> ArrayIndexOperation::copy() {
+/*unique_ptr<Value> ArrayIndexOperation::copy() {
     auto value = make_unique<ArrayIndexOperation>(position, index->copy());
     value->type = type->copy();
     value->isConstexpr = isConstexpr;
@@ -372,32 +379,37 @@ unique_ptr<Value> ArrayIndexOperation::copy() {
         value->arguments.push_back(argument->copy());
     }
     return value;
-}
+}*/
 
 
 /*
     ArraySubArrayOperation
 */
-ArraySubArrayOperation::ArraySubArrayOperation(const CodePosition& position, unique_ptr<Value>&& firstIndex, unique_ptr<Value>&& secondIndex) : 
+ArraySubArrayOperation::ArraySubArrayOperation(const CodePosition& position, Value* firstIndex, Value* secondIndex) : 
     Operation(position, Operation::Kind::ArraySubArray),
-    firstIndex(move(firstIndex)),
-    secondIndex(move(secondIndex))
+    firstIndex(firstIndex),
+    secondIndex(secondIndex)
 {}
-optional<unique_ptr<Value>> ArraySubArrayOperation::interpret(Scope* scope) {
+vector<unique_ptr<ArraySubArrayOperation>> ArraySubArrayOperation::objects;
+ArraySubArrayOperation* ArraySubArrayOperation::Create(const CodePosition& position, Value* firstIndex, Value* secondIndex) {
+    objects.emplace_back(make_unique<ArraySubArrayOperation>(position, firstIndex, secondIndex));
+    return objects.back().get();
+}
+optional<Value*> ArraySubArrayOperation::interpret(Scope* scope) {
     return nullptr;
 }
 bool ArraySubArrayOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const ArraySubArrayOperation&>(value);
-        return this->firstIndex == other.firstIndex
-            && this->secondIndex == other.secondIndex
+        return cmpPtr(this->firstIndex, other.firstIndex)
+            && cmpPtr(this->secondIndex, other.secondIndex)
             && Operation::operator==(other);
     }
     else {
         return false;
     }
 }
-unique_ptr<Value> ArraySubArrayOperation::copy() {
+/*unique_ptr<Value> ArraySubArrayOperation::copy() {
     auto value = make_unique<ArraySubArrayOperation>(position, firstIndex->copy(), secondIndex->copy());
     value->type = type->copy();
     value->isConstexpr = isConstexpr;
@@ -405,7 +417,7 @@ unique_ptr<Value> ArraySubArrayOperation::copy() {
         value->arguments.push_back(argument->copy());
     }
     return value;
-}
+}*/
 
 
 /*
@@ -413,22 +425,27 @@ unique_ptr<Value> ArraySubArrayOperation::copy() {
 */
 FunctionCallOperation::FunctionCallOperation(const CodePosition& position) : 
     Operation(position, Operation::Kind::FunctionCall),
-    function(position)
+    function(Variable::Create(position))
 {}
-optional<unique_ptr<Value>> FunctionCallOperation::interpret(Scope* scope) {
+vector<unique_ptr<FunctionCallOperation>> FunctionCallOperation::objects;
+FunctionCallOperation* FunctionCallOperation::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<FunctionCallOperation>(position));
+    return objects.back().get();
+}
+optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     return nullptr;
 }
 bool FunctionCallOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const FunctionCallOperation&>(value);
-        return this->function == other.function
+        return cmpPtr(this->function, other.function)
             && Operation::operator==(other);
     }
     else {
         return false;
     }
 }
-unique_ptr<Value> FunctionCallOperation::copy() {
+/*unique_ptr<Value> FunctionCallOperation::copy() {
     auto value = make_unique<FunctionCallOperation>(position);
     value->type = type->copy();
     value->isConstexpr = isConstexpr;
@@ -438,7 +455,7 @@ unique_ptr<Value> FunctionCallOperation::copy() {
     auto functionCopy = function.copy();
     value->function = move(*(Variable*)functionCopy.get());
     return value;
-}
+}*/
 
 
 /*
@@ -449,7 +466,12 @@ TemplateFunctionCallOperation::TemplateFunctionCallOperation(const CodePosition&
 {
     kind = Operation::Kind::TemplateFunctionCall;
 }
-optional<unique_ptr<Value>> TemplateFunctionCallOperation::interpret(Scope* scope) {
+vector<unique_ptr<TemplateFunctionCallOperation>> TemplateFunctionCallOperation::objects;
+TemplateFunctionCallOperation* TemplateFunctionCallOperation::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<TemplateFunctionCallOperation>(position));
+    return objects.back().get();
+}
+optional<Value*> TemplateFunctionCallOperation::interpret(Scope* scope) {
     return nullptr;
 }
 bool TemplateFunctionCallOperation::operator==(const Statement& value) const {
@@ -462,7 +484,7 @@ bool TemplateFunctionCallOperation::operator==(const Statement& value) const {
         return false;
     }
 }
-unique_ptr<Value> TemplateFunctionCallOperation::copy() {
+/*unique_ptr<Value> TemplateFunctionCallOperation::copy() {
     auto value = make_unique<TemplateFunctionCallOperation>(position);
     value->type = type->copy();
     value->isConstexpr = isConstexpr;
@@ -475,4 +497,4 @@ unique_ptr<Value> TemplateFunctionCallOperation::copy() {
         value->templateTypes.push_back(templateType->copy());
     }
     return value;
-}
+}*/

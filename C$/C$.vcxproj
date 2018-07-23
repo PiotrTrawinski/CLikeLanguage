@@ -128,6 +128,7 @@
     <ClCompile Include="parsing.cpp" />
     <ClCompile Include="Scope.cpp" />
     <ClCompile Include="Statement.cpp" />
+    <ClCompile Include="StatementStorage.cpp" />
     <ClCompile Include="Type.cpp" />
     <ClCompile Include="Value.cpp" />
   </ItemGroup>
@@ -147,6 +148,7 @@
     <ClInclude Include="Scope.h" />
     <ClInclude Include="SourceStringLine.h" />
     <ClInclude Include="Statement.h" />
+    <ClInclude Include="StatementStorage.h" />
     <ClInclude Include="Token.h" />
     <ClInclude Include="Type.h" />
     <ClInclude Include="Value.h" />

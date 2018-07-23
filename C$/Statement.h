@@ -9,10 +9,13 @@ struct Statement {
         Declaration,
         Value
     };
-
     Statement(const CodePosition& position, Kind kind);
+    static Statement* Create(const CodePosition& position, Kind kind);
     virtual bool operator==(const Statement& statement) const;
 
     Kind kind;
     CodePosition position;
+
+private:
+    static std::vector<std::unique_ptr<Statement>> objects;
 };

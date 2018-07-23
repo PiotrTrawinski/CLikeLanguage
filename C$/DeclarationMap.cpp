@@ -9,15 +9,15 @@ bool DeclarationMap::addDeclaration(string idName, Declaration* declaration) {
     }
     idNameToDeclaration[idName] = declaration;
     declarationToIdName[declaration] = idName;
-    nameToDeclarations[declaration->variable.name].push_back(declaration);
+    nameToDeclarations[declaration->variable->name].push_back(declaration);
     return true;
 }
 bool DeclarationMap::addVariableDeclaration(Declaration* declaration) {
-    return addDeclaration(declaration->variable.name, declaration);
+    return addDeclaration(declaration->variable->name, declaration);
 }
 bool DeclarationMap::addFunctionDeclaration(Declaration* declaration) {
     return addDeclaration(
-        declaration->variable.name + toString(declaration->value->type.get()), 
+        declaration->variable->name + toString(declaration->value->type), 
         declaration
     );
 }
@@ -55,25 +55,25 @@ string DeclarationMap::toString(Type* type) {
         auto functionType = (FunctionType*)type;
         string str = "(";
         for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
-            str += toString(functionType->argumentTypes[i].get());
+            str += toString(functionType->argumentTypes[i]);
             if (i != functionType->argumentTypes.size()-1) str += ",";
         }
         return str + ")";
     }
     case Type::Kind::RawPointer:
-        return "*" + toString(((RawPointerType*)(type))->underlyingType.get());
+        return "*" + toString(((RawPointerType*)(type))->underlyingType);
     case Type::Kind::OwnerPointer:
-        return "!" + toString(((OwnerPointerType*)(type))->underlyingType.get());
+        return "!" + toString(((OwnerPointerType*)(type))->underlyingType);
     case Type::Kind::Reference:
-        return "&" + toString(((ReferenceType*)(type))->underlyingType.get());
+        return "&" + toString(((ReferenceType*)(type))->underlyingType);
     case Type::Kind::MaybeError:
-        return "?" + toString(((MaybeErrorType*)(type))->underlyingType.get());
+        return "?" + toString(((MaybeErrorType*)(type))->underlyingType);
     case Type::Kind::ArrayView:
-        return "[*]" + toString(((ArrayViewType*)(type))->elementType.get());
+        return "[*]" + toString(((ArrayViewType*)(type))->elementType);
     case Type::Kind::DynamicArray:
-        return "[]" + toString(((DynamicArrayType*)(type))->elementType.get());
+        return "[]" + toString(((DynamicArrayType*)(type))->elementType);
     case Type::Kind::StaticArray:
-        return "[N]" + toString(((StaticArrayType*)(type))->elementType.get());
+        return "[N]" + toString(((StaticArrayType*)(type))->elementType);
     case Type::Kind::Template:
         return "T(" + ((TemplateType*)(type))->name + ")";
     case Type::Kind::TemplateFunction:{
@@ -85,7 +85,7 @@ string DeclarationMap::toString(Type* type) {
         }
         str += ">(";
         for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
-            str += toString(functionType->argumentTypes[i].get());
+            str += toString(functionType->argumentTypes[i]);
             if (i != functionType->argumentTypes.size()-1) str += ",";
         }
         return str + ")";
@@ -96,7 +96,7 @@ string DeclarationMap::toString(Type* type) {
         if (classType->templateTypes.size() > 0) {
             str += "<";
             for (int i = 0; i < classType->templateTypes.size(); ++i) {
-                str += toString(classType->templateTypes[i].get());
+                str += toString(classType->templateTypes[i]);
                 if (i != classType->templateTypes.size()-1) str += ",";
             }
             str += ">";
