@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
         return 3;
     }
 
-    bool statusInterpreting = interpret(globalScope.value());
+    bool statusInterpreting = interpret(globalScope);
     if (!statusInterpreting) {
         cerr << "Compiling failed: there were errors during interpreting\n";
         return 4;

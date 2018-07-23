@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include "operator==Utility.h"
 
 struct Value;
 struct FunctionValue;
@@ -26,112 +27,186 @@ struct Type {
         TemplateClass,
         TemplateFunction
     };
-
-    Type (Kind kind);
+    Type(Kind kind);
+    static Type* Create(Kind kind);
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
+
+    static Type* getSuitingArithmeticType(Type* val1, Type* val2);
 
     Kind kind;
+
+private:
+    static std::vector<std::unique_ptr<Type>> objects;
 };
 
 
 struct OwnerPointerType : Type {
-    OwnerPointerType(std::unique_ptr<Type>&& underlyingType);
+    OwnerPointerType(Type* underlyingType);
+    static OwnerPointerType* Create(Type* underlyingType);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> underlyingType;
+    Type* underlyingType = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<OwnerPointerType>> objects;
 };
 struct RawPointerType : Type {
-    RawPointerType(std::unique_ptr<Type>&& underlyingType);
+    RawPointerType(Type* underlyingType);
+    static RawPointerType* Create(Type* underlyingType);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> underlyingType;
+    Type* underlyingType = nullptr;
+ 
+private:
+    static std::vector<std::unique_ptr<RawPointerType>> objects;
 };
 struct MaybeErrorType : Type {
-    MaybeErrorType(std::unique_ptr<Type>&& underlyingType);
+    MaybeErrorType(Type* underlyingType);
+    static MaybeErrorType* Create(Type* underlyingType);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> underlyingType;
+    Type* underlyingType = nullptr;
+  
+private:
+    static std::vector<std::unique_ptr<MaybeErrorType>> objects;
 };
 struct ReferenceType : Type {
-    ReferenceType(std::unique_ptr<Type>&& underlyingType);
+    ReferenceType(Type* underlyingType);
+    static ReferenceType* Create(Type* underlyingType);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> underlyingType;
+    Type* underlyingType = nullptr;
+    
+private:
+    static std::vector<std::unique_ptr<ReferenceType>> objects;
 };
 struct StaticArrayType : Type {
-    StaticArrayType(std::unique_ptr<Type>&& elementType, std::unique_ptr<Value>&& size);
+    StaticArrayType(Type* elementType, Value* size);
+    StaticArrayType(Type* elementType, int64_t sizeAsInt);
+    static StaticArrayType* Create(Type* elementType, Value* size);
+    static StaticArrayType* Create(Type* elementType, int64_t sizeAsInt);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> elementType;
-    std::unique_ptr<Value> size;
+    Type* elementType = nullptr;
+    Value* size = nullptr;
+    int64_t sizeAsInt = -1;
+    
+private:
+    static std::vector<std::unique_ptr<StaticArrayType>> objects;
 };
 struct DynamicArrayType : Type {
-    DynamicArrayType(std::unique_ptr<Type>&& elementType);
+    DynamicArrayType(Type* elementType);
+    static DynamicArrayType* Create(Type* elementType);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> elementType;
+    Type* elementType = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<DynamicArrayType>> objects;
 };
 struct ArrayViewType : Type {
-    ArrayViewType(std::unique_ptr<Type>&& elementType);
+    ArrayViewType(Type* elementType);
+    static ArrayViewType* Create(Type* elementType);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> elementType;
+    Type* elementType = nullptr;
+    
+private:
+    static std::vector<std::unique_ptr<ArrayViewType>> objects;
 };
 struct ClassType : Type {
     ClassType(const std::string& name);
+    static ClassType* Create(const std::string& name);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
     std::string name;
-    std::vector<std::unique_ptr<Type>> templateTypes;
+    std::vector<Type*> templateTypes;
+    
+private:
+    static std::vector<std::unique_ptr<ClassType>> objects;
 };
 struct FunctionType : Type {
     FunctionType();
+    static FunctionType* Create();
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::unique_ptr<Type> returnType;
-    std::vector<std::unique_ptr<Type>> argumentTypes;
+    Type* returnType = nullptr;
+    std::vector<Type*> argumentTypes;
+    
+private:
+    static std::vector<std::unique_ptr<FunctionType>> objects;
 };
 struct IntegerType : Type {
     enum class Size { I8, I16, I32, I64, U8, U16, U32, U64 };
 
     IntegerType(Size size);
+    static IntegerType* Create(Size size);
+    
+    bool isSigned();
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
     Size size;
+    
+private:
+    static std::vector<std::unique_ptr<IntegerType>> objects;
 };
 struct FloatType : Type {
     enum class Size { F32, F64 };
 
     FloatType(Size size);
+    static FloatType* Create(Size size);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
     Size size;
+    
+private:
+    static std::vector<std::unique_ptr<FloatType>> objects;
 };
 struct TemplateType : Type {
     TemplateType(const std::string& name);
+    static TemplateType* Create(const std::string& name);
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
     std::string name;
+
+private:
+    static std::vector<std::unique_ptr<TemplateType>> objects;
 };
 
 struct TemplateFunctionType : FunctionType {
     TemplateFunctionType();
+    static TemplateFunctionType* Create();
+    
     virtual bool operator==(const Type& type) const;
-    virtual std::unique_ptr<Type> copy();
+    //virtual std::unique_ptr<Type> copy();
 
-    std::vector<std::unique_ptr<TemplateType>> templateTypes;
-    std::vector<std::unique_ptr<FunctionValue>> implementations; 
+    std::vector<TemplateType*> templateTypes;
+    std::vector<FunctionValue*> implementations; 
+    
+private:
+    static std::vector<std::unique_ptr<TemplateFunctionType>> objects;
 };

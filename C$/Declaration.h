@@ -10,15 +10,18 @@ struct Declaration : Statement {
         Evaluated,
         Completed
     };
-
+  
     Declaration(const CodePosition& position);
+    static Declaration* Create(const CodePosition& position);
     bool interpret(Scope* scope, bool outOfOrder=false);
     virtual bool operator==(const Statement& declaration) const;
 
-    Variable variable;
-    std::unique_ptr<Value> value;
+    Variable* variable = nullptr;
+    Value* value = nullptr;
     Status status = Status::None;
-
+    
 private:
+    static std::vector<std::unique_ptr<Declaration>> objects;
+
     bool isFunctionDeclaration();
 };

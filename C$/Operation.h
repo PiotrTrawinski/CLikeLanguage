@@ -32,6 +32,7 @@ struct Operation : Value {
     };
 
     Operation(const CodePosition& position, Kind kind);
+    static Operation* Create(const CodePosition& position, Kind kind);
 
     static int priority(Kind kind);
     static bool isLeftAssociative(Kind kind);
@@ -41,54 +42,77 @@ struct Operation : Value {
     int getNumberOfArguments();
 
     bool resolveTypeOfOperation();
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
     Kind kind;
-    std::vector<std::unique_ptr<Value>> arguments;
+    std::vector<Value*> arguments;
+    
+private:
+    static std::vector<std::unique_ptr<Operation>> objects;
 };
 
 
 
 struct CastOperation : Operation {
-    CastOperation(const CodePosition& position, std::unique_ptr<Type>&& argType);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    CastOperation(const CodePosition& position, Type* argType);
+    static CastOperation* Create(const CodePosition& position, Type* argType);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
-    std::unique_ptr<Type> argType;
+    Type* argType;
+    
+private:
+    static std::vector<std::unique_ptr<CastOperation>> objects;
 };
 struct ArrayIndexOperation : Operation {
-    ArrayIndexOperation(const CodePosition& position, std::unique_ptr<Value>&& index);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    ArrayIndexOperation(const CodePosition& position, Value* index);
+    static ArrayIndexOperation* Create(const CodePosition& position, Value* index);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
-    std::unique_ptr<Value> index;
+    Value* index;
+    
+private:
+    static std::vector<std::unique_ptr<ArrayIndexOperation>> objects;
 };
 struct ArraySubArrayOperation : Operation {
-    ArraySubArrayOperation(const CodePosition& position, std::unique_ptr<Value>&& firstIndex, std::unique_ptr<Value>&& secondIndex);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    ArraySubArrayOperation(const CodePosition& position, Value* firstIndex, Value* secondIndex);
+    static ArraySubArrayOperation* Create(const CodePosition& position, Value* firstIndex, Value* secondIndex);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
-    std::unique_ptr<Value> firstIndex;
-    std::unique_ptr<Value> secondIndex;
+    Value* firstIndex;
+    Value* secondIndex;
+    
+private:
+    static std::vector<std::unique_ptr<ArraySubArrayOperation>> objects;
 };
 struct FunctionCallOperation : Operation {
     FunctionCallOperation(const CodePosition& position);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static FunctionCallOperation* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
-    Variable function;
+    Variable* function;
+    
+private:
+    static std::vector<std::unique_ptr<FunctionCallOperation>> objects;
 };
 struct TemplateFunctionCallOperation : FunctionCallOperation {
     TemplateFunctionCallOperation(const CodePosition& position);
-    virtual std::optional<std::unique_ptr<Value>> interpret(Scope* scope);
+    static TemplateFunctionCallOperation* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual std::unique_ptr<Value> copy();
+    //virtual std::unique_ptr<Value> copy();
 
-    std::vector<std::unique_ptr<Type>> templateTypes;
+    std::vector<Type*> templateTypes;
+    
+private:
+    static std::vector<std::unique_ptr<TemplateFunctionCallOperation>> objects;
 };

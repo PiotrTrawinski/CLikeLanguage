@@ -5,6 +5,7 @@
 
 using namespace std;
 
+
 /*
     Value
 */
@@ -12,26 +13,31 @@ Value::Value(const CodePosition& position, ValueKind valueKind) :
     Statement(position, Statement::Kind::Value),
     valueKind(valueKind)
 {}
-optional<unique_ptr<Value>> Value::interpret(Scope* scope) {
+vector<unique_ptr<Value>> Value::objects;
+Value* Value::Create(const CodePosition& position, ValueKind valueKind) {
+    objects.emplace_back(make_unique<Value>(position, valueKind));
+    return objects.back().get();
+}
+optional<Value*> Value::interpret(Scope* scope) {
     return nullptr;
 }
 bool Value::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const Value&>(value);
         return this->valueKind == other.valueKind
-            && (this->type == other.type || this->type == other.type)
+            && cmpPtr(this->type, other.type)
             && this->isConstexpr == other.isConstexpr
             && Statement::operator==(other);
     } else {
         return false;
     }
 }
-unique_ptr<Value> Value::copy() {
+/*unique_ptr<Value> Value::copy() {
     auto value = make_unique<Value>(position, valueKind);
-    value->type = type->copy();
+    value->type = type;
     value->isConstexpr = isConstexpr;
     return value;
-}
+}*/
 
 
 /*
@@ -41,14 +47,23 @@ Variable::Variable(const CodePosition& position, const string& name) :
     Value(position, Value::ValueKind::Variable),
     name(name)
 {}
-optional<unique_ptr<Value>> Variable::interpret(Scope* scope) {
+vector<unique_ptr<Variable>> Variable::objects;
+Variable* Variable::Create(const CodePosition& position, const string& name) {
+    objects.emplace_back(make_unique<Variable>(position, name));
+    return objects.back().get();
+}
+optional<Value*> Variable::interpret(Scope* scope) {
     Declaration* declaration = scope->findDeclaration(this);
     if (!declaration) {
         return nullopt;
     }
-    isConstexpr = declaration->variable.isConstexpr;
-    type = declaration->variable.type->copy();
-    isConst = declaration->variable.isConst;
+    isConstexpr = declaration->variable->isConstexpr;
+    type = declaration->variable->type;
+    isConst = declaration->variable->isConst;
+
+    /*if (isConstexpr) {
+        return Value::copy();
+    }*/
     return nullptr;
 }
 bool Variable::operator==(const Statement& value) const {
@@ -61,26 +76,31 @@ bool Variable::operator==(const Statement& value) const {
         return false;
     }
 }
-unique_ptr<Value> Variable::copy() {
+/*unique_ptr<Value> Variable::copy() {
     auto variable = make_unique<Variable>(position, name);
-    variable->type = type->copy();
+    variable->type = type;
     variable->isConstexpr = isConstexpr;
     variable->isConst = isConst;
     return variable;
-}
+}*/
 
 
 /*
     IntegerValue
 */
-IntegerValue::IntegerValue(const CodePosition& position, int32_t value) : 
+IntegerValue::IntegerValue(const CodePosition& position, uint64_t value) : 
     Value(position, Value::ValueKind::Integer),
     value(value)
 {
     isConstexpr = true;
-    type = make_unique<IntegerType>(IntegerType::Size::I32);
+    type = IntegerType::Create(IntegerType::Size::I32);
 }
-optional<unique_ptr<Value>> IntegerValue::interpret(Scope* scope) {
+vector<unique_ptr<IntegerValue>> IntegerValue::objects;
+IntegerValue* IntegerValue::Create(const CodePosition& position, uint64_t value) {
+    objects.emplace_back(make_unique<IntegerValue>(position, value));
+    return objects.back().get();
+}
+optional<Value*> IntegerValue::interpret(Scope* scope) {
     isConstexpr = true;
     return nullptr;
 }
@@ -94,10 +114,10 @@ bool IntegerValue::operator==(const Statement& value) const {
         return false;
     }
 }
-unique_ptr<Value> IntegerValue::copy() {
+/*unique_ptr<Value> IntegerValue::copy() {
     auto val = make_unique<IntegerValue>(position, value);
     return val;
-}
+}*/
 
 
 /*
@@ -108,9 +128,14 @@ CharValue::CharValue(const CodePosition& position, uint8_t value) :
     value(value)
 {
     isConstexpr = true;
-    type = make_unique<IntegerType>(IntegerType::Size::U8);
+    type = IntegerType::Create(IntegerType::Size::U8);
 }
-optional<unique_ptr<Value>> CharValue::interpret(Scope* scope) {
+vector<unique_ptr<CharValue>> CharValue::objects;
+CharValue* CharValue::Create(const CodePosition& position, uint8_t value) {
+    objects.emplace_back(make_unique<CharValue>(position, value));
+    return objects.back().get();
+}
+optional<Value*> CharValue::interpret(Scope* scope) {
     isConstexpr = true;
     return nullptr;
 }
@@ -124,10 +149,10 @@ bool CharValue::operator==(const Statement& value) const {
         return false;
     }
 }
-unique_ptr<Value> CharValue::copy() {
+/*unique_ptr<Value> CharValue::copy() {
     auto val = make_unique<CharValue>(position, value);
     return val;
-}
+}*/
 
 
 /*
@@ -138,9 +163,14 @@ FloatValue::FloatValue(const CodePosition& position, double value) :
     value(value)
 {
     isConstexpr = true;
-    type = make_unique<FloatType>(FloatType::Size::F64);
+    type = FloatType::Create(FloatType::Size::F64);
 }
-optional<unique_ptr<Value>> FloatValue::interpret(Scope* scope) {
+vector<unique_ptr<FloatValue>> FloatValue::objects;
+FloatValue* FloatValue::Create(const CodePosition& position, double value) {
+    objects.emplace_back(make_unique<FloatValue>(position, value));
+    return objects.back().get();
+}
+optional<Value*> FloatValue::interpret(Scope* scope) {
     isConstexpr = true;
     return nullptr;
 }
@@ -154,10 +184,10 @@ bool FloatValue::operator==(const Statement& value) const {
         return false;
     }
 }
-unique_ptr<Value> FloatValue::copy() {
+/*unique_ptr<Value> FloatValue::copy() {
     auto val = make_unique<FloatValue>(position, value);
     return val;
-}
+}*/
 
 
 /*
@@ -168,9 +198,14 @@ StringValue::StringValue(const CodePosition& position, const string& value) :
     value(value)
 {
     isConstexpr = true;
-    type = make_unique<Type>(Type::Kind::String);
+    type = Type::Create(Type::Kind::String);
 }
-optional<unique_ptr<Value>> StringValue::interpret(Scope* scope) {
+vector<unique_ptr<StringValue>> StringValue::objects;
+StringValue* StringValue::Create(const CodePosition& position, const string& value) {
+    objects.emplace_back(make_unique<StringValue>(position, value));
+    return objects.back().get();
+}
+optional<Value*> StringValue::interpret(Scope* scope) {
     isConstexpr = true;
     return nullptr;
 }
@@ -184,10 +219,10 @@ bool StringValue::operator==(const Statement& value) const {
         return false;
     }
 }
-unique_ptr<Value> StringValue::copy() {
+/*unique_ptr<Value> StringValue::copy() {
     auto val = make_unique<StringValue>(position, value);
     return val;
-}
+}*/
 
 
 /*
@@ -198,47 +233,47 @@ StaticArrayValue::StaticArrayValue(const CodePosition& position)
 {
     isConstexpr = true;
 }
-optional<unique_ptr<Value>> StaticArrayValue::interpret(Scope* scope) {
-    vector<unique_ptr<Type>> elementTypes;
+vector<unique_ptr<StaticArrayValue>> StaticArrayValue::objects;
+StaticArrayValue* StaticArrayValue::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<StaticArrayValue>(position));
+    return objects.back().get();
+}
+optional<Value*> StaticArrayValue::interpret(Scope* scope) {
+    vector<Type*> elementTypes;
     for (auto& element : values) {
         auto interpretValue = element->interpret(scope);
         if (!interpretValue) {
             return nullopt;
         }
         if (interpretValue.value()) {
-            element = move(interpretValue.value());
+            element = interpretValue.value();
         }
-        if (find(elementTypes.begin(), elementTypes.end(), element->type->copy()) == elementTypes.end()) {
-            elementTypes.push_back(element->type->copy());
+        bool found = false;
+        for (auto& elementType : elementTypes) {
+            if (*element->type == *elementType) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            elementTypes.push_back(element->type);
         }
     }
     if (elementTypes.size() == 1) {
-        type = make_unique<StaticArrayType>(
-            (*elementTypes.begin())->copy(),
-            make_unique<IntegerValue>(position, values.size())
-            );
+        type = StaticArrayType::Create(*elementTypes.begin(), values.size());
     } else {
-        bool isFloat = false;
-        for (auto& type : elementTypes) {
-            if (type->kind == Type::Kind::Float) {
-                isFloat = true;
-                break;
-            } else if (type->kind != Type::Kind::Integer) {
+        // if multiple different types it have to be arithmetic values (ints, floats)
+        // otherwise cannot deduce type of the array
+        Type* deducedType = elementTypes[0];
+        for (auto& elementType : elementTypes) {
+            if (elementType->kind == Type::Kind::Integer || elementType->kind == Type::Kind::Float) {
+                deducedType = Type::getSuitingArithmeticType(deducedType, elementType);
+            } else {
                 errorMessage("couldn't deduce array type", position);
                 return nullopt;
             }
         }
-        if (isFloat) {
-            type = make_unique<StaticArrayType>(
-                make_unique<FloatType>(FloatType::Size::F64),
-                make_unique<IntegerValue>(position, values.size())
-                );
-        } else {
-            type = make_unique<StaticArrayType>(
-                make_unique<IntegerType>(IntegerType::Size::I64),
-                make_unique<IntegerValue>(position, values.size())
-                );
-        }
+        type = StaticArrayType::Create(deducedType, values.size());
     }
     return nullptr;
 }
@@ -252,34 +287,40 @@ bool StaticArrayValue::operator==(const Statement& value) const {
         return false;
     }
 }
-unique_ptr<Value> StaticArrayValue::copy() {
+/*unique_ptr<Value> StaticArrayValue::copy() {
     auto val = make_unique<StaticArrayValue>(position);
     val->type = type->copy();
     for (auto& value : values) {
         val->values.push_back(value->copy());
     }
     return val;
-}
+}*/
 
 
 /*
     FunctionValue
 */
-FunctionValue::FunctionValue(const CodePosition& position, unique_ptr<Type>&& type, Scope* parentScope) : 
+FunctionValue::FunctionValue(const CodePosition& position, Type* type, Scope* parentScope) : 
     Value(position, Value::ValueKind::FunctionValue),
-    body(position, Scope::Owner::Function, parentScope)
+    body(CodeScope::Create(position, Scope::Owner::Function, parentScope))
 {
     isConstexpr = true;
-    this->type = move(type);
+    this->type = type;
 }
-optional<unique_ptr<Value>> FunctionValue::interpret(Scope* scope) {
+vector<unique_ptr<FunctionValue>> FunctionValue::objects;
+FunctionValue* FunctionValue::Create(const CodePosition& position, Type* type, Scope* parentScope) {
+    objects.emplace_back(make_unique<FunctionValue>(position, type, parentScope));
+    return objects.back().get();
+}
+optional<Value*> FunctionValue::interpret(Scope* scope) {
     isConstexpr = true;
+    //body.declarationMap.addVariableDeclaration(this->);
     return nullptr;
 }
 bool FunctionValue::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const FunctionValue&>(value);
-        return this->argumentNames == other.argumentNames
+        return this->arguments == other.arguments
             && Value::operator==(other);
     }
     else {

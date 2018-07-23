@@ -26,23 +26,25 @@ struct Scope : Statement {
         Defer
     };
     struct ReadStatementValue {
-        ReadStatementValue(std::unique_ptr<Statement>&& statement) : statement(std::move(statement)) {}
+        ReadStatementValue(Statement* statement) {
+            this->statement = statement;
+        }
         ReadStatementValue(bool isScopeEnd) : isScopeEnd(isScopeEnd) {}
 
         operator bool() {
             return statement || isScopeEnd;
         }
 
-        std::unique_ptr<Statement> statement = nullptr;
+        Statement* statement = nullptr;
         bool isScopeEnd = false;
     };
 
     Scope(const CodePosition& position, Owner owner, Scope* parentScope);
     ReadStatementValue readStatement(const std::vector<Token>& tokens, int& i);
-    std::optional<std::vector<std::unique_ptr<Value>>> getReversePolishNotation(const std::vector<Token>& tokens, int& i);
-    std::unique_ptr<Type> getType(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool writeError=true);
-    std::unique_ptr<Value> getValue(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool skipOnGoodDelimiter=false);
-    std::optional<std::vector<std::unique_ptr<Type>>> getFunctionArgumentTypes(const std::vector<Token>& tokens, int& i, bool writeError);
+    std::optional<std::vector<Value*>> getReversePolishNotation(const std::vector<Token>& tokens, int& i);
+    Type* getType(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool writeError=true);
+    Value* getValue(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool skipOnGoodDelimiter=false);
+    std::optional<std::vector<Type*>> getFunctionArgumentTypes(const std::vector<Token>& tokens, int& i, bool writeError);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i)=0;
     virtual bool interpret()=0;
     virtual Declaration* findAndInterpretDeclaration(const std::string& name)=0;
@@ -56,68 +58,96 @@ struct Scope : Statement {
 
 struct CodeScope : Scope {
     CodeScope(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false);
+    static CodeScope* Create(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
 
     bool isGlobalScope;
-    std::vector<std::unique_ptr<Statement>> statements;
+    std::vector<Statement*> statements;
+    
+private:
+    static std::vector<std::unique_ptr<CodeScope>> objects;
 };
 struct ClassScope : Scope {
     ClassScope(const CodePosition& position, Scope* parentScope);
+    static ClassScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
 
     std::string name;
-    std::vector<std::unique_ptr<TemplateType>> templateTypes;
-    std::vector<std::unique_ptr<Declaration>> declarations;
+    std::vector<TemplateType*> templateTypes;
+    std::vector<Declaration*> declarations;
+    
+private:
+    static std::vector<std::unique_ptr<ClassScope>> objects;
 };
 
 struct ForIterData {
     bool operator==(const ForIterData& other) const;
 
-    std::unique_ptr<Variable> iterVariable;
-    std::unique_ptr<Value> firstValue;
-    std::unique_ptr<Value> step;
-    std::unique_ptr<Value> lastValue;
+    Variable* iterVariable = nullptr;
+    Value* firstValue = nullptr;
+    Value* step = nullptr;
+    Value* lastValue = nullptr;
 };
 struct ForEachData {
     bool operator==(const ForEachData& other) const;
 
-    std::unique_ptr<Value> arrayValue;
-    std::unique_ptr<Variable> it;
-    std::unique_ptr<Variable> index;
+    Value* arrayValue = nullptr;
+    Variable* it = nullptr;
+    Variable* index = nullptr;
 };
 struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope);
+    static ForScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool operator==(const Statement& scope) const;
 
     std::variant<ForIterData, ForEachData> data;
+    
+private:
+    static std::vector<std::unique_ptr<ForScope>> objects;
 };
 struct WhileScope : CodeScope {
     WhileScope(const CodePosition& position, Scope* parentScope);
+    static WhileScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool operator==(const Statement& scope) const;
 
-    std::unique_ptr<Value> conditionExpression;
+    Value* conditionExpression = nullptr;
+    
+private:
+    static std::vector<std::unique_ptr<WhileScope>> objects;
 };
 struct IfScope : CodeScope {
     IfScope(const CodePosition& position, Scope* parentScope);
+    static IfScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool operator==(const Statement& scope) const;
 
-    std::unique_ptr<Value> conditionExpression;
-    std::unique_ptr<CodeScope> elseScope;
+    Value* conditionExpression = nullptr;
+    CodeScope* elseScope = nullptr;
+    
+private:
+    static std::vector<std::unique_ptr<IfScope>> objects;
 };
 struct ElseScope : CodeScope {
     ElseScope(const CodePosition& position, Scope* parentScope);
+    static ElseScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    
+private:
+    static std::vector<std::unique_ptr<ElseScope>> objects;
 };
 struct DeferScope : CodeScope {
     DeferScope(const CodePosition& position, Scope* parentScope);
+    static DeferScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    
+private:
+    static std::vector<std::unique_ptr<DeferScope>> objects;
 };
