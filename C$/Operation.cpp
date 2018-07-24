@@ -649,10 +649,6 @@ int Operation::getNumberOfArguments() {
     return numberOfArguments(kind);
 }
 
-bool Operation::resolveTypeOfOperation(bool allArgsConstexpr) {
-    return false;
-}
-
 bool Operation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const Operation&>(value);
@@ -700,6 +696,62 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
         return arguments[0];
     } 
     else if (type->kind == Type::Kind::Bool) {
+        if (arguments[0]->type->kind != Type::Kind::Class) {
+            return nullptr;
+        }
+        if (arguments[0]->isConstexpr) {
+            if (arguments[0]->valueKind == Value::ValueKind::Char) {
+                return BoolValue::Create(position, ((CharValue*)arguments[0])->value != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::Integer) {
+                return BoolValue::Create(position, ((IntegerValue*)arguments[0])->value != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::Float) {
+                return BoolValue::Create(position, ((FloatValue*)arguments[0])->value != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::String) {
+                return BoolValue::Create(position, ((StringValue*)arguments[0])->value.size() != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::StaticArray) {
+                return BoolValue::Create(position, ((StaticArrayValue*)arguments[0])->values.size() != 0);
+            }
+        }
+    }
+    else if (type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Float) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Bool) {
+            if (arguments[0]->isConstexpr) {
+                int value = ((BoolValue*)arguments[0])->value ? 1 : 0;
+                auto intValue = IntegerValue::Create(position, value);
+                intValue->type = type;
+                return intValue;
+            }
+            return nullptr;
+        }
+    }
+    else if (type->kind == Type::Kind::Float) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Float) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Bool) {
+            if (arguments[0]->isConstexpr) {
+                double value = ((BoolValue*)arguments[0])->value ? 1 : 0;
+                auto floatValue = FloatValue::Create(position, value);
+                floatValue->type = type;
+                return floatValue;
+            }
+            return nullptr;
+        }
+    }
+    else if (type->kind == Type::Kind::RawPointer && arguments[0]->type->kind == Type::Kind::RawPointer) {
         return nullptr;
     }
 

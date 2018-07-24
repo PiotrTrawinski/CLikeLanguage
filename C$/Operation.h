@@ -42,7 +42,6 @@ struct Operation : Value {
     bool getIsLeftAssociative();
     int getNumberOfArguments();
 
-    bool resolveTypeOfOperation(bool allArgsConstexpr);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
