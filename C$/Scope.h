@@ -105,6 +105,7 @@ struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope);
     static ForScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
 
     std::variant<ForIterData, ForEachData> data;
@@ -116,6 +117,7 @@ struct WhileScope : CodeScope {
     WhileScope(const CodePosition& position, Scope* parentScope);
     static WhileScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
 
     Value* conditionExpression = nullptr;
@@ -127,6 +129,7 @@ struct IfScope : CodeScope {
     IfScope(const CodePosition& position, Scope* parentScope);
     static IfScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
 
     Value* conditionExpression = nullptr;

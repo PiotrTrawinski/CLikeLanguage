@@ -92,19 +92,21 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                     fileInfo = sourceCode[lineId].file;
                     lineNumber = sourceCode[lineId].number;
                     lineStr = sourceCode[lineId].value;
-                    while (charId < lineStr.size() - 1) {
-                        if (lineStr[charId] == '*' && lineStr[charId+1] == '/') {
-                            openedComents -= 1;
-                            charId++;
-                            if (openedComents <= 0) {
-                                break;
+                    if (lineStr.size() > 0) {
+                        while (charId < lineStr.size() - 1) {
+                            if (lineStr[charId] == '*' && lineStr[charId+1] == '/') {
+                                openedComents -= 1;
+                                charId++;
+                                if (openedComents <= 0) {
+                                    break;
+                                }
                             }
-                        }
-                        else if (lineStr[charId] == '/' && lineStr[charId+1] == '*') {
+                            else if (lineStr[charId] == '/' && lineStr[charId+1] == '*') {
+                                charId++;
+                                openedComents += 1;
+                            }
                             charId++;
-                            openedComents += 1;
                         }
-                        charId++;
                     }
                     if (openedComents <= 0) {
                         break;

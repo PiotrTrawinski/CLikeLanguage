@@ -1,4 +1,5 @@
 #include "Declaration.h"
+#include "Operation.h"
 
 using namespace std;
 
@@ -13,6 +14,15 @@ Declaration* Declaration::Create(const CodePosition& position) {
 }
 
 bool Declaration::isFunctionDeclaration() {
+    if (!value) {
+        if (variable->type->kind == Type::Kind::Function) {
+            return true;
+        }
+        if (variable->type->kind == Type::Kind::TemplateFunction) {
+            return true;
+        }
+        return false;
+    }
     return value->type != nullptr && 
         (
             value->type->kind == Type::Kind::Function
@@ -21,6 +31,9 @@ bool Declaration::isFunctionDeclaration() {
 }
 bool Declaration::interpret(Scope* scope, bool outOfOrder) {
     if (status != Declaration::Status::Evaluated) {
+        if (outOfOrder && !variable->isConst) {
+            return false;
+        }
         bool addToMapStatus = false;
         if (isFunctionDeclaration()) {
             addToMapStatus = scope->declarationMap.addFunctionDeclaration(this);
@@ -35,17 +48,24 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
         }
 
         status = Declaration::Status::InEvaluation;
-        auto valueInterpret = value->interpret(scope);
-        if (!valueInterpret) {
-            return false;
-        } else if (valueInterpret.value()) {
-            value = valueInterpret.value();
+        if (value) {
+            if (variable->type) {
+                auto cast = CastOperation::Create(value->position, variable->type);
+                cast->arguments.push_back(value);
+                value = cast;
+            }
+            auto valueInterpret = value->interpret(scope);
+            if (!valueInterpret) {
+                return false;
+            } 
+            if (valueInterpret.value()) {
+                value = valueInterpret.value();
+            }
+            variable->isConstexpr = variable->isConst && value->isConstexpr;
+            variable->type = value->type;
         }
         status = Declaration::Status::Evaluated;
     }
-
-    variable->isConstexpr = value->isConstexpr;
-    variable->type = value->type;
 
     if (!outOfOrder) {
         status = Declaration::Status::Completed;
