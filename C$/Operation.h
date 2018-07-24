@@ -37,11 +37,12 @@ struct Operation : Value {
     static int priority(Kind kind);
     static bool isLeftAssociative(Kind kind);
     static int numberOfArguments(Kind kind);
+    static std::string kindToString(Kind kind);
     int getPriority();
     bool getIsLeftAssociative();
     int getNumberOfArguments();
 
-    bool resolveTypeOfOperation();
+    bool resolveTypeOfOperation(bool allArgsConstexpr);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -51,6 +52,124 @@ struct Operation : Value {
     
 private:
     static std::vector<std::unique_ptr<Operation>> objects;
+    
+    template<typename Function> Value* evaluate(Value* val1, Value* val2, Function function) {
+        if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Integer) {
+            int64_t result = function((int64_t)((IntegerValue*)val1)->value, (int64_t)((IntegerValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Float && val2->valueKind == Value::ValueKind::Integer) {
+            double result = function((double)((FloatValue*)val1)->value, (double)((IntegerValue*)val2)->value);
+            auto value = FloatValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Float) {
+            double result = function((double)((IntegerValue*)val1)->value, (double)((FloatValue*)val2)->value);
+            auto value = FloatValue::Create(position, result);
+            value->type = type;
+            return value;
+        } 
+        if (val1->valueKind == Value::ValueKind::Float && val2->valueKind == Value::ValueKind::Float) {
+            double result = function((double)((FloatValue*)val1)->value, (double)((FloatValue*)val2)->value);
+            auto value = FloatValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Char && val2->valueKind == Value::ValueKind::Char) {
+            int64_t result = function((int64_t)((CharValue*)val1)->value, (int64_t)((CharValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Float && val2->valueKind == Value::ValueKind::Char) {
+            double result = function((double)((FloatValue*)val1)->value, (double)((CharValue*)val2)->value);
+            auto value = FloatValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Char && val2->valueKind == Value::ValueKind::Float) {
+            double result = function((double)((CharValue*)val1)->value, (double)((FloatValue*)val2)->value);
+            auto value = FloatValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Char && val2->valueKind == Value::ValueKind::Integer) {
+            int64_t result = function((int64_t)((CharValue*)val1)->value, (int64_t)((IntegerValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Char) {
+            int64_t result = function((int64_t)((IntegerValue*)val1)->value, (int64_t)((CharValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+    }
+    template<typename Function> Value* evaluateIntegerOnly(Value* val1, Value* val2, Function function) {
+        if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Integer) {
+            int64_t result = function((int64_t)((IntegerValue*)val1)->value, (int64_t)((IntegerValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Char && val2->valueKind == Value::ValueKind::Char) {
+            int64_t result = function((int64_t)((CharValue*)val1)->value, (int64_t)((CharValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Char && val2->valueKind == Value::ValueKind::Integer) {
+            int64_t result = function((int64_t)((CharValue*)val1)->value, (int64_t)((IntegerValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+        if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Char) {
+            int64_t result = function((int64_t)((IntegerValue*)val1)->value, (int64_t)((CharValue*)val2)->value);
+            auto value = IntegerValue::Create(position, result);
+            value->type = type;
+            return value;
+        }
+    }
+
+    template<typename Function> Value* tryEvaluate2ArgArithmetic(Function function) {
+        auto type1 = arguments[0]->type;
+        auto type2 = arguments[1]->type;
+        type = Type::getSuitingArithmeticType(type1, type2);
+        if (type && arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
+            return evaluate(arguments[0], arguments[1], function);
+        }
+        return nullptr;
+    }
+    template<typename Function> Value* tryEvaluate2ArgArithmeticBoolTest(Function function) {
+        auto type1 = arguments[0]->type;
+        auto type2 = arguments[1]->type;
+        if (!Type::getSuitingArithmeticType(type1, type2)) {
+            return nullptr;
+        }
+        type = Type::Create(Type::Kind::Bool);
+        if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
+            return BoolValue::Create(position, function(arguments[0], arguments[1]));
+        }
+        return nullptr;
+    }
+    template<typename Function> Value* tryEvaluate2ArgArithmeticIntegerOnly(Function function) {
+        auto type1 = arguments[0]->type;
+        auto type2 = arguments[1]->type;
+        type = Type::getSuitingArithmeticType(type1, type2);
+        if (type && type->kind == Type::Kind::Float) {
+            type = nullptr;
+            return nullptr;
+        }
+        if (type && arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
+            return evaluateIntegerOnly(arguments[0], arguments[1], function);
+        }
+        return nullptr;
+    }
 };
 
 

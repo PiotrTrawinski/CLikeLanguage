@@ -93,7 +93,7 @@ IntegerValue::IntegerValue(const CodePosition& position, uint64_t value) :
     value(value)
 {
     isConstexpr = true;
-    type = IntegerType::Create(IntegerType::Size::I32);
+    type = IntegerType::Create(IntegerType::Size::I64);
 }
 vector<unique_ptr<IntegerValue>> IntegerValue::objects;
 IntegerValue* IntegerValue::Create(const CodePosition& position, uint64_t value) {
@@ -191,6 +191,37 @@ bool FloatValue::operator==(const Statement& value) const {
 
 
 /*
+    BoolValue
+*/
+BoolValue::BoolValue(const CodePosition& position, bool value) : 
+    Value(position, Value::ValueKind::Char),
+    value(value)
+{
+    isConstexpr = true;
+    type = Type::Create(Type::Kind::Bool);
+}
+vector<unique_ptr<BoolValue>> BoolValue::objects;
+BoolValue* BoolValue::Create(const CodePosition& position, bool value) {
+    objects.emplace_back(make_unique<BoolValue>(position, value));
+    return objects.back().get();
+}
+optional<Value*> BoolValue::interpret(Scope* scope) {
+    isConstexpr = true;
+    return nullptr;
+}
+bool BoolValue::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const BoolValue&>(value);
+        return this->value == other.value
+            && Value::operator==(other);
+    }
+    else {
+        return false;
+    }
+}
+
+
+/*
     StringValue
 */
 StringValue::StringValue(const CodePosition& position, const string& value) : 
@@ -269,7 +300,15 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
             if (elementType->kind == Type::Kind::Integer || elementType->kind == Type::Kind::Float) {
                 deducedType = Type::getSuitingArithmeticType(deducedType, elementType);
             } else {
-                errorMessage("couldn't deduce array type", position);
+                string message = "couldn't deduce array type. types are: ";
+                for (int i = 0; i < elementTypes.size(); ++i) {
+                    message += DeclarationMap::toString(elementTypes[i]);
+                    if (i != elementTypes.size() - 1) {
+                        message += "; ";
+                    }
+                }
+
+                errorMessage(message, position);
                 return nullopt;
             }
         }
@@ -314,7 +353,17 @@ FunctionValue* FunctionValue::Create(const CodePosition& position, Type* type, S
 }
 optional<Value*> FunctionValue::interpret(Scope* scope) {
     isConstexpr = true;
-    //body.declarationMap.addVariableDeclaration(this->);
+    for (auto& argument : arguments) {
+        if (argument->value) {
+            internalError("function argument declaration has value", argument->position);
+            return nullopt;
+        }
+        argument->status = Declaration::Status::Completed;
+        body->declarationMap.addVariableDeclaration(argument);
+    }
+    if (!body->interpret()) {
+        return nullopt;
+    }
     return nullptr;
 }
 bool FunctionValue::operator==(const Statement& value) const {

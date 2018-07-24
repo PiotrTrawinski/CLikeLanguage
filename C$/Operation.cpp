@@ -1,48 +1,6 @@
 #include "Operation.h"
 
 using namespace std;
-/*
-optional<IntegerType::Size> getIntegerSize(IntegerType::Size size1, IntegerType::Size size2, CodePosition codePosition) {
-    if (isSigned(size1) && isSigned(size2)) {
-        if (size1 == IntegerType::Size::I64 || size2 == IntegerType::Size::I64) {
-            return IntegerType::Size::I64;
-        }
-        if (size1 == IntegerType::Size::I32 || size2 == IntegerType::Size::I32) {
-            return IntegerType::Size::I32;
-        }
-        if (size1 == IntegerType::Size::I16 || size2 == IntegerType::Size::I16) {
-            return IntegerType::Size::I16;
-        }
-        if (size1 == IntegerType::Size::I8 || size2 == IntegerType::Size::I8) {
-            return IntegerType::Size::I8;
-        }
-    } else if (!isSigned(size1) && !isSigned(size2)) {
-        if (size1 == IntegerType::Size::U64 || size2 == IntegerType::Size::U64) {
-            return IntegerType::Size::U64;
-        }
-        if (size1 == IntegerType::Size::U32 || size2 == IntegerType::Size::U32) {
-            return IntegerType::Size::U32;
-        }
-        if (size1 == IntegerType::Size::U16 || size2 == IntegerType::Size::U16) {
-            return IntegerType::Size::U16;
-        }
-        if (size1 == IntegerType::Size::U8 || size2 == IntegerType::Size::U8) {
-            return IntegerType::Size::U8;
-        }
-    } else {
-        errorMessage("signed/unsigned", codePosition);
-        return nullopt;
-    }
-}
-FloatType::Size getFloatSize(FloatType::Size size1, FloatType::Size size2) {
-    if (size1 == FloatType::Size::F64 || size2 == FloatType::Size::F64) {
-        return FloatType::Size::F64;
-    } else {
-        return FloatType::Size::F32;
-    }
-}
-
-*/
 
 /*
     Operation
@@ -57,31 +15,479 @@ Operation* Operation::Create(const CodePosition& position, Kind kind) {
     return objects.back().get();
 }
 optional<Value*> Operation::interpret(Scope* scope) {
-    bool allArgsConstexpr = true;
     for (auto& val : arguments) {
-        if (!val->interpret(scope)) {
+        auto valInterpret = val->interpret(scope);
+        if (!valInterpret) {
             return nullopt;
         }
-        if (!val->isConstexpr) {
-            allArgsConstexpr = false;
+        if (valInterpret.value()) {
+            val = valInterpret.value();
         }
     }
-    //switch (operation->kind) {
-    //case Operation::Kind::Add:
-    //if (allArgsConstexpr) {
-    //evaluate(operation->position, operation->arguments[0].get(), operation->arguments[1].get(), operationAdd);
-    //} else {
-    resolveTypeOfOperation();
+
+    type = nullptr;
+    switch (kind) {
+    case Kind::Dot:
+        break;
+    case Kind::Reference:
+        break;
+    case Kind::Address:
+        break;
+    case Kind::GetValue:
+        break;
+    case Kind::Allocation:
+        break;
+    case Kind::Deallocation:
+        break;
+    case Kind::Minus: {
+        auto argType = arguments[0]->type;
+        if (argType->kind != Type::Kind::Integer && argType->kind != Type::Kind::Float) {
+            break;
+        }
+        if (arguments[0]->valueKind == Value::ValueKind::Integer) {
+            type = IntegerType::Create(IntegerType::Size::I64);
+            if (arguments[0]->isConstexpr) {
+                return IntegerValue::Create(position, -(int64_t)((IntegerValue*)arguments[0])->value);
+            }
+        } else if (arguments[0]->valueKind == Value::ValueKind::Float) {
+            type = FloatType::Create(FloatType::Size::F64);
+            if (arguments[0]->isConstexpr) {
+                return FloatValue::Create(position, -((FloatValue*)arguments[0])->value);
+            }
+        } else if (arguments[0]->valueKind == Value::ValueKind::Char) {
+            type = IntegerType::Create(IntegerType::Size::I64);
+            if (arguments[0]->isConstexpr) {
+                return IntegerValue::Create(position, -(int64_t)((CharValue*)arguments[0])->value);
+            }
+        }
+        break;
+    }
+    case Kind::Mul: {
+        auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
+            return val1 * val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Div: {
+        auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
+            return val1 / val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Mod: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 % val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Add: {
+        auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
+            return val1 + val2;
+        });
+        if (value) return value;
+        if (type) break;
+
+        auto type1 = arguments[0]->type;
+        auto type2 = arguments[1]->type;
+        if (arguments[0]->valueKind == Value::ValueKind::String && arguments[1]->valueKind == Value::ValueKind::String) {
+            if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
+                return StringValue::Create(
+                    position, 
+                    ((StringValue*)arguments[0])->value + ((StringValue*)arguments[1])->value
+                );
+            }
+            type = arguments[0]->type;
+        }
+        else if (arguments[0]->valueKind == Value::ValueKind::StaticArray && arguments[1]->valueKind == Value::ValueKind::StaticArray) {
+            auto staticArray1 = (StaticArrayValue*)arguments[0];
+            auto staticArray2 = (StaticArrayValue*)arguments[1];
+            auto arrayType1 = (StaticArrayType*)type1;
+            auto arrayType2 = (StaticArrayType*)type2;
+            if (arrayType1->elementType == arrayType2->elementType) {
+                if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
+                    auto arrayValue = StaticArrayValue::Create(position);
+                    arrayValue->type = StaticArrayType::Create(
+                        arrayType1->elementType, 
+                        arrayType1->sizeAsInt + arrayType2->sizeAsInt
+                    );
+                    for (auto& element : staticArray1->values) {
+                        arrayValue->values.push_back(element);
+                    }
+                    for (auto& element : staticArray2->values) {
+                        arrayValue->values.push_back(element);
+                    }
+                    return arrayValue;
+                }
+                type = type1;
+            }
+        } 
+        else if (type1->kind == Type::Kind::DynamicArray && type2->kind == Type::Kind::DynamicArray) {
+            auto dynamicArrayType1 = (DynamicArrayType*)type1;
+            auto dynamicArrayType2 = (DynamicArrayType*)type2;
+            if (dynamicArrayType1->elementType == dynamicArrayType2->elementType) {
+                type = type1;
+            }
+        } 
+        else if (type1->kind == Type::Kind::ArrayView && type2->kind == Type::Kind::ArrayView) {
+            auto arrayViewType1 = (ArrayViewType*)type1;
+            auto arrayViewType2 = (ArrayViewType*)type2;
+            if (arrayViewType1->elementType == arrayViewType2->elementType) {
+                type = DynamicArrayType::Create(arrayViewType1->elementType);
+            }
+        } 
+        else if (type1->kind == Type::Kind::DynamicArray && type2->kind == Type::Kind::StaticArray) {
+            auto arrayType1 = (DynamicArrayType*)type1;
+            auto arrayType2 = (StaticArrayType*)type2;
+            if (arrayType1->elementType == arrayType2->elementType) {
+                type = type1;
+            }
+        }
+        else if (type1->kind == Type::Kind::StaticArray && type2->kind == Type::Kind::DynamicArray) {
+            auto arrayType1 = (StaticArrayType*)type1;
+            auto arrayType2 = (DynamicArrayType*)type2;
+            if (arrayType1->elementType == arrayType2->elementType) {
+                type = type2;
+            }
+        }
+        else if (type1->kind == Type::Kind::DynamicArray && type2->kind == Type::Kind::ArrayView) {
+            auto arrayType1 = (DynamicArrayType*)type1;
+            auto arrayType2 = (ArrayViewType*)type2;
+            if (arrayType1->elementType == arrayType2->elementType) {
+                type = type1;
+            }
+        }
+        else if (type1->kind == Type::Kind::ArrayView && type2->kind == Type::Kind::DynamicArray) {
+            auto arrayType1 = (ArrayViewType*)type1;
+            auto arrayType2 = (DynamicArrayType*)type2;
+            if (arrayType1->elementType == arrayType2->elementType) {
+                type = type2;
+            }
+        }
+        else if (type1->kind == Type::Kind::ArrayView && type2->kind == Type::Kind::StaticArray) {
+            auto arrayType1 = (ArrayViewType*)type1;
+            auto arrayType2 = (StaticArrayType*)type2;
+            if (arrayType1->elementType == arrayType2->elementType) {
+                type = DynamicArrayType::Create(arrayType1->elementType);
+            }
+        }
+        else if (type1->kind == Type::Kind::StaticArray && type2->kind == Type::Kind::ArrayView) {
+            auto arrayType1 = (StaticArrayType*)type1;
+            auto arrayType2 = (StaticArrayType*)type2;
+            if (arrayType1->elementType == arrayType2->elementType) {
+                type = DynamicArrayType::Create(arrayType1->elementType);
+            }
+        }
+        break;
+    }
+    case Kind::Sub: {
+        auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
+            return val1 - val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Shl: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 << val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Shr: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 >> val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Sal: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 << val2;
+        });
+        if (value) return value;
+        break;
+    } 
+    case Kind::Sar: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 >> val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Gt: {
+        auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
+            return val1 > val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Lt: {
+        auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
+            return val1 < val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Gte: {
+        auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
+            return val1 >= val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Lte: {
+        auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
+            return val1 <= val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Eq: {
+        auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
+            return val1 == val2;
+        });
+        if (value) return value;
+        if (arguments[0]->type != arguments[1]->type) {
+            break;
+        }
+        if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
+            if (arguments[0] == arguments[1]) {
+                return BoolValue::Create(position, true);
+            } else {
+                return BoolValue::Create(position, false);
+            }
+        }
+        type = Type::Create(Type::Kind::Bool);
+        break;
+    }
+    case Kind::Neq:{
+        auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
+            return val1 != val2;
+        });
+        if (value) return value;
+        if (arguments[0]->type != arguments[1]->type) {
+            break;
+        }
+        if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
+            if (arguments[0] != arguments[1]) {
+                return BoolValue::Create(position, true);
+            } else {
+                return BoolValue::Create(position, false);
+            }
+        }
+        type = Type::Create(Type::Kind::Bool);
+        break;
+    }
+    case Kind::LogicalNot: {
+        Value* bool1 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
+        ((Operation*)bool1)->arguments.push_back(arguments[0]);
+        auto bool1Interpret = bool1->interpret(scope);
+        if (!bool1Interpret) return nullopt;
+        if (bool1Interpret.value()) bool1 = bool1Interpret.value();
+
+        if (bool1->isConstexpr) {
+            return BoolValue::Create(
+                position,
+                !((BoolValue*)bool1)->value
+            );
+        }
+        type = Type::Create(Type::Kind::Bool);
+
+        break;   
+    }
+    case Kind::LogicalAnd: {
+        Value* bool1 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
+        ((Operation*)bool1)->arguments.push_back(arguments[0]);
+        auto bool1Interpret = bool1->interpret(scope);
+        if (!bool1Interpret) return nullopt;
+        if (bool1Interpret.value()) bool1 = bool1Interpret.value();
+
+        Value* bool2 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
+        ((Operation*)bool2)->arguments.push_back(arguments[0]);
+        auto bool2Interpret = bool2->interpret(scope);
+        if (!bool2Interpret) return nullopt;
+        if (bool2Interpret.value()) bool2 = bool2Interpret.value();
+
+        if (bool1->isConstexpr && bool2->isConstexpr) {
+            return BoolValue::Create(
+                position,
+                ((BoolValue*)bool1)->value && ((BoolValue*)bool2)->value
+            );
+        }
+        type = Type::Create(Type::Kind::Bool);
+
+        break;   
+    }
+    case Kind::LogicalOr: {
+        Value* bool1 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
+        ((Operation*)bool1)->arguments.push_back(arguments[0]);
+        auto bool1Interpret = bool1->interpret(scope);
+        if (!bool1Interpret) return nullopt;
+        if (bool1Interpret.value()) bool1 = bool1Interpret.value();
+
+        Value* bool2 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
+        ((Operation*)bool2)->arguments.push_back(arguments[0]);
+        auto bool2Interpret = bool2->interpret(scope);
+        if (!bool2Interpret) return nullopt;
+        if (bool2Interpret.value()) bool2 = bool2Interpret.value();
+
+        if (bool1->isConstexpr && bool2->isConstexpr) {
+            return BoolValue::Create(
+                position,
+                ((BoolValue*)bool1)->value || ((BoolValue*)bool2)->value
+            );
+        }
+        type = Type::Create(Type::Kind::Bool);
+
+        break;   
+    }
+    case Kind::BitNeg: {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            if (arguments[0]->isConstexpr) {
+                if (arguments[0]->valueKind == Value::ValueKind::Integer) {
+                    auto value = IntegerValue::Create(
+                        position,
+                        ~((IntegerValue*)arguments[0])->value
+                    );
+                    value->type = arguments[0]->type;
+                    return value;
+                }
+                if (arguments[0]->valueKind == Value::ValueKind::Char) {
+                    auto value = CharValue::Create(
+                        position,
+                        ~((CharValue*)arguments[0])->value
+                    );
+                    return value;
+                }
+            }
+            type = arguments[0]->type;
+        }
+        break;
+    }
+    case Kind::BitAnd: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 & val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::BitXor: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 ^ val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::BitOr: {
+        auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
+            return val1 | val2;
+        });
+        if (value) return value;
+        break;
+    }
+    case Kind::Assign:
+        break;
+    case Kind::AddAssign:
+        break;
+    case Kind::SubAssign:
+        break;
+    case Kind::MulAssign:
+        break;
+    case Kind::DivAssign:
+        break;
+    case Kind::ModAssign:
+        break;
+    case Kind::ShlAssign:
+        break;
+    case Kind::ShrAssign:
+        break;
+    case Kind::SalAssign:
+        break;
+    case Kind::SarAssign:
+        break;
+    case Kind::BitNegAssign:
+        break;
+    case Kind::BitOrAssign:
+        break;
+    case Kind::BitXorAssign:
+        break;
+    default: 
+        break;
+    }
+
     if (!type) {
+        string message = "incorrect use of operation '" + kindToString(kind) + "'. ";
+        if (arguments.size() == 1) {
+            message += "type is: ";
+            message += DeclarationMap::toString(arguments[0]->type);
+        } else {
+            message += "types are: ";
+            message += DeclarationMap::toString(arguments[0]->type);
+            message += "; ";
+            message += DeclarationMap::toString(arguments[1]->type);
+        }
+
+        errorMessage(message, position);
         return nullopt;
     }
-    //}
-    if (allArgsConstexpr) {
-        isConstexpr = true;
-    }
+
     return nullptr;
 }
 
+string Operation::kindToString(Kind kind) {
+    switch (kind) {
+    case Kind::Dot: return ". (dot)";
+    case Kind::FunctionCall: return "function call";
+    case Kind::ArrayIndex: return "[x] (array index)";
+    case Kind::ArraySubArray: return "[x:y] (sub-array)";
+    case Kind::Reference: return "& (reference)";
+    case Kind::Address: return "@ (address)";
+    case Kind::GetValue: return "$ (valueOf)";
+    case Kind::Allocation: return "alloc";
+    case Kind::Deallocation: return "dealloc";
+    case Kind::Cast: return "[T]() (cast)";
+    case Kind::BitNeg: return "~ (bit negation)";
+    case Kind::LogicalNot: return "! (logical not)";
+    case Kind::Minus: return "- (unary minus)";
+    case Kind::Mul: return "* (multiply)";
+    case Kind::Div: return "/ (divide)";
+    case Kind::Mod: return "% (modulo)";
+    case Kind::Add: return "+ (add)";
+    case Kind::Sub: return "- (substract)";
+    case Kind::Shl: return "<< (shift left)";
+    case Kind::Shr: return ">> (shift right)";
+    case Kind::Sal: return "<<< (logical shift left)";
+    case Kind::Sar: return ">>> (logical shift right)";
+    case Kind::Gt: return "> (greater then)";
+    case Kind::Lt: return "< (less then)";
+    case Kind::Gte: return ">= (greater then or equal)";
+    case Kind::Lte: return "<= (less then or equal)";
+    case Kind::Eq: return "== (equal)";
+    case Kind::Neq: return "!= (not equal)";
+    case Kind::BitAnd: return "& (bit and)";
+    case Kind::BitXor: return "^ (bit xor)";
+    case Kind::BitOr: return "| (bit or)";
+    case Kind::LogicalAnd: return "&& (logical and)";
+    case Kind::LogicalOr: return "|| (logical or)";
+    case Kind::Assign: return "= (assign)";
+    case Kind::AddAssign: return "+= (add-assign)";
+    case Kind::SubAssign: return "-= (sub-assign)";
+    case Kind::MulAssign: return "*= (mul-assign)";
+    case Kind::DivAssign: return "/= (div-assign)";
+    case Kind::ModAssign: return "%= (mod-assign)";
+    case Kind::ShlAssign: return "<<= (shl-assign)";
+    case Kind::ShrAssign: return ">>= (shr-assign)";
+    case Kind::SalAssign: return "<<<= (sal-assign)";
+    case Kind::SarAssign: return ">>>= (sar-assign)";
+    case Kind::BitNegAssign: return "~= (neg-assign)";
+    case Kind::BitOrAssign: return "|= (or-assign)";
+    case Kind::BitXorAssign: return "^= (xor-assign)";
+    default: return "unknown";
+    }
+}
 int Operation::priority(Kind kind) {
     switch (kind) {
     case Kind::Dot:
@@ -243,47 +649,8 @@ int Operation::getNumberOfArguments() {
     return numberOfArguments(kind);
 }
 
-bool Operation::resolveTypeOfOperation() {
-    if (getNumberOfArguments() == 2) {
-        auto type1 = arguments[0]->type;
-        auto type2 = arguments[1]->type;
-
-        type = Type::getSuitingArithmeticType(type1, type2);
-        if (type) {
-            return true;
-        }
-
- /*       if (type1->kind == Type::Kind::Integer && type2->kind == Type::Kind::Integer) {
-            auto integerSize = getIntegerSize(((IntegerType*)type1)->size,((IntegerType*)type2)->size, position);
-            if (!integerSize) {
-                return false;
-            }
-            type = make_unique<IntegerType>(integerSize.value());
-        }
-        else if (type1->kind == Type::Kind::Float && type2->kind == Type::Kind::Float) {
-            auto floatSize = getFloatSize(((FloatType*)type1)->size,((FloatType*)type2)->size);
-            type = make_unique<FloatType>(floatSize);
-        }
-        else if (type1->kind == Type::Kind::Integer && type2->kind == Type::Kind::Float) {
-            type = type2->copy();
-        }
-        else if (type1->kind == Type::Kind::Float && type2->kind == Type::Kind::Integer) {
-            type = type1->copy();
-        }*/
-        else if (type1->kind == Type::Kind::Bool && type2->kind == Type::Kind::Bool) {
-            type = type1;
-        }
-        else if (type1->kind == Type::Kind::String && type2->kind == Type::Kind::String) {
-            type = type1;
-        } 
-        else {
-            return errorMessage("cannot do 2 arg operation on thoes types", position);
-        }
-    } else {
-        return false;
-    }
-
-    return true;
+bool Operation::resolveTypeOfOperation(bool allArgsConstexpr) {
+    return false;
 }
 
 bool Operation::operator==(const Statement& value) const {
