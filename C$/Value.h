@@ -20,6 +20,7 @@ struct Value : Statement {
 
     Value(const CodePosition& position, ValueKind valueKind);
     static Value* Create(const CodePosition& position, ValueKind valueKind);
+    static bool isLvalue(Value* value);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -27,7 +28,7 @@ struct Value : Statement {
     ValueKind valueKind;
     Type* type = nullptr;
     bool isConstexpr = false;
-    
+
 private:
     static std::vector<std::unique_ptr<Value>> objects;
 };

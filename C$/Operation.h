@@ -51,7 +51,7 @@ struct Operation : Value {
     
 private:
     static std::vector<std::unique_ptr<Operation>> objects;
-    
+
     Operation* expandAssignOperation(Kind kind);
 
     template<typename Function> Value* evaluate(Value* val1, Value* val2, Function function) {

@@ -99,7 +99,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
         auto type1 = arguments[0]->type;
         auto type2 = arguments[1]->type;
-        if (arguments[0]->valueKind == Value::ValueKind::String && arguments[1]->valueKind == Value::ValueKind::String) {
+        if (arguments[0]->type->kind == Type::Kind::String && arguments[1]->type->kind == Type::Kind::String) {
             if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
                 return StringValue::Create(
                     position, 
@@ -395,8 +395,24 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (value) return value;
         break;
     }
-    case Kind::Assign:
+    case Kind::Assign:{
+        if (!isLvalue(arguments[0])) {
+            errorMessage("left argument of an assignment must be an l-value", position);
+            return nullopt;
+        }
+        auto cast = CastOperation::Create(arguments[1]->position, arguments[0]->type);
+        if (arguments[0]->type->kind == Type::Kind::Reference) {
+            cast->argType = ((ReferenceType*)arguments[0]->type)->underlyingType;
+            cast->type = cast->argType;
+        }
+        cast->arguments.push_back(arguments[1]);
+        arguments[1] = cast;
+        auto castInterpret = arguments[1]->interpret(scope);
+        if (!castInterpret) return nullopt;
+        if (castInterpret.value()) arguments[1] = castInterpret.value();
+        type = arguments[0]->type;
         break;
+    }
     case Kind::AddAssign:
         return expandAssignOperation(Operation::Kind::Add)->interpret(scope);
     case Kind::SubAssign:
