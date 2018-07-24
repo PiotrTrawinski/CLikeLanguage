@@ -81,6 +81,17 @@ struct FloatValue : Value {
 private:
     static std::vector<std::unique_ptr<FloatValue>> objects;
 };
+struct BoolValue : Value {
+    BoolValue(const CodePosition& position, bool value);
+    static BoolValue* Create(const CodePosition& position, bool value);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual bool operator==(const Statement& value) const;
+
+    bool value;
+
+private:
+    static std::vector<std::unique_ptr<BoolValue>> objects;
+};
 struct StringValue : Value {
     StringValue(const CodePosition& position, const std::string& value);
     static StringValue* Create(const CodePosition& position, const std::string& value);

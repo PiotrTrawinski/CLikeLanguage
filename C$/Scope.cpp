@@ -223,7 +223,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 endOfExpression = true;
                 break;
             }
-            out.push_back(CharValue::Create(tokens[i].codePosition, stoi(tokens[i].value)));
+            out.push_back(CharValue::Create(tokens[i].codePosition, (int)tokens[i].value[0]));
             i += 1;
             expectValue = false;
             break;
@@ -242,7 +242,19 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 break;
             }
             bool isTemplateFunctionCall = false;
-            if (tokens[i + 1].value == "<") {
+            if (tokens[i].value == "true") {
+                out.push_back(BoolValue::Create(tokens[i].codePosition, true));
+                i += 1;
+                expectValue = false;
+                break;
+            }
+            else if (tokens[i].value == "false") {
+                out.push_back(BoolValue::Create(tokens[i].codePosition, false));
+                i += 1;
+                expectValue = false;
+                break;
+            }
+            else if (tokens[i + 1].value == "<") {
                 // either 'less then' operator or function call template arguments
                 // assume its template arguments and check if it makes sense
                 isTemplateFunctionCall = true;
@@ -1041,7 +1053,7 @@ Declaration* Scope::findDeclaration(Variable* variable) {
     else if (declarations.size() == 1) {
         switch (declarations[0]->status) {
         case Declaration::Status::None:
-            errorMessage("internal error: impossible state", variable->position);
+            internalError("impossible state", variable->position);
             return nullptr;
         case Declaration::Status::InEvaluation:
             errorMessage("recursive variable dependency", variable->position);

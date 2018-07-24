@@ -1989,3 +1989,56 @@ namespace codeTreeCreating {
         }
     };
 }
+
+namespace interpreting {
+    TEST_CLASS(Operation__interpret_constexpr) {
+    public:
+        TEST_METHOD(addI64I64) {
+            // i64(3) + i64(-5) = i64(-2)
+            CodePosition codePosition(nullptr, 0, 0);
+            auto operation = Operation::Create(codePosition, Operation::Kind::Add);
+            operation->arguments.push_back(IntegerValue::Create(codePosition, 3));
+            operation->arguments.push_back(IntegerValue::Create(codePosition, -5));
+
+            Value* expected = IntegerValue::Create(codePosition, -2);
+
+            auto actual = operation->interpret(nullptr);
+
+            Assert::IsTrue(actual.has_value());
+            AssertAreEqual(expected, actual.value());
+        }
+        TEST_METHOD(addU8I8) {
+            // u8(200) + i8(-10) = i64(-2)
+            CodePosition codePosition(nullptr, 0, 0);
+            auto operation = Operation::Create(codePosition, Operation::Kind::Add);
+            operation->arguments.push_back(IntegerValue::Create(codePosition, 200));
+            operation->arguments.back()->type = IntegerType::Create(IntegerType::Size::U8);
+            operation->arguments.push_back(IntegerValue::Create(codePosition, -10));
+            operation->arguments.back()->type = IntegerType::Create(IntegerType::Size::I8);
+
+            Value* expected = IntegerValue::Create(codePosition, 190);
+
+            auto actual = operation->interpret(nullptr);
+
+            Assert::IsTrue(actual.has_value());
+            AssertAreEqual(expected, actual.value());
+        }
+        TEST_METHOD(addOverflowU8U8) {
+            // u8(200) + u8(100) = u64(300)
+            CodePosition codePosition(nullptr, 0, 0);
+            auto operation = Operation::Create(codePosition, Operation::Kind::Add);
+            operation->arguments.push_back(IntegerValue::Create(codePosition, 200));
+            operation->arguments.back()->type = IntegerType::Create(IntegerType::Size::U8);
+            operation->arguments.push_back(IntegerValue::Create(codePosition, 100));
+            operation->arguments.back()->type = IntegerType::Create(IntegerType::Size::U8);
+
+            Value* expected = IntegerValue::Create(codePosition, 300);
+            expected->type = IntegerType::Create(IntegerType::Size::U64);
+
+            auto actual = operation->interpret(nullptr);
+
+            Assert::IsTrue(actual.has_value());
+            AssertAreEqual(expected, actual.value());
+        }
+    };
+}
