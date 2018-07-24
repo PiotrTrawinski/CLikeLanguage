@@ -956,7 +956,7 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             auto typeValue = ((TypeKeyword*)keyword)->value;
             switch (typeValue) {
             case TypeKeyword::Value::Int:
-                type = IntegerType::Create(IntegerType::Size::I32); break;
+                type = IntegerType::Create(IntegerType::Size::I64); break;
             case TypeKeyword::Value::I8:
                 type = IntegerType::Create(IntegerType::Size::I8);  break;
             case TypeKeyword::Value::I16:
@@ -1224,7 +1224,21 @@ bool ClassScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return true;
 }
 bool ClassScope::interpret() {
-    return errorMessage("Classes are not supported", position);
+    for (auto& declaration : declarations) {
+        if (!declaration->value || declaration->value->valueKind != Value::ValueKind::FunctionValue) {
+            if (!declaration->interpret(this)) {
+                return false;
+            }
+        }
+    }
+    for (auto& declaration : declarations) {
+        if (declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
+            if (!declaration->interpret(this)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
     return nullptr;
@@ -1291,6 +1305,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         forEachData.index = Variable::Create(tokens[i].codePosition);
         forEachData.index->name = "index";
         forEachData.index->isConst = true;
+        forEachData.index->type = IntegerType::Create(IntegerType::Size::I64);
         data = forEachData;
         i += 1;
     } else if(tokens[i].value == ",") {
@@ -1323,6 +1338,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         forEachData.it->isConst = declarationType.isConst;
         forEachData.index = var2;
         forEachData.index->isConst = true;
+        forEachData.index->type = IntegerType::Create(IntegerType::Size::I64);
         data = forEachData;
     } else {
         // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
@@ -1347,6 +1363,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             forEachData.index = Variable::Create(tokens[i].codePosition);
             forEachData.index->name = "index";
             forEachData.index->isConst = true;
+            forEachData.index->type = IntegerType::Create(IntegerType::Size::I64);
             data = forEachData;
             i += 1;
         }
@@ -1374,6 +1391,71 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     }
 
     return CodeScope::createCodeTree(tokens, i);
+}
+bool ForScope::interpret() {
+    if (holds_alternative<ForIterData>(data)) {
+        auto& forIterData = get<ForIterData>(data);
+
+        auto firstValue = forIterData.firstValue->interpret(parentScope);
+        if (!firstValue) return false;
+        if (firstValue.value()) forIterData.firstValue = firstValue.value();
+        auto stepValue = forIterData.step->interpret(parentScope);
+        if (!stepValue) return false;
+        if (stepValue.value()) forIterData.step = stepValue.value();
+        auto lastValue = forIterData.lastValue->interpret(parentScope);
+        if (!lastValue) return false;
+        if (lastValue.value()) forIterData.lastValue = lastValue.value();
+
+        if ((forIterData.firstValue->type->kind != Type::Kind::Integer && forIterData.firstValue->type->kind != Type::Kind::Float)
+          || (forIterData.step->type->kind != Type::Kind::Integer && forIterData.step->type->kind != Type::Kind::Float)
+          || (forIterData.lastValue->type->kind != Type::Kind::Integer && forIterData.lastValue->type->kind != Type::Kind::Float))
+        {
+            string message = "for-iter values need to be int or float types. got: ";
+            message += DeclarationMap::toString(forIterData.firstValue->type);
+            message += "; ";
+            message += DeclarationMap::toString(forIterData.step->type);
+            message += "; ";
+            message += DeclarationMap::toString(forIterData.lastValue->type);
+            return errorMessage(message, position);
+        }
+
+        forIterData.iterVariable->type = Type::getSuitingArithmeticType(
+            forIterData.firstValue->type, forIterData.step->type
+        );
+        forIterData.iterVariable->type = Type::getSuitingArithmeticType(
+            forIterData.iterVariable->type, forIterData.lastValue->type
+        );
+
+        auto iterDeclaration = Declaration::Create(position);
+        iterDeclaration->variable = forIterData.iterVariable;
+        iterDeclaration->value = forIterData.firstValue;
+        iterDeclaration->status = Declaration::Status::Completed;
+        declarationMap.addVariableDeclaration(iterDeclaration);
+    } else if (holds_alternative<ForEachData>(data)) {
+        auto& forEachData = get<ForEachData>(data);
+
+        auto arrayValue = forEachData.arrayValue->interpret(parentScope);
+        if (!arrayValue) return false;
+        if (arrayValue.value()) forEachData.arrayValue = arrayValue.value();
+
+        auto itDeclaration = Declaration::Create(position);
+        if (forEachData.arrayValue->type->kind == Type::Kind::StaticArray) {
+            forEachData.it->type = ((StaticArrayType*)forEachData.arrayValue->type)->elementType;
+        } else if (forEachData.arrayValue->type->kind == Type::Kind::DynamicArray) {
+            forEachData.it->type = ((DynamicArrayType*)forEachData.arrayValue->type)->elementType;
+        } else if (forEachData.arrayValue->type->kind == Type::Kind::ArrayView) {
+            forEachData.it->type = ((ArrayViewType*)forEachData.arrayValue->type)->elementType;
+        }
+        itDeclaration->variable = forEachData.it;
+        itDeclaration->status = Declaration::Status::Completed;
+        declarationMap.addVariableDeclaration(itDeclaration);
+
+        auto indexDeclaration = Declaration::Create(position);
+        indexDeclaration->variable = forEachData.index;
+        indexDeclaration->status = Declaration::Status::Completed;
+        declarationMap.addVariableDeclaration(indexDeclaration);
+    }
+    return CodeScope::interpret();
 }
 bool ForIterData::operator==(const ForIterData& other) const {
     return cmpPtr(this->iterVariable, other.iterVariable)
@@ -1414,7 +1496,14 @@ bool WhileScope::createCodeTree(const vector<Token>& tokens, int& i) {
     }
     return CodeScope::createCodeTree(tokens, i);
 }
-
+bool WhileScope::interpret() {
+    auto boolCondition = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
+    boolCondition->arguments.push_back(conditionExpression);
+    auto valueInterpret = boolCondition->interpret(parentScope);
+    if (!valueInterpret) return false;
+    if (valueInterpret.value()) conditionExpression = valueInterpret.value();
+    return CodeScope::interpret();
+}
 
 /*
     IfScope
@@ -1465,7 +1554,14 @@ bool IfScope::createCodeTree(const vector<Token>& tokens, int& i) {
     }
     return true;
 }
-
+bool IfScope::interpret() {
+    auto boolCondition = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
+    boolCondition->arguments.push_back(conditionExpression);
+    auto valueInterpret = boolCondition->interpret(parentScope);
+    if (!valueInterpret) return false;
+    if (valueInterpret.value()) conditionExpression = valueInterpret.value();
+    return CodeScope::interpret();
+}
 
 /*
     ElseScope

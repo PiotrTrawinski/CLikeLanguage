@@ -683,14 +683,31 @@ bool Operation::operator==(const Statement& value) const {
 CastOperation::CastOperation(const CodePosition& position, Type* argType) : 
     Operation(position, Operation::Kind::Cast),
     argType(argType)
-{}
+{
+    type = argType;
+}
 vector<unique_ptr<CastOperation>> CastOperation::objects;
 CastOperation* CastOperation::Create(const CodePosition& position, Type* argType) {
     objects.emplace_back(make_unique<CastOperation>(position, argType));
     return objects.back().get();
 }
 optional<Value*> CastOperation::interpret(Scope* scope) {
-    return nullptr;
+    auto valInterpret = arguments[0]->interpret(scope);
+    if (!valInterpret) return nullopt;
+    if (valInterpret.value()) arguments[0] = valInterpret.value();
+
+    if (cmpPtr(arguments[0]->type, type)) {
+        return arguments[0];
+    } 
+    else if (type->kind == Type::Kind::Bool) {
+        return nullptr;
+    }
+
+    errorMessage("cannot cast " + 
+        DeclarationMap::toString(arguments[0]->type) + 
+        " to " + DeclarationMap::toString(type), position
+    );
+    return nullopt;
 }
 bool CastOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){

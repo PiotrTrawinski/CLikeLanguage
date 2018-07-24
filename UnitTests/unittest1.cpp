@@ -1351,7 +1351,7 @@ namespace codeTreeCreating {
             int i = 0;
 
             Type* expected = StaticArrayType::Create(
-                IntegerType::Create(IntegerType::Size::I32),
+                IntegerType::Create(IntegerType::Size::I64),
                 IntegerValue::Create(tokens[1].codePosition, 5)
             );
 
@@ -1375,7 +1375,7 @@ namespace codeTreeCreating {
             int i = 0;
 
             Type* expected = ArrayViewType::Create(
-                IntegerType::Create(IntegerType::Size::I32)
+                IntegerType::Create(IntegerType::Size::I64)
             );
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
@@ -1397,7 +1397,7 @@ namespace codeTreeCreating {
             int i = 0;
 
             Type* expected = DynamicArrayType::Create(
-                IntegerType::Create(IntegerType::Size::I32)
+                IntegerType::Create(IntegerType::Size::I64)
             );
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
@@ -1427,7 +1427,7 @@ namespace codeTreeCreating {
             auto expectedFunction = FunctionType::Create();
             expectedFunction->returnType = Type::Create(Type::Kind::Void);
             expectedFunction->argumentTypes.push_back(MaybeErrorType::Create(
-                IntegerType::Create(IntegerType::Size::I32)
+                IntegerType::Create(IntegerType::Size::I64)
             ));
             expectedFunction->argumentTypes.push_back(ReferenceType::Create(
                 OwnerPointerType::Create(
