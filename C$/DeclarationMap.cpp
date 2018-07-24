@@ -73,7 +73,7 @@ string DeclarationMap::toString(Type* type) {
     case Type::Kind::DynamicArray:
         return "[]" + toString(((DynamicArrayType*)(type))->elementType);
     case Type::Kind::StaticArray:
-        return "[N]" + toString(((StaticArrayType*)(type))->elementType);
+        return "["+to_string(((StaticArrayType*)type)->sizeAsInt)+"]" + toString(((StaticArrayType*)(type))->elementType);
     case Type::Kind::Template:
         return "T(" + ((TemplateType*)(type))->name + ")";
     case Type::Kind::TemplateFunction:{

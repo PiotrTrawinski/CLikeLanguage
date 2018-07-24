@@ -1844,6 +1844,7 @@ namespace codeTreeCreating {
             data.arrayValue = Variable::Create(tokens[1].codePosition, "x");
             data.index = Variable::Create(tokens[2].codePosition, "index");
             data.index->isConst = true;
+            data.index->type = IntegerType::Create(IntegerType::Size::I64);
             data.it = Variable::Create(tokens[2].codePosition, "it");
             data.it->isConst = true;
             statement->data = data;
@@ -1875,6 +1876,7 @@ namespace codeTreeCreating {
             data.arrayValue = Variable::Create(tokens[4].codePosition, "y");
             data.index = Variable::Create(tokens[5].codePosition, "index");
             data.index->isConst = true;
+            data.index->type = IntegerType::Create(IntegerType::Size::I64);
             data.it = Variable::Create(tokens[1].codePosition, "x");
             data.it->isConst = false;
             statement->data = data;
@@ -1908,6 +1910,7 @@ namespace codeTreeCreating {
             data.arrayValue = Variable::Create(tokens[6].codePosition, "z");
             data.index = Variable::Create(tokens[3].codePosition, "y");
             data.index->isConst = true;
+            data.index->type = IntegerType::Create(IntegerType::Size::I64);
             data.it = Variable::Create(tokens[1].codePosition, "x");
             data.it->isConst = true;
             statement->data = data;

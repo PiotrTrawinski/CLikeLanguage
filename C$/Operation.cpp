@@ -14,6 +14,13 @@ Operation* Operation::Create(const CodePosition& position, Kind kind) {
     objects.emplace_back(make_unique<Operation>(position, kind));
     return objects.back().get();
 }
+Operation* Operation::expandAssignOperation(Kind kind) {
+    auto assign = Operation::Create(position, Operation::Kind::Assign);
+    auto operation = Operation::Create(position, kind);
+    operation->arguments = {arguments[0], arguments[1]};
+    assign->arguments = {arguments[0], operation};
+    return assign;
+}
 optional<Value*> Operation::interpret(Scope* scope) {
     for (auto& val : arguments) {
         auto valInterpret = val->interpret(scope);
@@ -92,7 +99,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
         auto type1 = arguments[0]->type;
         auto type2 = arguments[1]->type;
-        if (arguments[0]->valueKind == Value::ValueKind::String && arguments[1]->valueKind == Value::ValueKind::String) {
+        if (arguments[0]->type->kind == Type::Kind::String && arguments[1]->type->kind == Type::Kind::String) {
             if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
                 return StringValue::Create(
                     position, 
@@ -388,32 +395,48 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (value) return value;
         break;
     }
-    case Kind::Assign:
+    case Kind::Assign:{
+        if (!isLvalue(arguments[0])) {
+            errorMessage("left argument of an assignment must be an l-value", position);
+            return nullopt;
+        }
+        auto cast = CastOperation::Create(arguments[1]->position, arguments[0]->type);
+        if (arguments[0]->type->kind == Type::Kind::Reference) {
+            cast->argType = ((ReferenceType*)arguments[0]->type)->underlyingType;
+            cast->type = cast->argType;
+        }
+        cast->arguments.push_back(arguments[1]);
+        arguments[1] = cast;
+        auto castInterpret = arguments[1]->interpret(scope);
+        if (!castInterpret) return nullopt;
+        if (castInterpret.value()) arguments[1] = castInterpret.value();
+        type = arguments[0]->type;
         break;
+    }
     case Kind::AddAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Add)->interpret(scope);
     case Kind::SubAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Sub)->interpret(scope);
     case Kind::MulAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Mul)->interpret(scope);
     case Kind::DivAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Div)->interpret(scope);
     case Kind::ModAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Mod)->interpret(scope);
     case Kind::ShlAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Shl)->interpret(scope);
     case Kind::ShrAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Shr)->interpret(scope);
     case Kind::SalAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Sal)->interpret(scope);
     case Kind::SarAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Sar)->interpret(scope);
     case Kind::BitNegAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::BitNeg)->interpret(scope);
     case Kind::BitOrAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::BitOr)->interpret(scope);
     case Kind::BitXorAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::BitXor)->interpret(scope);
     default: 
         break;
     }
@@ -649,10 +672,6 @@ int Operation::getNumberOfArguments() {
     return numberOfArguments(kind);
 }
 
-bool Operation::resolveTypeOfOperation(bool allArgsConstexpr) {
-    return false;
-}
-
 bool Operation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const Operation&>(value);
@@ -700,6 +719,62 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
         return arguments[0];
     } 
     else if (type->kind == Type::Kind::Bool) {
+        if (arguments[0]->type->kind != Type::Kind::Class) {
+            return nullptr;
+        }
+        if (arguments[0]->isConstexpr) {
+            if (arguments[0]->valueKind == Value::ValueKind::Char) {
+                return BoolValue::Create(position, ((CharValue*)arguments[0])->value != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::Integer) {
+                return BoolValue::Create(position, ((IntegerValue*)arguments[0])->value != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::Float) {
+                return BoolValue::Create(position, ((FloatValue*)arguments[0])->value != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::String) {
+                return BoolValue::Create(position, ((StringValue*)arguments[0])->value.size() != 0);
+            }
+            if (arguments[0]->valueKind == Value::ValueKind::StaticArray) {
+                return BoolValue::Create(position, ((StaticArrayValue*)arguments[0])->values.size() != 0);
+            }
+        }
+    }
+    else if (type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Float) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Bool) {
+            if (arguments[0]->isConstexpr) {
+                int value = ((BoolValue*)arguments[0])->value ? 1 : 0;
+                auto intValue = IntegerValue::Create(position, value);
+                intValue->type = type;
+                return intValue;
+            }
+            return nullptr;
+        }
+    }
+    else if (type->kind == Type::Kind::Float) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Float) {
+            return nullptr;
+        }
+        if (arguments[0]->type->kind == Type::Kind::Bool) {
+            if (arguments[0]->isConstexpr) {
+                double value = ((BoolValue*)arguments[0])->value ? 1 : 0;
+                auto floatValue = FloatValue::Create(position, value);
+                floatValue->type = type;
+                return floatValue;
+            }
+            return nullptr;
+        }
+    }
+    else if (type->kind == Type::Kind::RawPointer && arguments[0]->type->kind == Type::Kind::RawPointer) {
         return nullptr;
     }
 

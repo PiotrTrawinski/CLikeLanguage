@@ -52,6 +52,27 @@ Variable* Variable::Create(const CodePosition& position, const string& name) {
     objects.emplace_back(make_unique<Variable>(position, name));
     return objects.back().get();
 }
+bool Value::isLvalue(Value* value) {
+    if (value->type->kind == Type::Kind::Reference) {
+        return true;
+    }
+    if (value->valueKind == Value::ValueKind::Variable) {
+        if (!((Variable*)value)->isConst) {
+            return true;
+        }
+    }
+    if (value->valueKind == Value::ValueKind::Operation) {
+        auto operation = (Operation*)value;
+        switch (operation->kind) {
+        case Operation::Kind::GetValue:
+        case Operation::Kind::Dot:
+        case Operation::Kind::ArrayIndex:
+            return true;
+        default: break;
+        }
+    }
+    return false;
+}
 optional<Value*> Variable::interpret(Scope* scope) {
     Declaration* declaration = scope->findDeclaration(this);
     if (!declaration) {

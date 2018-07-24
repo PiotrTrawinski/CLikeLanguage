@@ -42,7 +42,6 @@ struct Operation : Value {
     bool getIsLeftAssociative();
     int getNumberOfArguments();
 
-    bool resolveTypeOfOperation(bool allArgsConstexpr);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -52,7 +51,9 @@ struct Operation : Value {
     
 private:
     static std::vector<std::unique_ptr<Operation>> objects;
-    
+
+    Operation* expandAssignOperation(Kind kind);
+
     template<typename Function> Value* evaluate(Value* val1, Value* val2, Function function) {
         if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Integer) {
             int64_t result = function((int64_t)((IntegerValue*)val1)->value, (int64_t)((IntegerValue*)val2)->value);
