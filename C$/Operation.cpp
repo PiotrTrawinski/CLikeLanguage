@@ -14,6 +14,13 @@ Operation* Operation::Create(const CodePosition& position, Kind kind) {
     objects.emplace_back(make_unique<Operation>(position, kind));
     return objects.back().get();
 }
+Operation* Operation::expandAssignOperation(Kind kind) {
+    auto assign = Operation::Create(position, Operation::Kind::Assign);
+    auto operation = Operation::Create(position, kind);
+    operation->arguments = {arguments[0], arguments[1]};
+    assign->arguments = {arguments[0], operation};
+    return assign;
+}
 optional<Value*> Operation::interpret(Scope* scope) {
     for (auto& val : arguments) {
         auto valInterpret = val->interpret(scope);
@@ -391,29 +398,29 @@ optional<Value*> Operation::interpret(Scope* scope) {
     case Kind::Assign:
         break;
     case Kind::AddAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Add)->interpret(scope);
     case Kind::SubAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Sub)->interpret(scope);
     case Kind::MulAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Mul)->interpret(scope);
     case Kind::DivAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Div)->interpret(scope);
     case Kind::ModAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Mod)->interpret(scope);
     case Kind::ShlAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Shl)->interpret(scope);
     case Kind::ShrAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Shr)->interpret(scope);
     case Kind::SalAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Sal)->interpret(scope);
     case Kind::SarAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::Sar)->interpret(scope);
     case Kind::BitNegAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::BitNeg)->interpret(scope);
     case Kind::BitOrAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::BitOr)->interpret(scope);
     case Kind::BitXorAssign:
-        break;
+        return expandAssignOperation(Operation::Kind::BitXor)->interpret(scope);
     default: 
         break;
     }
