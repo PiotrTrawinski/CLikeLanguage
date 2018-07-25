@@ -82,9 +82,9 @@ optional<Value*> Variable::interpret(Scope* scope) {
     type = declaration->variable->type;
     isConst = declaration->variable->isConst;
 
-    /*if (isConstexpr) {
-        return Value::copy();
-    }*/
+    if (isConstexpr) {
+        return declaration->value;
+    }
     return nullptr;
 }
 bool Variable::operator==(const Statement& value) const {

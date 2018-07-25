@@ -42,11 +42,13 @@ struct Operation : Value {
     bool getIsLeftAssociative();
     int getNumberOfArguments();
 
+    bool interpretAllArguments(Scope* scope);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
 
     Kind kind;
+    bool wasInterpreted = false;
     std::vector<Value*> arguments;
     
 private:
@@ -109,6 +111,7 @@ private:
             value->type = type;
             return value;
         }
+        return nullptr;
     }
     template<typename Function> Value* evaluateIntegerOnly(Value* val1, Value* val2, Function function) {
         if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Integer) {
@@ -135,11 +138,12 @@ private:
             value->type = type;
             return value;
         }
+        return nullptr;
     }
 
     template<typename Function> Value* tryEvaluate2ArgArithmetic(Function function) {
-        auto type1 = arguments[0]->type;
-        auto type2 = arguments[1]->type;
+        auto type1 = arguments[0]->type->getEffectiveType();
+        auto type2 = arguments[1]->type->getEffectiveType();
         type = Type::getSuitingArithmeticType(type1, type2);
         if (type && arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
             return evaluate(arguments[0], arguments[1], function);
@@ -147,8 +151,8 @@ private:
         return nullptr;
     }
     template<typename Function> Value* tryEvaluate2ArgArithmeticBoolTest(Function function) {
-        auto type1 = arguments[0]->type;
-        auto type2 = arguments[1]->type;
+        auto type1 = arguments[0]->type->getEffectiveType();
+        auto type2 = arguments[1]->type->getEffectiveType();
         if (!Type::getSuitingArithmeticType(type1, type2)) {
             return nullptr;
         }
@@ -159,8 +163,8 @@ private:
         return nullptr;
     }
     template<typename Function> Value* tryEvaluate2ArgArithmeticIntegerOnly(Function function) {
-        auto type1 = arguments[0]->type;
-        auto type2 = arguments[1]->type;
+        auto type1 = arguments[0]->type->getEffectiveType();
+        auto type2 = arguments[1]->type->getEffectiveType();
         type = Type::getSuitingArithmeticType(type1, type2);
         if (type && type->kind == Type::Kind::Float) {
             type = nullptr;
@@ -198,6 +202,15 @@ struct ArrayIndexOperation : Operation {
     
 private:
     static std::vector<std::unique_ptr<ArrayIndexOperation>> objects;
+
+    template<typename T> std::optional<Value*> evaluateConstexprIntegerIndex(std::vector<Value*> staticArrayValues, uint64_t indexValue) {
+        auto value = (T)indexValue;
+        if (value >= staticArrayValues.size()) {
+            errorMessage("array index outside the bounds of an array", position);
+            return nullopt;
+        }
+        return staticArrayValues[value];
+    }
 };
 struct ArraySubArrayOperation : Operation {
     ArraySubArrayOperation(const CodePosition& position, Value* firstIndex, Value* secondIndex);

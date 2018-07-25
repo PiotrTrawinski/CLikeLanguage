@@ -21,51 +21,86 @@ Operation* Operation::expandAssignOperation(Kind kind) {
     assign->arguments = {arguments[0], operation};
     return assign;
 }
-optional<Value*> Operation::interpret(Scope* scope) {
+bool Operation::interpretAllArguments(Scope* scope) {
     for (auto& val : arguments) {
         auto valInterpret = val->interpret(scope);
         if (!valInterpret) {
-            return nullopt;
+            return false;
         }
         if (valInterpret.value()) {
             val = valInterpret.value();
         }
+    }
+    return true;
+}
+optional<Value*> Operation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
+    Type* effectiveType1 = nullptr;
+    Type* effectiveType2 = nullptr;
+    if (arguments.size() >= 1) {
+        effectiveType1 = arguments[0]->type->getEffectiveType();
+    }
+    if (arguments.size() >= 2) {
+        effectiveType2 = arguments[1]->type->getEffectiveType();
     }
 
     type = nullptr;
     switch (kind) {
     case Kind::Dot:
         break;
-    case Kind::Reference:
+    case Kind::Reference: {
+        if (!isLvalue(arguments[0])) {
+            errorMessage("You can only take referenece of an l-value", position);
+            return nullopt;
+        }
+        type = ReferenceType::Create(arguments[0]->type);
         break;
-    case Kind::Address:
+    }
+    case Kind::Address: {
+        if (!isLvalue(arguments[0])) {
+            errorMessage("You can only take address of an l-value", position);
+            return nullopt;
+        }
+        type = RawPointerType::Create(arguments[0]->type);
         break;
-    case Kind::GetValue:
+    }
+    case Kind::GetValue: {
+        switch (effectiveType1->kind) {
+            case Type::Kind::MaybeError:
+                type = ((MaybeErrorType*)arguments[0]->type)->underlyingType;
+                break;
+            case Type::Kind::OwnerPointer:
+                type = ((OwnerPointerType*)arguments[0]->type)->underlyingType;
+                break;
+            case Type::Kind::RawPointer:
+                type = ((RawPointerType*)arguments[0]->type)->underlyingType;
+                break;
+            default:
+                break;
+        }
         break;
+    }
     case Kind::Allocation:
         break;
     case Kind::Deallocation:
         break;
     case Kind::Minus: {
-        auto argType = arguments[0]->type;
-        if (argType->kind != Type::Kind::Integer && argType->kind != Type::Kind::Float) {
-            break;
+        if (effectiveType1->kind == Type::Kind::Integer) {
+            type = IntegerType::Create(IntegerType::Size::I64);
+        } else if (effectiveType1->kind == Type::Kind::Float) {
+            type = FloatType::Create(FloatType::Size::F64);
         }
         if (arguments[0]->valueKind == Value::ValueKind::Integer) {
-            type = IntegerType::Create(IntegerType::Size::I64);
-            if (arguments[0]->isConstexpr) {
-                return IntegerValue::Create(position, -(int64_t)((IntegerValue*)arguments[0])->value);
-            }
+            return IntegerValue::Create(position, -(int64_t)((IntegerValue*)arguments[0])->value);
         } else if (arguments[0]->valueKind == Value::ValueKind::Float) {
-            type = FloatType::Create(FloatType::Size::F64);
-            if (arguments[0]->isConstexpr) {
-                return FloatValue::Create(position, -((FloatValue*)arguments[0])->value);
-            }
+            return FloatValue::Create(position, -((FloatValue*)arguments[0])->value);
         } else if (arguments[0]->valueKind == Value::ValueKind::Char) {
-            type = IntegerType::Create(IntegerType::Size::I64);
-            if (arguments[0]->isConstexpr) {
-                return IntegerValue::Create(position, -(int64_t)((CharValue*)arguments[0])->value);
-            }
+            return IntegerValue::Create(position, -(int64_t)((CharValue*)arguments[0])->value);
         }
         break;
     }
@@ -97,8 +132,8 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (value) return value;
         if (type) break;
 
-        auto type1 = arguments[0]->type;
-        auto type2 = arguments[1]->type;
+        auto type1 = arguments[0]->type->getEffectiveType();
+        auto type2 = arguments[1]->type->getEffectiveType();
         if (arguments[0]->type->kind == Type::Kind::String && arguments[1]->type->kind == Type::Kind::String) {
             if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
                 return StringValue::Create(
@@ -401,10 +436,10 @@ optional<Value*> Operation::interpret(Scope* scope) {
             return nullopt;
         }
         auto cast = CastOperation::Create(arguments[1]->position, arguments[0]->type);
-        if (arguments[0]->type->kind == Type::Kind::Reference) {
+        /*if (arguments[0]->type->kind == Type::Kind::Reference) {
             cast->argType = ((ReferenceType*)arguments[0]->type)->underlyingType;
             cast->type = cast->argType;
-        }
+        }*/
         cast->arguments.push_back(arguments[1]);
         arguments[1] = cast;
         auto castInterpret = arguments[1]->interpret(scope);
@@ -457,6 +492,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         return nullopt;
     }
 
+    wasInterpreted = true;
     return nullptr;
 }
 
@@ -711,15 +747,21 @@ CastOperation* CastOperation::Create(const CodePosition& position, Type* argType
     return objects.back().get();
 }
 optional<Value*> CastOperation::interpret(Scope* scope) {
-    auto valInterpret = arguments[0]->interpret(scope);
-    if (!valInterpret) return nullopt;
-    if (valInterpret.value()) arguments[0] = valInterpret.value();
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
 
-    if (cmpPtr(arguments[0]->type, type)) {
+    auto effectiveType = arguments[0]->type->getEffectiveType();
+
+    if (cmpPtr(effectiveType, type)) {
         return arguments[0];
     } 
     else if (type->kind == Type::Kind::Bool) {
-        if (arguments[0]->type->kind != Type::Kind::Class) {
+        if (effectiveType->kind != Type::Kind::Class) {
+            wasInterpreted = true;
             return nullptr;
         }
         if (arguments[0]->isConstexpr) {
@@ -741,40 +783,47 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
         }
     }
     else if (type->kind == Type::Kind::Integer) {
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
+        if (effectiveType->kind == Type::Kind::Integer) {
+            wasInterpreted = true;
             return nullptr;
         }
-        if (arguments[0]->type->kind == Type::Kind::Float) {
+        if (effectiveType->kind == Type::Kind::Float) {
+            wasInterpreted = true;
             return nullptr;
         }
-        if (arguments[0]->type->kind == Type::Kind::Bool) {
+        if (effectiveType->kind == Type::Kind::Bool) {
             if (arguments[0]->isConstexpr) {
                 int value = ((BoolValue*)arguments[0])->value ? 1 : 0;
                 auto intValue = IntegerValue::Create(position, value);
                 intValue->type = type;
                 return intValue;
             }
+            wasInterpreted = true;
             return nullptr;
         }
     }
     else if (type->kind == Type::Kind::Float) {
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
+        if (effectiveType->kind == Type::Kind::Integer) {
+            wasInterpreted = true;
             return nullptr;
         }
-        if (arguments[0]->type->kind == Type::Kind::Float) {
+        if (effectiveType->kind == Type::Kind::Float) {
+            wasInterpreted = true;
             return nullptr;
         }
-        if (arguments[0]->type->kind == Type::Kind::Bool) {
+        if (effectiveType->kind == Type::Kind::Bool) {
             if (arguments[0]->isConstexpr) {
                 double value = ((BoolValue*)arguments[0])->value ? 1 : 0;
                 auto floatValue = FloatValue::Create(position, value);
                 floatValue->type = type;
                 return floatValue;
             }
+            wasInterpreted = true;
             return nullptr;
         }
     }
-    else if (type->kind == Type::Kind::RawPointer && arguments[0]->type->kind == Type::Kind::RawPointer) {
+    else if (type->kind == Type::Kind::RawPointer && effectiveType->kind == Type::Kind::RawPointer) {
+        wasInterpreted = true;
         return nullptr;
     }
 
@@ -818,6 +867,74 @@ ArrayIndexOperation* ArrayIndexOperation::Create(const CodePosition& position, V
     return objects.back().get();
 }
 optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
+    auto indexInterpret = index->interpret(scope);
+    if (!indexInterpret) return nullopt;
+    if (indexInterpret.value()) index = indexInterpret.value();
+
+    if (index->type->kind != Type::Kind::Integer) {
+        errorMessage("array index must be an integer value, got " 
+            + DeclarationMap::toString(index->type), position
+        );
+        return nullopt;
+    }
+
+    if (index->isConstexpr && arguments[0]->isConstexpr && arguments[0]->valueKind == Value::ValueKind::StaticArray) {
+        auto& staticArrayValues = ((StaticArrayValue*)arguments[0])->values;
+        if (index->valueKind == Value::ValueKind::Integer) {
+            auto indexValue = ((IntegerValue*)index)->value;
+            switch (((IntegerType*)index->type)->size) {
+            case IntegerType::Size::I8:
+                return evaluateConstexprIntegerIndex<int8_t>(staticArrayValues, indexValue);
+            case IntegerType::Size::I16:
+                return evaluateConstexprIntegerIndex<int16_t>(staticArrayValues, indexValue);
+            case IntegerType::Size::I32:
+                return evaluateConstexprIntegerIndex<int32_t>(staticArrayValues, indexValue);
+            case IntegerType::Size::I64:
+                return evaluateConstexprIntegerIndex<int64_t>(staticArrayValues, indexValue);
+            case IntegerType::Size::U8:
+                return evaluateConstexprIntegerIndex<uint8_t>(staticArrayValues, indexValue);
+            case IntegerType::Size::U16:
+                return evaluateConstexprIntegerIndex<uint16_t>(staticArrayValues, indexValue);
+            case IntegerType::Size::U32:
+                return evaluateConstexprIntegerIndex<uint32_t>(staticArrayValues, indexValue);
+            case IntegerType::Size::U64:
+                return evaluateConstexprIntegerIndex<uint64_t>(staticArrayValues, indexValue);
+            }
+        }
+        else if (index->valueKind == Value::ValueKind::Char) {
+            auto indexValue = ((CharValue*)index)->value;
+            if (indexValue >= staticArrayValues.size()) {
+                errorMessage("array index outside the bounds of an array", position);
+                return nullopt;
+            }
+            return staticArrayValues[indexValue];
+        } else {
+            internalError("expected constexpr integer or char in array index", position);
+            return nullopt;
+        }
+    }
+
+    switch (arguments[0]->type->kind) {
+        case Type::Kind::StaticArray:
+            type = ReferenceType::Create(((StaticArrayType*)arguments[0]->type)->elementType);
+            break;
+        case Type::Kind::DynamicArray:
+            type = ReferenceType::Create(((DynamicArrayType*)arguments[0]->type)->elementType);
+            break;
+        case Type::Kind::ArrayView:
+            type = ReferenceType::Create(((ArrayViewType*)arguments[0]->type)->elementType);
+            break;
+        default:
+            break;
+    }
+    if (!type) {
+        errorMessage("cannot index value of type " + DeclarationMap::toString(arguments[0]->type), position);
+        return nullopt;
+    }
+
     return nullptr;
 }
 bool ArrayIndexOperation::operator==(const Statement& value) const {
