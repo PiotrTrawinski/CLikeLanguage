@@ -30,6 +30,7 @@ struct Type {
     Type(Kind kind);
     static Type* Create(Kind kind);
     virtual bool operator==(const Type& type) const;
+    virtual Type* getEffectiveType();
     //virtual std::unique_ptr<Type> copy();
 
     static Type* getSuitingArithmeticType(Type* val1, Type* val2);
@@ -82,6 +83,7 @@ struct ReferenceType : Type {
     static ReferenceType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
+    Type* getEffectiveType();
     //virtual std::unique_ptr<Type> copy();
 
     Type* underlyingType = nullptr;

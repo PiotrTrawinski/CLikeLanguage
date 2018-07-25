@@ -1040,7 +1040,7 @@ Declaration* Scope::findDeclaration(Variable* variable) {
     auto declarations = declarationMap.getDeclarations(variable->name);
     if (declarations.empty()) {
         Declaration* declaration = findAndInterpretDeclaration(variable->name);
-        if (declaration && declaration->value->isConstexpr) {
+        if (declaration && declaration->variable->isConstexpr) {
             return declaration;
         } else {
             if (parentScope == nullptr) {

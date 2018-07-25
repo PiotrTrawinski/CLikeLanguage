@@ -22,6 +22,9 @@ bool Type::operator==(const Type& type) const {
         return false;
     }
 }
+Type* Type::getEffectiveType() {
+    return this;
+}
 /*unique_ptr<Type> Type::copy() {
     return make_unique<Type>(this->kind);
 }*/
@@ -151,6 +154,9 @@ bool ReferenceType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+Type* ReferenceType::getEffectiveType() {
+    return underlyingType->getEffectiveType();
 }
 /*unique_ptr<Type> ReferenceType::copy() {
     return make_unique<ReferenceType>(this->underlyingType->copy());
