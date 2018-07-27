@@ -35,6 +35,12 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
             return false;
         }
         bool addToMapStatus = false;
+        if (variable->type && !variable->type->interpret(scope)) {
+            return errorMessage("unknown type: " + DeclarationMap::toString(variable->type), position);
+        }
+        if (value && value->type && !value->type->interpret(scope)) {
+            return errorMessage("unknown type: " + DeclarationMap::toString(value->type), position);
+        }
         if (isFunctionDeclaration()) {
             addToMapStatus = scope->declarationMap.addFunctionDeclaration(this);
         } else {
@@ -50,6 +56,9 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
         status = Declaration::Status::InEvaluation;
         if (value) {
             if (variable->type) {
+                if (!variable->type->interpret(scope)) {
+                    return false;
+                }
                 auto cast = CastOperation::Create(value->position, variable->type);
                 cast->arguments.push_back(value);
                 value = cast;

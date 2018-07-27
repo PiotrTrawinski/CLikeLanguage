@@ -3,6 +3,7 @@
 #include "Operation.h"
 #include "Value.h"
 #include "Declaration.h"
+#include "ClassDeclaration.h"
 
 using namespace std;
 
@@ -127,11 +128,12 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                     return errorMessage("unexpected symbols in class declaration. Did you mean to use '::'?", tokens[i+1].codePosition);
                 }
                 i += 4;
-                auto classScope = ClassScope::Create(token.codePosition, this);
-                if (!classScope->createCodeTree(tokens, i)) {
+                auto classDeclaration = ClassDeclaration::Create(token.codePosition, token.value);
+                classDeclaration->body = ClassScope::Create(token.codePosition, this);
+                if (!classDeclaration->body->createCodeTree(tokens, i)) {
                     return false;
                 }
-                return Scope::ReadStatementValue(classScope);
+                return Scope::ReadStatementValue(classDeclaration);
             } else {
                 // variable declaration
                 bool declareByReference = tokens[i + 1].value == "&";
@@ -1143,6 +1145,11 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
                     break;
                 }
             } else {
+                if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
+                    if (!classDeclarationMap.add((ClassDeclaration*)statementValue.statement)) {
+                        return errorMessage("redefinition of class declaration", statementValue.statement->position);
+                    }
+                }
                 statements.push_back(statementValue.statement);
             }
         } else {
@@ -1158,6 +1165,13 @@ bool CodeScope::interpret() {
         case Statement::Kind::Declaration:{
             Declaration* declaration = (Declaration*)statement;
             if (!declaration->interpret(this)) {
+                return false;
+            }
+            break;
+        }
+        case Statement::Kind::ClassDeclaration:{
+            ClassDeclaration* declaration = (ClassDeclaration*)statement;
+            if (!declaration->interpret()) {
                 return false;
             }
             break;
@@ -1214,9 +1228,7 @@ ClassScope* ClassScope::Create(const CodePosition& position, Scope* parentScope)
 bool ClassScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const ClassScope&>(scope);
-        return this->name == other.name
-            && this->templateTypes == other.templateTypes
-            && this->declarations == other.declarations
+        return this->declarations == other.declarations
             && Scope::operator==(other);
     } else {
         return false;
@@ -1258,6 +1270,14 @@ bool ClassScope::interpret() {
     }
     for (auto& declaration : declarations) {
         if (declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
+            if (declaration->variable->isConst) {
+                FunctionValue* lambda = (FunctionValue*)declaration->value;
+                FunctionType* lambdaType = (FunctionType*)declaration->value->type;
+                lambdaType->argumentTypes.push_back(RawPointerType::Create(ClassType::Create(classDeclaration->name)));
+                lambda->arguments.push_back(Declaration::Create(lambda->position));
+                lambda->arguments.back()->variable->name = "this";
+                lambda->arguments.back()->variable->type = lambdaType->argumentTypes.back();
+            }
             if (!declaration->interpret(this)) {
                 return false;
             }
@@ -1567,6 +1587,8 @@ bool IfScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return errorMessage("unexpected '}' (trying to close unopened if scope)", tokens[i-1].codePosition);
         } else if (!statementValue.statement) {
             return false;
+        } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
+            return errorMessage("expected expression, got class declaration", tokens[i-1].codePosition);
         }
         statements.push_back(statementValue.statement);
     }
@@ -1609,6 +1631,8 @@ bool ElseScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return errorMessage("unexpected '}' (trying to close unopened else scope)", tokens[i-1].codePosition);
         } else if (!statementValue.statement) {
             return false;
+        } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
+            return errorMessage("expected expression, got class declaration", tokens[i-1].codePosition);
         }
         statements.push_back(statementValue.statement);
         return true;
@@ -1637,6 +1661,8 @@ bool DeferScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return errorMessage("unexpected '}' (trying to close unopened defer scope)", tokens[i-1].codePosition);
         } else if (!statementValue.statement) {
             return false;
+        } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
+            return errorMessage("expected expression, got class declaration", tokens[i-1].codePosition);
         }
         statements.push_back(statementValue.statement);
         return true;

@@ -7,6 +7,7 @@ struct Statement {
     enum class Kind {
         Scope,
         Declaration,
+        ClassDeclaration,
         Value
     };
     Statement(const CodePosition& position, Kind kind);

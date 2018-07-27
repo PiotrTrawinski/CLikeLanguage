@@ -15,6 +15,8 @@
 #include "../C$/Declaration.cpp"
 #include "../C$/globalVariables.cpp"
 #include "../C$/DeclarationMap.cpp"
+#include "../C$/ClassDeclaration.cpp"
+#include "../C$/ClassDeclarationMap.cpp"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace std;
@@ -340,8 +342,10 @@ wstring toWstring(ClassScope* scope, int indent, bool isStart, bool firstCall) {
         return toWstring((Statement*)scope, indent, isStart);
     }
     wstring str = L"";
-    str += strIndent(indent) + L"name = " + toWstring(scope->name) + L"\n";
+    /*
+    str += strIndent(indent) + L"name = " + toWstring(scope->) + L"\n";
     str += strIndent(indent) + L"templateTypes = " + toWstring(scope->templateTypes, indent) + L"\n";
+    */
     str += strIndent(indent) + L"declarations = " + toWstring(scope->declarations, indent) + L"\n";
     return str + strIndent(indent-INDENT_SIZE) + L"} #ClassScope";
 }
