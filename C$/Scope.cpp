@@ -284,7 +284,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     if (isTemplateFunctionCall) {
                         auto templateCall = TemplateFunctionCallOperation::Create(tokens[i].codePosition);
                         templateCall->templateTypes = templateTypes;
-                        templateCall->function->name = tokens[i].value;
+                        templateCall->idName = tokens[i].value;
                         i = k;
                         if (tokens[i].value == "(") {
                             // read function arguments
@@ -324,10 +324,10 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 else if (tokens[i].value == "dealloc") {
                     appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
                     expectValue = true;
-                } else if (tokens[i + 1].value == "(") {
+                } /*else if (tokens[i + 1].value == "(") {
                     // function call
                     auto functionCall = FunctionCallOperation::Create(tokens[i].codePosition);
-                    functionCall->function->name = tokens[i].value;
+                    functionCall->name = tokens[i].value;
                     i += 2;
                     if (tokens[i].value == ")") {
                         i += 1;
@@ -345,7 +345,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     }
                     out.push_back(functionCall);
                     expectValue = false;
-                } else {
+                }*/ else {
                     // variable
                     auto variable = Variable::Create(tokens[i].codePosition);
                     variable->name = tokens[i].value;
@@ -578,9 +578,29 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     endOfExpression = true;
                 }
             } else {
-                if (tokens[i].value == ")" && openBracketsCount > 0) {
+                if (tokens[i].value == "(") {
+                    // function call
+                    auto functionCall = FunctionCallOperation::Create(tokens[i].codePosition);
+                    i += 1;
+                    if (tokens[i].value == ")") {
+                        i += 1;
+                    } else {
+                        bool endOfArguments = false;
+                        do {
+                            auto value = getValue(tokens, i, {",", ")"});
+                            if (!value) return nullopt;
+                            if (tokens[i].value == ")") {
+                                endOfArguments = true;
+                            }
+                            functionCall->arguments.push_back(value);
+                            i += 1;
+                        } while(!endOfArguments);
+                    }
+                    appendOperator(stack, out, functionCall);
+                    expectValue = false;
+                }
+                else if (tokens[i].value == ")" && openBracketsCount > 0) {
                     while (stack.size() > 0 && stack.back()->kind != Operation::Kind::LeftBracket) {
-                        //wcout << toWstring(stack.back()->kind) << '\n';
                         out.push_back(stack.back());
                         stack.pop_back();
                     }
@@ -775,15 +795,20 @@ Value* solveReversePolishNotation(vector<Value*>& values) {
     for (int i = 0; i < values.size(); ++i) {
         if (values[i]->valueKind == Value::ValueKind::Operation) {
             auto operation = (Operation*)values[i];
-            int numberOfArguments = operation->getNumberOfArguments();
-            vector<Value*> arguments;
-            for (int i = 0; i < numberOfArguments; ++i) {
-                arguments.push_back(stack.back());
+            if (operation->kind == Operation::Kind::FunctionCall) {
+                ((FunctionCallOperation*)operation)->function = stack.back();
                 stack.pop_back();
-            }
-            for (int i = 0; i < numberOfArguments; ++i) {
-                operation->arguments.push_back(arguments.back());
-                arguments.pop_back();
+            } else {
+                int numberOfArguments = operation->getNumberOfArguments();
+                vector<Value*> arguments;
+                for (int i = 0; i < numberOfArguments; ++i) {
+                    arguments.push_back(stack.back());
+                    stack.pop_back();
+                }
+                for (int i = 0; i < numberOfArguments; ++i) {
+                    operation->arguments.push_back(arguments.back());
+                    arguments.pop_back();
+                }
             }
             stack.push_back(operation);
         } else {

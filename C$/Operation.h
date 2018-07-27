@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Value.h"
+#include <algorithm>
 
 struct Operation : Value {
     enum class Kind {
@@ -183,6 +184,7 @@ struct CastOperation : Operation {
     CastOperation(const CodePosition& position, Type* argType);
     static CastOperation* Create(const CodePosition& position, Type* argType);
     virtual std::optional<Value*> interpret(Scope* scope);
+    std::optional<Value*> interpret(Scope* scope, bool onlyTry);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
 
@@ -232,7 +234,8 @@ struct FunctionCallOperation : Operation {
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
 
-    Variable* function;
+    Value* function = nullptr;
+    std::string idName = "";
     
 private:
     static std::vector<std::unique_ptr<FunctionCallOperation>> objects;

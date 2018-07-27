@@ -13,9 +13,15 @@ bool DeclarationMap::addDeclaration(string idName, Declaration* declaration) {
     return true;
 }
 bool DeclarationMap::addVariableDeclaration(Declaration* declaration) {
+    if (nameToDeclarations[declaration->variable->name].size() > 0) {
+        return false;
+    }
     return addDeclaration(declaration->variable->name, declaration);
 }
 bool DeclarationMap::addFunctionDeclaration(Declaration* declaration) {
+    if (!declaration->variable->isConst && nameToDeclarations[declaration->variable->name].size() > 0) {
+        return false;
+    }
     return addDeclaration(
         declaration->variable->name + toString(declaration->value->type), 
         declaration

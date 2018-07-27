@@ -1,4 +1,5 @@
 #include "Operation.h"
+#include "Declaration.h"
 
 using namespace std;
 
@@ -747,6 +748,9 @@ CastOperation* CastOperation::Create(const CodePosition& position, Type* argType
     return objects.back().get();
 }
 optional<Value*> CastOperation::interpret(Scope* scope) {
+    return interpret(scope, false);
+}
+optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     if (wasInterpreted) {
         return nullptr;
     }
@@ -761,7 +765,7 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
     } 
     else if (type->kind == Type::Kind::Bool) {
         if (effectiveType->kind != Type::Kind::Class) {
-            wasInterpreted = true;
+            if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
         if (arguments[0]->isConstexpr) {
@@ -784,11 +788,11 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
     }
     else if (type->kind == Type::Kind::Integer) {
         if (effectiveType->kind == Type::Kind::Integer) {
-            wasInterpreted = true;
+            if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
         if (effectiveType->kind == Type::Kind::Float) {
-            wasInterpreted = true;
+            if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
         if (effectiveType->kind == Type::Kind::Bool) {
@@ -798,17 +802,17 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
                 intValue->type = type;
                 return intValue;
             }
-            wasInterpreted = true;
+            if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
     }
     else if (type->kind == Type::Kind::Float) {
         if (effectiveType->kind == Type::Kind::Integer) {
-            wasInterpreted = true;
+            if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
         if (effectiveType->kind == Type::Kind::Float) {
-            wasInterpreted = true;
+            if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
         if (effectiveType->kind == Type::Kind::Bool) {
@@ -818,19 +822,22 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
                 floatValue->type = type;
                 return floatValue;
             }
-            wasInterpreted = true;
+            if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
     }
     else if (type->kind == Type::Kind::RawPointer && effectiveType->kind == Type::Kind::RawPointer) {
-        wasInterpreted = true;
+        if (!onlyTry) wasInterpreted = true;
         return nullptr;
     }
 
-    errorMessage("cannot cast " + 
-        DeclarationMap::toString(arguments[0]->type) + 
-        " to " + DeclarationMap::toString(type), position
-    );
+    if (!onlyTry) {
+        errorMessage("cannot cast " + 
+            DeclarationMap::toString(arguments[0]->type) + 
+            " to " + DeclarationMap::toString(type), position
+        );
+    }
+    
     return nullopt;
 }
 bool CastOperation::operator==(const Statement& value) const {
@@ -999,9 +1006,9 @@ bool ArraySubArrayOperation::operator==(const Statement& value) const {
 /*
     FunctionCallOperation
 */
+
 FunctionCallOperation::FunctionCallOperation(const CodePosition& position) : 
-    Operation(position, Operation::Kind::FunctionCall),
-    function(Variable::Create(position))
+    Operation(position, Operation::Kind::FunctionCall)
 {}
 vector<unique_ptr<FunctionCallOperation>> FunctionCallOperation::objects;
 FunctionCallOperation* FunctionCallOperation::Create(const CodePosition& position) {
@@ -1009,18 +1016,121 @@ FunctionCallOperation* FunctionCallOperation::Create(const CodePosition& positio
     return objects.back().get();
 }
 optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
+
+    if (function->valueKind == Value::ValueKind::Variable) {
+        string functionName = ((Variable*)function)->name;
+        const auto& declarations = scope->declarationMap.getDeclarations(functionName);
+        vector<Declaration*> viableDeclarations;
+        Declaration* perfectMatch = nullptr;
+        for (const auto declaration : declarations) {
+            auto functionType = (FunctionType*)declaration->variable->type;
+            if (functionType && functionType->kind == Type::Kind::TemplateFunction) {
+                continue;
+            }
+            if (functionType && functionType->argumentTypes.size() == arguments.size()) {
+                bool allMatch = true;
+                for (int i = 0; i < functionType->argumentTypes.size(); ++i){
+                    if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
+                        allMatch = false;
+                    }
+                }
+                if (allMatch) {
+                    perfectMatch = declaration;
+                    break;
+                } else {
+                    viableDeclarations.push_back(declaration);
+                }
+            }
+        }
+        if (perfectMatch) {
+            // function = perfectMatch->variable;
+            function = nullptr;
+            idName = scope->declarationMap.getIdName(perfectMatch);
+            type = ((FunctionType*)perfectMatch->variable->type)->returnType;
+        } else {
+            vector<optional<vector<CastOperation*>>> neededCasts;
+            for (Declaration* declaration : viableDeclarations) {
+                neededCasts.push_back(vector<CastOperation*>());
+                auto argumentTypes = ((FunctionType*)declaration->variable->type)->argumentTypes;
+                for (int i = 0; i < argumentTypes.size(); ++i) {
+                    if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
+                        auto cast = CastOperation::Create(arguments[i]->position, argumentTypes[i]);
+                        cast->arguments.push_back(arguments[i]);
+                        auto castInterpret = cast->interpret(scope, true);
+                        if (castInterpret) {
+                            neededCasts.back().value().push_back(cast);
+                        } else {
+                            neededCasts.back() = nullopt;
+                            break;
+                        }
+                    } else {
+                        neededCasts.back().value().push_back(nullptr);
+                    }
+                }
+            }
+
+            int matchId = -1;
+            vector<Declaration*> possibleDeclarations;
+            for (int i = 0; i < neededCasts.size(); ++i) {
+                if (neededCasts[i]) {
+                    matchId = i;
+                    possibleDeclarations.push_back(viableDeclarations[i]);
+                }
+            }
+
+            if (matchId == -1) {
+                errorMessage("no fitting function to call", position);
+                return nullopt;
+            } 
+            if (possibleDeclarations.size() > 1) {
+                errorMessage("ambogous function call", position);
+                return nullopt;
+            }
+
+            for (int i = 0; i < arguments.size(); ++i) {
+                CastOperation* cast = neededCasts[matchId].value()[i];
+                if (cast) {
+                    auto castInterpret = cast->interpret(scope);
+                    if (castInterpret.value()) {
+                        arguments[i] = castInterpret.value();
+                    } else {
+                        arguments[i] = cast;
+                    }
+                }
+            }
+            type = ((FunctionType*)possibleDeclarations[matchId]->variable->type)->returnType;
+            idName = scope->declarationMap.getIdName(viableDeclarations[matchId]);
+        }
+        /*int insertIndex = viableDeclarations.size()-1;
+        for (const auto declaration : declarations) {
+            auto functionType = (TemplateFunctionType*)declaration->variable->type;
+            if (functionType && functionType->argumentTypes.size() == arguments.size()) {
+                //bool hasDecoratedType = false;
+
+                viableDeclarations.push_back(declaration);
+            }
+        }*/
+    } else if (arguments[0]->type->kind == Type::Kind::Function) {
+        type = ((FunctionType*)arguments[0]->type)->returnType;
+    }
+
     return nullptr;
 }
 bool FunctionCallOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const FunctionCallOperation&>(value);
         return cmpPtr(this->function, other.function)
+            && this->idName == other.idName
             && Operation::operator==(other);
     }
     else {
         return false;
     }
 }
+
 /*unique_ptr<Value> FunctionCallOperation::copy() {
     auto value = make_unique<FunctionCallOperation>(position);
     value->type = type->copy();

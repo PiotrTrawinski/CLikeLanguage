@@ -417,10 +417,10 @@ wstring toWstring(Operation* operation, int indent, bool isStart, bool firstCall
         str += strIndent(indent) + L"secondIndex = " + toWstring(((ArraySubArrayOperation*)(operation))->secondIndex, indent, false) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #ArraySubArrayOperation";
     } else if (operation->kind == Operation::Kind::FunctionCall) {
-        str += strIndent(indent) + L"function = " + toWstring(((FunctionCallOperation*)(operation))->function, indent, false) + L"\n";
+        str += strIndent(indent) + L"function = " + toWstring(((FunctionCallOperation*)(operation))->function) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #FunctionCallOperation";
     } else if (operation->kind == Operation::Kind::TemplateFunctionCall) {
-        str += strIndent(indent) + L"function = " + toWstring(((TemplateFunctionCallOperation*)(operation))->function, indent, false) + L"\n";
+        str += strIndent(indent) + L"function = " + toWstring(((TemplateFunctionCallOperation*)(operation))->function) + L"\n";
         str += strIndent(indent) + L"templateTypes = " + toWstring(((TemplateFunctionCallOperation*)(operation))->templateTypes, indent) + L"\n";
         return str + strIndent(indent-INDENT_SIZE) + L"} #TemplateFunctionCallOperation";
     } else {
@@ -1013,8 +1013,8 @@ namespace codeTreeCreating {
 
             vector<Value*> expected;
             auto arrayValue = StaticArrayValue::Create(tokens[0].codePosition);
-            arrayValue->values.push_back(FunctionCallOperation::Create(tokens[1].codePosition));
-            ((FunctionCallOperation*)arrayValue->values.back())->function->name = "f";
+            arrayValue->values.push_back(FunctionCallOperation::Create(tokens[2].codePosition));
+            ((FunctionCallOperation*)arrayValue->values.back())->function = Variable::Create(tokens[1].codePosition,"f");
             auto castOperation = CastOperation::Create(
                 tokens[5].codePosition,
                 IntegerType::Create(IntegerType::Size::I8)
@@ -1041,8 +1041,8 @@ namespace codeTreeCreating {
             int i = 0;
 
             vector<Value*> expected;
-            expected.push_back(FunctionCallOperation::Create(tokens[0].codePosition));
-            ((FunctionCallOperation*)expected.back())->function->name = "fun";
+            expected.push_back(Variable::Create(tokens[0].codePosition, "fun"));
+            expected.push_back(FunctionCallOperation::Create(tokens[1].codePosition));
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
             auto actual = scope.getReversePolishNotation(tokens, i);
@@ -1062,9 +1062,10 @@ namespace codeTreeCreating {
             int i = 0;
 
             vector<Value*> expected;
-            auto functionCall = FunctionCallOperation::Create(tokens[0].codePosition);
+
+            auto functionCall = FunctionCallOperation::Create(tokens[1].codePosition);
             functionCall->arguments.push_back(IntegerValue::Create(tokens[2].codePosition, 27));
-            functionCall->function->name = "fun";
+            expected.push_back(Variable::Create(tokens[0].codePosition, "fun"));
             expected.push_back(functionCall);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
@@ -1088,10 +1089,11 @@ namespace codeTreeCreating {
             int i = 0;
 
             vector<Value*> expected;
-            auto functionCall = FunctionCallOperation::Create(tokens[0].codePosition);
+
+            auto functionCall = FunctionCallOperation::Create(tokens[1].codePosition);
             functionCall->arguments.push_back(IntegerValue::Create(tokens[2].codePosition, 27));
             functionCall->arguments.push_back(Variable::Create(tokens[4].codePosition, "x"));
-            functionCall->function->name = "fun";
+            expected.push_back(Variable::Create(tokens[0].codePosition, "fun"));
             expected.push_back(functionCall);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
