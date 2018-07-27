@@ -19,6 +19,9 @@ Value* Value::Create(const CodePosition& position, ValueKind valueKind) {
     return objects.back().get();
 }
 optional<Value*> Value::interpret(Scope* scope) {
+    if (type && !type->interpret(scope)) {
+        return nullopt;
+    }
     return nullptr;
 }
 bool Value::operator==(const Statement& value) const {
@@ -74,6 +77,9 @@ bool Value::isLvalue(Value* value) {
     return false;
 }
 optional<Value*> Variable::interpret(Scope* scope) {
+    if (type && !type->interpret(scope)) {
+        return nullopt;
+    }
     Declaration* declaration = scope->findDeclaration(this);
     if (!declaration) {
         return nullopt;
@@ -373,6 +379,9 @@ FunctionValue* FunctionValue::Create(const CodePosition& position, Type* type, S
     return objects.back().get();
 }
 optional<Value*> FunctionValue::interpret(Scope* scope) {
+    if (type && !type->interpret(scope)) {
+        return nullopt;
+    }
     isConstexpr = true;
     for (auto& argument : arguments) {
         if (argument->value) {

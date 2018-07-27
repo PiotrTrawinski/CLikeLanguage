@@ -9,6 +9,7 @@
 #include "errorMessages.h"
 #include "keywords.h"
 #include "DeclarationMap.h"
+#include "ClassDeclarationMap.h"
 
 struct Operation;
 struct Variable;
@@ -54,6 +55,7 @@ struct Scope : Statement {
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
     DeclarationMap declarationMap;
+    ClassDeclarationMap classDeclarationMap;
 };
 
 struct CodeScope : Scope {
@@ -70,6 +72,7 @@ struct CodeScope : Scope {
 private:
     static std::vector<std::unique_ptr<CodeScope>> objects;
 };
+struct ClassDeclaration;
 struct ClassScope : Scope {
     ClassScope(const CodePosition& position, Scope* parentScope);
     static ClassScope* Create(const CodePosition& position, Scope* parentScope);
@@ -78,9 +81,8 @@ struct ClassScope : Scope {
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
 
-    std::string name;
-    std::vector<TemplateType*> templateTypes;
     std::vector<Declaration*> declarations;
+    ClassDeclaration* classDeclaration = nullptr;
     
 private:
     static std::vector<std::unique_ptr<ClassScope>> objects;

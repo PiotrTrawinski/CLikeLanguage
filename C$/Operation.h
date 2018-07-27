@@ -238,6 +238,11 @@ struct FunctionCallOperation : Operation {
     std::string idName = "";
     
 private:
+    enum FindFunctionStatus {
+        Fail, Success, Error
+    };
+    FindFunctionStatus findFunction(Scope* scope, Scope* searchScope, std::string functionName);
+
     static std::vector<std::unique_ptr<FunctionCallOperation>> objects;
 };
 struct TemplateFunctionCallOperation : FunctionCallOperation {

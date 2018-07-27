@@ -116,6 +116,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ClassDeclaration.cpp" />
+    <ClCompile Include="ClassDeclarationMap.cpp" />
     <ClCompile Include="Declaration.cpp" />
     <ClCompile Include="DeclarationMap.cpp" />
     <ClCompile Include="errorMessages.cpp" />
@@ -133,6 +135,8 @@
     <ClCompile Include="Value.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ClassDeclaration.h" />
+    <ClInclude Include="ClassDeclarationMap.h" />
     <ClInclude Include="CodePosition.h" />
     <ClInclude Include="Declaration.h" />
     <ClInclude Include="DeclarationMap.h" />
