@@ -170,12 +170,12 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
 }
 void appendOperator(vector<Operation*>& stack, vector<Value*>& out, Operation* operation) {
     if (operation->getIsLeftAssociative()) {
-        while (stack.size() > 0 && operation->getPriority() > stack.back()->getPriority()) {
+        while (stack.size() > 0 && operation->getPriority() >= stack.back()->getPriority()) {
             out.push_back(stack.back());
             stack.pop_back();
         }
     } else {
-        while (stack.size() > 0 && operation->getPriority() >= stack.back()->getPriority()) {
+        while (stack.size() > 0 && operation->getPriority() > stack.back()->getPriority()) {
             out.push_back(stack.back());
             stack.pop_back();
         }
@@ -193,6 +193,9 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
     int lastWasLambda = 0;
     int openBracketsCount = 0;
     while (!endOfExpression) {
+        if (lastWasLambda >= 1) {
+            break;
+        }
         lastWasLambda -= 1;
         if (i >= tokens.size()) {
             if (lastWasLambda >= 0) {
@@ -775,7 +778,6 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             break;
         }
     }
-
     if (lastWasLambda >= 0) {
         i -= 1;
     }
