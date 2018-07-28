@@ -126,7 +126,7 @@ struct FunctionValue : Value {
     //std::vector<std::string> argumentNames;
     std::vector<Declaration*> arguments;
     
-    CodeScope* body = nullptr;
+    FunctionScope* body = nullptr;
 
 private:
     static std::vector<std::unique_ptr<FunctionValue>> objects;

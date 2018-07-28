@@ -368,7 +368,7 @@ bool StaticArrayValue::operator==(const Statement& value) const {
 */
 FunctionValue::FunctionValue(const CodePosition& position, Type* type, Scope* parentScope) : 
     Value(position, Value::ValueKind::FunctionValue),
-    body(CodeScope::Create(position, Scope::Owner::Function, parentScope))
+    body(FunctionScope::Create(position, parentScope, this))
 {
     isConstexpr = true;
     this->type = type;
