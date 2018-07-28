@@ -60,7 +60,9 @@ optional<Value*> Operation::interpret(Scope* scope) {
         }
     }
 
+    auto typeCopy = type;
     type = nullptr;
+
     switch (kind) {
     case Kind::Dot: {
         auto arg0Interpret = arguments[0]->interpret(scope);
@@ -154,6 +156,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;
     }
     case Kind::Allocation:
+        type = typeCopy;
         break;
     case Kind::Deallocation:
         break;
@@ -546,7 +549,10 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
     if (!type) {
         string message = "incorrect use of operation '" + kindToString(kind) + "'. ";
-        if (arguments.size() == 1) {
+        if (arguments.size() == 0) {
+
+        }
+        else if (arguments.size() == 1) {
             message += "type is: ";
             message += DeclarationMap::toString(arguments[0]->type);
         } else {
@@ -715,13 +721,13 @@ int Operation::numberOfArguments(Kind kind) {
     switch (kind) {
     case Kind::FunctionCall:
     case Kind::Cast:
+    case Kind::Allocation:
         return 0;
     case Kind::ArrayIndex:
     case Kind::ArraySubArray:
     case Kind::Reference:
     case Kind::Address:
     case Kind::GetValue:
-    case Kind::Allocation:
     case Kind::Deallocation:
     case Kind::BitNeg:
     case Kind::LogicalNot:

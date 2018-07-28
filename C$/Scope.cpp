@@ -246,7 +246,6 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 endOfExpression = true;
                 break;
             }
-            bool isTemplateFunctionCall = false;
             if (tokens[i].value == "true") {
                 out.push_back(BoolValue::Create(tokens[i].codePosition, true));
                 i += 1;
@@ -259,98 +258,115 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 expectValue = false;
                 break;
             }
-            else if (tokens[i + 1].value == "<") {
-                // either 'less then' operator or function call template arguments
-                // assume its template arguments and check if it makes sense
-                isTemplateFunctionCall = true;
-                int openTemplateCount = 1;
-                int j = i + 2;
-                while (j < tokens.size() && openTemplateCount != 0) {
-                    if (tokens[j].value == "<") {
-                        openTemplateCount += 1;
-                    } else if (tokens[j].value == ">") {
-                        openTemplateCount -= 1;
-                    }
-                    j += 1;
+            else if (tokens[i].value == "alloc") {
+                i += 1;
+                auto operation = Operation::Create(tokens[i].codePosition, Operation::Kind::Allocation);
+                operation->type = getType(tokens, i, {";"});
+                if (!operation->type) {
+                    return nullopt;
                 }
-                if (j < tokens.size()) {
-                    vector<Type*> templateTypes;
-                    int k = i+2;
-                    while (k < j) {
-                        auto type = getType(tokens, k, {",", ">"}, false);
-                        if (type) {
-                            templateTypes.push_back(type);
-                            k += 1;
-                        } else {
-                            isTemplateFunctionCall = false;
-                            break;
+                operation->type = OwnerPointerType::Create(operation->type);
+                out.push_back(operation);
+                expectValue = false;
+                //appendOperator(stack, out, Operation::Kind::Allocation, tokens[i++].codePosition);
+            }
+            else if (tokens[i].value == "dealloc") {
+                appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
+                expectValue = true;
+            } else {
+                bool isTemplateFunctionCall = false;
+                if (tokens[i + 1].value == "<") {
+                    // either 'less then' operator or function call template arguments
+                    // assume its template arguments and check if it makes sense
+                    isTemplateFunctionCall = true;
+                    int openTemplateCount = 1;
+                    int j = i + 2;
+                    while (j < tokens.size() && openTemplateCount != 0) {
+                        if (tokens[j].value == "<") {
+                            openTemplateCount += 1;
+                        } else if (tokens[j].value == ">") {
+                            openTemplateCount -= 1;
                         }
+                        j += 1;
                     }
-                    if (isTemplateFunctionCall) {
-                        auto templateCall = TemplateFunctionCallOperation::Create(tokens[i].codePosition);
-                        templateCall->templateTypes = templateTypes;
-                        templateCall->idName = tokens[i].value;
-                        i = k;
-                        if (tokens[i].value == "(") {
-                            // read function arguments
-                            i += 1;
-                            if (tokens[i].value == ")") {
-                                i += 1;
+                    if (j < tokens.size()) {
+                        vector<Type*> templateTypes;
+                        int k = i+2;
+                        while (k < j) {
+                            auto type = getType(tokens, k, {",", ">"}, false);
+                            if (type) {
+                                templateTypes.push_back(type);
+                                k += 1;
                             } else {
-                                bool endOfArguments = false;
-                                do {
-                                    auto value = getValue(tokens, i, {",", ")"});
-                                    if (!value) return nullopt;
-                                    if (tokens[i].value == ")") {
-                                        endOfArguments = true;
-                                    }
-                                    templateCall->arguments.push_back(value);
-                                    i += 1;
-                                } while(!endOfArguments);
+                                isTemplateFunctionCall = false;
+                                break;
                             }
-                            out.push_back(templateCall);
-                            lastWasLambda = 1;
-                            expectValue = false;
-                        } else {
-                            errorMessage("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
-                            return nullopt;
                         }
+                        if (isTemplateFunctionCall) {
+                            auto templateCall = TemplateFunctionCallOperation::Create(tokens[i].codePosition);
+                            templateCall->templateTypes = templateTypes;
+                            templateCall->idName = tokens[i].value;
+                            i = k;
+                            if (tokens[i].value == "(") {
+                                // read function arguments
+                                i += 1;
+                                if (tokens[i].value == ")") {
+                                    i += 1;
+                                } else {
+                                    bool endOfArguments = false;
+                                    do {
+                                        auto value = getValue(tokens, i, {",", ")"});
+                                        if (!value) return nullopt;
+                                        if (tokens[i].value == ")") {
+                                            endOfArguments = true;
+                                        }
+                                        templateCall->arguments.push_back(value);
+                                        i += 1;
+                                    } while(!endOfArguments);
+                                }
+                                out.push_back(templateCall);
+                                lastWasLambda = 1;
+                                expectValue = false;
+                            } else {
+                                errorMessage("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
+                                return nullopt;
+                            }
+                        }
+                    } else {
+                        isTemplateFunctionCall = false;
                     }
-                } else {
-                    isTemplateFunctionCall = false;
-                }
-            } 
-            if (!isTemplateFunctionCall) {
-                // its either (special operator; variable; non-template function call)
-                if (tokens[i].value == "alloc") {
+                } 
+                if (!isTemplateFunctionCall) {
+                    // its either (special operator; variable; non-template function call)
+                    /*if (tokens[i].value == "alloc") {
                     appendOperator(stack, out, Operation::Kind::Allocation, tokens[i++].codePosition);
                     expectValue = true;
-                }
-                else if (tokens[i].value == "dealloc") {
+                    }
+                    else if (tokens[i].value == "dealloc") {
                     appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
                     expectValue = true;
-                } /*else if (tokens[i + 1].value == "(") {
+                    }*/ /*else if (tokens[i + 1].value == "(") {
                     // function call
                     auto functionCall = FunctionCallOperation::Create(tokens[i].codePosition);
                     functionCall->name = tokens[i].value;
                     i += 2;
                     if (tokens[i].value == ")") {
-                        i += 1;
+                    i += 1;
                     } else {
-                        bool endOfArguments = false;
-                        do {
-                            auto value = getValue(tokens, i, {",", ")"});
-                            if (!value) return nullopt;
-                            if (tokens[i].value == ")") {
-                                endOfArguments = true;
-                            }
-                            functionCall->arguments.push_back(value);
-                            i += 1;
-                        } while(!endOfArguments);
+                    bool endOfArguments = false;
+                    do {
+                    auto value = getValue(tokens, i, {",", ")"});
+                    if (!value) return nullopt;
+                    if (tokens[i].value == ")") {
+                    endOfArguments = true;
+                    }
+                    functionCall->arguments.push_back(value);
+                    i += 1;
+                    } while(!endOfArguments);
                     }
                     out.push_back(functionCall);
                     expectValue = false;
-                }*/ else {
+                    }*/ 
                     // variable
                     auto variable = Variable::Create(tokens[i].codePosition);
                     variable->name = tokens[i].value;
