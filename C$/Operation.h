@@ -257,3 +257,14 @@ struct TemplateFunctionCallOperation : FunctionCallOperation {
 private:
     static std::vector<std::unique_ptr<TemplateFunctionCallOperation>> objects;
 };
+struct FlowOperation : Operation {
+    FlowOperation(const CodePosition& position, Kind kind);
+    static FlowOperation* Create(const CodePosition& position, Kind kind);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual bool operator==(const Statement& value) const;
+
+    Scope* scopePtr = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<FlowOperation>> objects;
+};

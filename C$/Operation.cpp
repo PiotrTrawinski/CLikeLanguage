@@ -118,7 +118,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         }
         Declaration* declaration = viableDeclarations.back();
 
-        //arguments[1] = declaration->variable;
+        arguments[1] = declaration->variable;
         type = declaration->variable->type;
 
         break;
@@ -1332,3 +1332,183 @@ bool TemplateFunctionCallOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+FlowOperation::FlowOperation(const CodePosition& position, Kind kind) : 
+    Operation(position, kind)
+{}
+vector<unique_ptr<FlowOperation>> FlowOperation::objects;
+FlowOperation* FlowOperation::Create(const CodePosition& position, Kind kind) {
+    objects.emplace_back(make_unique<FlowOperation>(position, kind));
+    return objects.back().get();
+}
+optional<Value*> FlowOperation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
+
+    switch (kind) {
+    case Kind::Remove: {
+        type = Type::Create(Type::Kind::Void);
+        if (arguments.size() == 0 || arguments[0]->valueKind != Value::ValueKind::Variable) {
+            errorMessage("remove for-loop statement requires variable name", position);
+            return nullopt;
+        }
+        string varName = ((Variable*)arguments[0])->name;
+        scopePtr = scope;
+        while (scopePtr) {
+            if (scopePtr->owner == Scope::Owner::For) {
+                auto forScope = (ForScope*)scopePtr;
+                if (holds_alternative<ForEachData>(forScope->data)) {
+                    auto& forIterData = get<ForEachData>(forScope->data);
+                    if (forIterData.it->name == varName) {
+                        break;
+                    } else {
+                        scopePtr = scopePtr->parentScope;
+                    }
+                } else {
+                    scopePtr = scopePtr->parentScope;
+                }
+            }
+            else {
+                scopePtr = scopePtr->parentScope;
+            }
+        }
+        if (!scopePtr) {
+            errorMessage("cannot tie remove statment with any loop", position);
+            return nullopt;
+        }
+        break;
+    }
+    case Kind::Continue: {
+        type = Type::Create(Type::Kind::Void);
+        scopePtr = scope;
+        if (arguments.size() == 1 && arguments[0]->valueKind != Value::ValueKind::Variable) {
+            errorMessage("continue loop statement needs no value or variable name", position);
+            return nullopt;
+        }
+        while (scopePtr) {
+            if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
+                break;
+            } 
+            else if (scopePtr->owner == Scope::Owner::For) {
+                auto forScope = (ForScope*)scopePtr;
+                if (arguments.size() == 0) {
+                    break;
+                } else {
+                    string varName = ((Variable*)arguments[0])->name;
+                    if (holds_alternative<ForIterData>(forScope->data)) {
+                        auto& forIterData = get<ForIterData>(forScope->data);
+                        if (forIterData.iterVariable->name == varName) {
+                            break;
+                        } else {
+                            scopePtr = scopePtr->parentScope;
+                        }
+                    } else if (holds_alternative<ForEachData>(forScope->data)) {
+                        auto& forIterData = get<ForEachData>(forScope->data);
+                        if (forIterData.it->name == varName) {
+                            break;
+                        } else {
+                            scopePtr = scopePtr->parentScope;
+                        }
+                    }
+                }
+            }
+            else {
+                scopePtr = scopePtr->parentScope;
+            }
+        }
+        if (!scopePtr) {
+            errorMessage("cannot tie continue statment with any loop", position);
+            return nullopt;
+        }
+        break;
+    }
+    case Kind::Break: {
+        type = Type::Create(Type::Kind::Void);
+        scopePtr = scope;
+        if (arguments.size() == 1 && arguments[0]->valueKind != Value::ValueKind::Variable) {
+            errorMessage("break loop statement needs no value or variable name", position);
+            return nullopt;
+        }
+        while (scopePtr) {
+            if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
+                break;
+            } 
+            else if (scopePtr->owner == Scope::Owner::For) {
+                auto forScope = (ForScope*)scopePtr;
+                if (arguments.size() == 0) {
+                    break;
+                } else {
+                    string varName = ((Variable*)arguments[0])->name;
+                    if (holds_alternative<ForIterData>(forScope->data)) {
+                        auto& forIterData = get<ForIterData>(forScope->data);
+                        if (forIterData.iterVariable->name == varName) {
+                            break;
+                        } else {
+                            scopePtr = scopePtr->parentScope;
+                        }
+                    } else if (holds_alternative<ForEachData>(forScope->data)) {
+                        auto& forIterData = get<ForEachData>(forScope->data);
+                        if (forIterData.it->name == varName) {
+                            break;
+                        } else {
+                            scopePtr = scopePtr->parentScope;
+                        }
+                    }
+                }
+            }
+            else {
+                scopePtr = scopePtr->parentScope;
+            }
+        }
+        if (!scopePtr) {
+            errorMessage("cannot tie break statment with any loop", position);
+            return nullopt;
+        }
+        break;
+    }
+    case Kind::Return: {
+        type = Type::Create(Type::Kind::Void);
+        scopePtr = scope;
+        while (scopePtr) {
+            if (scopePtr->owner == Scope::Owner::Function) {
+                auto functionValue = ((FunctionScope*)scopePtr)->function;
+                auto returnType = ((FunctionType*)functionValue->type)->returnType;
+                if (arguments.size() == 0) {
+                    if (returnType->kind != Type::Kind::Void) {
+                        errorMessage("expected return value of type " + DeclarationMap::toString(returnType)
+                            + " got nothing", position);
+                        return nullopt;
+                    } 
+                }
+                else if (!cmpPtr(arguments[0]->type, returnType)) {
+                    errorMessage("expected return value of type " + DeclarationMap::toString(returnType)
+                        + " got value of type " + DeclarationMap::toString(arguments[0]->type), position);
+                    return nullopt;
+                }
+                break;
+            } else {
+                scopePtr = scopePtr->parentScope;
+            }
+        }
+        if (!scopePtr) {
+            internalError("return statement found outside function", position);
+        }
+        break;
+    }
+    }
+
+    return nullptr;
+}
+bool FlowOperation::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const FlowOperation&>(value);
+        return this->scopePtr == other.scopePtr
+            && Operation::operator==(other);
+    }
+    else {
+        return false;
+    }
+}

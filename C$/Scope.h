@@ -56,6 +56,10 @@ struct Scope : Statement {
     Owner owner;
     DeclarationMap declarationMap;
     ClassDeclarationMap classDeclarationMap;
+    int id = -1;
+
+protected:
+    static int ID_COUNT;
 };
 
 struct CodeScope : Scope {
@@ -71,6 +75,17 @@ struct CodeScope : Scope {
     
 private:
     static std::vector<std::unique_ptr<CodeScope>> objects;
+};
+struct FunctionValue;
+struct FunctionScope : CodeScope {
+    FunctionScope(const CodePosition& position, Scope* parentScope, FunctionValue* function);
+    static FunctionScope* Create(const CodePosition& position, Scope* parentScope, FunctionValue* function);
+    virtual bool operator==(const Statement& scope) const;
+
+    FunctionValue* function;
+
+private:
+    static std::vector<std::unique_ptr<FunctionScope>> objects;
 };
 struct ClassDeclaration;
 struct ClassScope : Scope {

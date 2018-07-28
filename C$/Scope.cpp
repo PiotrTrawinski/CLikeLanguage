@@ -11,11 +11,15 @@ using namespace std;
 /*
     Scope
 */
+int Scope::ID_COUNT = 0;
 Scope::Scope(const CodePosition& position, Owner owner, Scope* parentScope) : 
     Statement(position, Statement::Kind::Scope),
     owner(owner),
     parentScope(parentScope)
-{}
+{
+    id = ID_COUNT;
+    ID_COUNT += 1;
+}
 bool Scope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const Scope&>(scope);
@@ -98,17 +102,20 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                 Operation* operation = nullptr;
                 switch (((FlowStatementKeyword*)keyword)->value) {
                 case FlowStatementKeyword::Value::Break:
-                    operation = Operation::Create(token.codePosition, Operation::Kind::Break);    break;
+                    operation = FlowOperation::Create(token.codePosition, Operation::Kind::Break);    break;
                 case FlowStatementKeyword::Value::Continue:
-                    operation = Operation::Create(token.codePosition, Operation::Kind::Continue); break;
+                    operation = FlowOperation::Create(token.codePosition, Operation::Kind::Continue); break;
                 case FlowStatementKeyword::Value::Remove:
-                    operation = Operation::Create(token.codePosition, Operation::Kind::Remove);   break;
+                    operation = FlowOperation::Create(token.codePosition, Operation::Kind::Remove);   break;
                 case FlowStatementKeyword::Value::Return:
-                    operation = Operation::Create(token.codePosition, Operation::Kind::Return);   break;
+                    operation = FlowOperation::Create(token.codePosition, Operation::Kind::Return);   break;
                 }
                 i += 1;
                 auto value = getValue(tokens, i, {";", "}"}, true);
-                if (value) {
+                if (!value) {
+                    return false;
+                }
+                if (value->valueKind != Value::ValueKind::Empty) {
                     operation->arguments.push_back(value);
                 }
                 return Scope::ReadStatementValue(operation);
@@ -1305,6 +1312,29 @@ bool ClassScope::interpret() {
 }
 Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
     return nullptr;
+}
+
+
+/*
+    FunctionScope
+*/
+FunctionScope::FunctionScope(const CodePosition& position, Scope* parentScope, FunctionValue* function) : 
+    CodeScope(position, Owner::Function, parentScope),
+    function(function)
+{}
+vector<unique_ptr<FunctionScope>> FunctionScope::objects;
+FunctionScope* FunctionScope::Create(const CodePosition& position, Scope* parentScope, FunctionValue* function) {
+    objects.emplace_back(make_unique<FunctionScope>(position, parentScope, function));
+    return objects.back().get();
+}
+bool FunctionScope::operator==(const Statement& scope) const {
+    if(typeid(scope) == typeid(*this)){
+        const auto& other = static_cast<const FunctionScope&>(scope);
+        return cmpPtr(this->function, other.function)
+            && CodeScope::operator==(other);
+    } else {
+        return false;
+    }
 }
 
 
