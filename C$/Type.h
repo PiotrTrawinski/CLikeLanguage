@@ -31,7 +31,7 @@ struct Type {
     Type(Kind kind);
     static Type* Create(Kind kind);
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual Type* getEffectiveType();
     //virtual std::unique_ptr<Type> copy();
 
@@ -49,7 +49,7 @@ struct OwnerPointerType : Type {
     static OwnerPointerType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     Type* underlyingType = nullptr;
@@ -62,7 +62,7 @@ struct RawPointerType : Type {
     static RawPointerType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     Type* underlyingType = nullptr;
@@ -75,7 +75,7 @@ struct MaybeErrorType : Type {
     static MaybeErrorType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     Type* underlyingType = nullptr;
@@ -88,7 +88,7 @@ struct ReferenceType : Type {
     static ReferenceType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     Type* getEffectiveType();
     //virtual std::unique_ptr<Type> copy();
 
@@ -104,7 +104,7 @@ struct StaticArrayType : Type {
     static StaticArrayType* Create(Type* elementType, int64_t sizeAsInt);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     Type* elementType = nullptr;
@@ -119,7 +119,7 @@ struct DynamicArrayType : Type {
     static DynamicArrayType* Create(Type* elementType);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     Type* elementType = nullptr;
@@ -132,7 +132,7 @@ struct ArrayViewType : Type {
     static ArrayViewType* Create(Type* elementType);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     Type* elementType = nullptr;
@@ -146,7 +146,7 @@ struct ClassType : Type {
     static ClassType* Create(const std::string& name);
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     std::string name;
@@ -161,7 +161,7 @@ struct FunctionType : Type {
     static FunctionType* Create();
     
     virtual bool operator==(const Type& type) const;
-    virtual bool interpret(Scope* scope);
+    virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
 
     Type* returnType = nullptr;

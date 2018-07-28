@@ -1,5 +1,6 @@
 #include "Type.h"
 #include "Value.h"
+#include "ClassDeclaration.h"
 
 using namespace std;
 
@@ -13,7 +14,7 @@ Type* Type::Create(Kind kind) {
     objects.emplace_back(make_unique<Type>(kind));
     return objects.back().get();
 }
-bool Type::interpret(Scope* scope) {
+bool Type::interpret(Scope* scope, bool needFullDeclaration) {
     return true;
 }
 bool Type::operator==(const Type& type) const {
@@ -75,8 +76,8 @@ OwnerPointerType* OwnerPointerType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<OwnerPointerType>(underlyingType));
     return objects.back().get();
 }
-bool OwnerPointerType::interpret(Scope* scope) {
-    return underlyingType->interpret(scope);
+bool OwnerPointerType::interpret(Scope* scope, bool needFullDeclaration) {
+    return underlyingType->interpret(scope, false);
 }
 bool OwnerPointerType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -103,8 +104,8 @@ RawPointerType* RawPointerType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<RawPointerType>(underlyingType));
     return objects.back().get();
 }
-bool RawPointerType::interpret(Scope* scope) {
-    return underlyingType->interpret(scope);
+bool RawPointerType::interpret(Scope* scope, bool needFullDeclaration) {
+    return underlyingType->interpret(scope, false);
 }
 bool RawPointerType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -131,8 +132,8 @@ MaybeErrorType* MaybeErrorType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<MaybeErrorType>(underlyingType));
     return objects.back().get();
 }
-bool MaybeErrorType::interpret(Scope* scope) {
-    return underlyingType->interpret(scope);
+bool MaybeErrorType::interpret(Scope* scope, bool needFullDeclaration) {
+    return underlyingType->interpret(scope, needFullDeclaration);
 }
 bool MaybeErrorType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -142,6 +143,7 @@ bool MaybeErrorType::operator==(const Type& type) const {
         return false;
     }
 }
+
 /*unique_ptr<Type> MaybeErrorType::copy() {
     return make_unique<MaybeErrorType>(this->underlyingType->copy());
 }*/
@@ -159,8 +161,8 @@ ReferenceType* ReferenceType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<ReferenceType>(underlyingType));
     return objects.back().get();
 }
-bool ReferenceType::interpret(Scope* scope) {
-    return underlyingType->interpret(scope);
+bool ReferenceType::interpret(Scope* scope, bool needFullDeclaration) {
+    return underlyingType->interpret(scope, false);
 }
 bool ReferenceType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -201,11 +203,11 @@ StaticArrayType* StaticArrayType::Create(Type* elementType, int64_t sizeAsInt) {
     objects.emplace_back(make_unique<StaticArrayType>(elementType, sizeAsInt));
     return objects.back().get();
 }
-bool StaticArrayType::interpret(Scope* scope) {
+bool StaticArrayType::interpret(Scope* scope, bool needFullDeclaration) {
     if (size && !size->interpret(scope)) {
         return false;
     }
-    return elementType ? elementType->interpret(scope) : true;
+    return elementType ? elementType->interpret(scope, needFullDeclaration) : true;
 }
 bool StaticArrayType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -238,8 +240,8 @@ DynamicArrayType* DynamicArrayType::Create(Type* elementType) {
     objects.emplace_back(make_unique<DynamicArrayType>(elementType));
     return objects.back().get();
 }
-bool DynamicArrayType::interpret(Scope* scope) {
-    return elementType ? elementType->interpret(scope) : true;
+bool DynamicArrayType::interpret(Scope* scope, bool needFullDeclaration) {
+    return elementType ? elementType->interpret(scope, false) : true;
 }
 bool DynamicArrayType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -266,8 +268,8 @@ ArrayViewType* ArrayViewType::Create(Type* elementType) {
     objects.emplace_back(make_unique<ArrayViewType>(elementType));
     return objects.back().get();
 }
-bool ArrayViewType::interpret(Scope* scope) {
-    return elementType ? elementType->interpret(scope) : true;
+bool ArrayViewType::interpret(Scope* scope, bool needFullDeclaration) {
+    return elementType ? elementType->interpret(scope, false) : true;
 }
 bool ArrayViewType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -294,12 +296,16 @@ ClassType* ClassType::Create(const string& name) {
     objects.emplace_back(make_unique<ClassType>(name));
     return objects.back().get();
 }
-bool ClassType::interpret(Scope* scope) {
+bool ClassType::interpret(Scope* scope, bool needFullDeclaration) {
     declaration = scope->classDeclarationMap.getDeclaration(name);
     if (!declaration && scope->parentScope) {
-        return interpret(scope->parentScope);
+        return interpret(scope->parentScope, needFullDeclaration);
     }
-    return declaration != nullptr;
+    if (needFullDeclaration) {
+        return declaration && declaration->interpret();
+    } else {
+        return declaration != nullptr;
+    }
 }
 bool ClassType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -329,13 +335,13 @@ FunctionType* FunctionType::Create() {
     objects.emplace_back(make_unique<FunctionType>());
     return objects.back().get();
 }
-bool FunctionType::interpret(Scope* scope) {
+bool FunctionType::interpret(Scope* scope, bool needFullDeclaration) {
     for (auto* argumentType : argumentTypes) {
-        if (!argumentType->interpret(scope)) {
+        if (!argumentType->interpret(scope, false)) {
             return false;
         }
     }
-    return returnType ? returnType->interpret(scope) : true;
+    return returnType ? returnType->interpret(scope, false) : true;
 }
 bool FunctionType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){

@@ -1,5 +1,6 @@
 #include "Operation.h"
 #include "Declaration.h"
+#include "ClassDeclaration.h"
 
 using namespace std;
 
@@ -37,6 +38,7 @@ bool Operation::interpretAllArguments(Scope* scope) {
     }
     return true;
 }
+
 optional<Value*> Operation::interpret(Scope* scope) {
     if (wasInterpreted) {
         return nullptr;
@@ -48,21 +50,79 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
     Type* effectiveType1 = nullptr;
     Type* effectiveType2 = nullptr;
-    if (arguments.size() >= 1) {
-        effectiveType1 = arguments[0]->type->getEffectiveType();
-    }
-    if (arguments.size() >= 2) {
-        effectiveType2 = arguments[1]->type->getEffectiveType();
+
+    if (kind != Kind::Dot) {
+        if (arguments.size() >= 1) {
+            effectiveType1 = arguments[0]->type->getEffectiveType();
+        }
+        if (arguments.size() >= 2) {
+            effectiveType2 = arguments[1]->type->getEffectiveType();
+        }
     }
 
+    auto typeCopy = type;
     type = nullptr;
-    switch (kind) {
-    case Kind::Dot:
-        /*switch (arguments[0]->type->kind) {
-        case Type::Kind::RawPointer:
 
-        }*/
+    switch (kind) {
+    case Kind::Dot: {
+        auto arg0Interpret = arguments[0]->interpret(scope);
+        if (!arg0Interpret) return nullopt;
+        if (arg0Interpret.value()) arguments[0] = arg0Interpret.value();
+        
+        effectiveType1 = arguments[0]->type->getEffectiveType();
+        ClassType* classType = nullptr;
+        switch (effectiveType1->kind) {
+        case Type::Kind::Class: {
+            classType = (ClassType*)effectiveType1;
+            break;
+        }
+        case Type::Kind::RawPointer:
+            classType = (ClassType*)((RawPointerType*)effectiveType1)->underlyingType;
+            break;
+        case Type::Kind::OwnerPointer:
+            classType = (ClassType*)((OwnerPointerType*)effectiveType1)->underlyingType;
+            break;
+        }
+
+        if (!classType) {
+            errorMessage("can use '.' operation on class or pointer to class type only, got "
+                + DeclarationMap::toString(arguments[0]->type), position
+            );
+            return nullopt;
+        }
+        if (arguments[1]->valueKind != Value::ValueKind::Variable) {
+            errorMessage("right side of '.' operation needs to be a variable name", position);
+            return nullopt;
+        }
+        
+        Variable* field = (Variable*)arguments[1];
+        auto& declarations = classType->declaration->body->declarations;
+        vector<Declaration*> viableDeclarations;
+        for (auto& declaration : declarations) {
+            if (declaration->variable->name == field->name) {
+                viableDeclarations.push_back(declaration);
+            }
+        }
+        
+        if (viableDeclarations.size() == 0) {
+            errorMessage("class " + DeclarationMap::toString(effectiveType1)
+                + " has no field named " + field->name, position
+            );
+            return nullopt;
+        }
+        if (viableDeclarations.size() > 1) {
+            errorMessage("class " + DeclarationMap::toString(effectiveType1)
+                + " has more then 1 field named " + field->name, position
+            );
+            return nullopt;
+        }
+        Declaration* declaration = viableDeclarations.back();
+
+        //arguments[1] = declaration->variable;
+        type = declaration->variable->type;
+
         break;
+    }
     case Kind::Reference: {
         if (!isLvalue(arguments[0])) {
             errorMessage("You can only take referenece of an l-value", position);
@@ -96,6 +156,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;
     }
     case Kind::Allocation:
+        type = typeCopy;
         break;
     case Kind::Deallocation:
         break;
@@ -488,7 +549,10 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
     if (!type) {
         string message = "incorrect use of operation '" + kindToString(kind) + "'. ";
-        if (arguments.size() == 1) {
+        if (arguments.size() == 0) {
+
+        }
+        else if (arguments.size() == 1) {
             message += "type is: ";
             message += DeclarationMap::toString(arguments[0]->type);
         } else {
@@ -657,13 +721,13 @@ int Operation::numberOfArguments(Kind kind) {
     switch (kind) {
     case Kind::FunctionCall:
     case Kind::Cast:
+    case Kind::Allocation:
         return 0;
     case Kind::ArrayIndex:
     case Kind::ArraySubArray:
     case Kind::Reference:
     case Kind::Address:
     case Kind::GetValue:
-    case Kind::Allocation:
     case Kind::Deallocation:
     case Kind::BitNeg:
     case Kind::LogicalNot:
@@ -1125,6 +1189,9 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     if (!interpretAllArguments(scope)) {
         return nullopt;
     }
+    auto functionInterpret = function->interpret(scope);
+    if (!functionInterpret) return nullopt;
+    if (functionInterpret.value()) function = functionInterpret.value();
 
     if (function->valueKind == Value::ValueKind::Variable) {
         string functionName = ((Variable*)function)->name;
@@ -1141,8 +1208,61 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
             errorMessage("no fitting function to call", position);
             return nullopt;
         }
-    } else if (arguments[0]->type->kind == Type::Kind::Function) {
-        type = ((FunctionType*)arguments[0]->type)->returnType;
+    } else if (function->valueKind == Value::ValueKind::Operation
+        && (((Operation*)function)->kind == Operation::Kind::Dot)
+        && ((Variable*)((Operation*)function)->arguments[1])->isConst) {
+        auto dotOperation = (Operation*)function;
+        auto functionType = (FunctionType*)dotOperation->type;
+        Variable* var = (Variable*)dotOperation->arguments[1];
+
+        if (functionType->argumentTypes.size()-1 != arguments.size()) {
+            errorMessage("expected " + to_string(functionType->argumentTypes.size()-1) 
+                + " arguments, got "+ to_string(arguments.size()), position
+            );
+            return nullopt;
+        }
+        for (int i = 0; i < functionType->argumentTypes.size()-1; ++i) {
+            if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
+                auto cast = CastOperation::Create(arguments[i]->position, functionType->argumentTypes[i]);
+                cast->arguments.push_back(arguments[i]);
+                auto castInterpret = cast->interpret(scope);
+                if (!castInterpret) return nullopt;
+                if (castInterpret.value()) arguments[i] = castInterpret.value();
+                else arguments[i] = cast;
+            }
+        }
+        auto thisArgument = Operation::Create(position, Operation::Kind::Address);
+        thisArgument->arguments.push_back(dotOperation->arguments[0]);
+        if (!thisArgument->interpret(scope)) {
+            return nullopt;
+        }
+        arguments.push_back(thisArgument);
+
+        type = functionType->returnType;
+    }
+    else if (function->type->kind == Type::Kind::Function) {
+        auto functionType = (FunctionType*)function->type;
+        if (functionType->argumentTypes.size() != arguments.size()) {
+            errorMessage("expected " + to_string(functionType->argumentTypes.size()) 
+                + " arguments, got "+ to_string(arguments.size()), position
+            );
+            return nullopt;
+        }
+        for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
+            if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
+                auto cast = CastOperation::Create(arguments[i]->position, functionType->argumentTypes[i]);
+                cast->arguments.push_back(arguments[i]);
+                auto castInterpret = cast->interpret(scope);
+                if (!castInterpret) return nullopt;
+                if (castInterpret.value()) arguments[i] = castInterpret.value();
+                else arguments[i] = cast;
+            }
+        }
+
+        type = functionType->returnType;
+    } else {
+        errorMessage("function call on non function value", position);
+        return nullopt;
     }
 
     return nullptr;
