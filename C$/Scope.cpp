@@ -1237,7 +1237,9 @@ Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
     }
     return nullptr;
 }
+void CodeScope::createLlvm(LlvmObject* LlvmObj) {
 
+}
 
 /*
     ClassScope
@@ -1313,7 +1315,9 @@ bool ClassScope::interpret() {
 Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
     return nullptr;
 }
+void ClassScope::createLlvm(LlvmObject* LlvmObj) {
 
+}
 
 /*
     FunctionScope
@@ -1335,6 +1339,9 @@ bool FunctionScope::operator==(const Statement& scope) const {
     } else {
         return false;
     }
+}
+void FunctionScope::createLlvm(LlvmObject* LlvmObj) {
+
 }
 
 
