@@ -2,6 +2,7 @@
 #include "parsing.h"
 #include "codeTreeCreating.h"
 #include "interpreting.h"
+#include "llvmCreating.h"
 
 using namespace std;
 
@@ -27,6 +28,12 @@ int main(int argc, char** argv) {
     if (!statusInterpreting) {
         cerr << "Compiling failed: there were errors during interpreting\n";
         return 4;
+    }
+
+    auto statusLlvmCreating = createLlvm(globalScope);
+    if (!statusLlvmCreating) {
+        cerr << "Compiling failed: there were errors during llvm creating\n";
+        return 5;
     }
 
     return 0;

@@ -107,13 +107,16 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(VCInstallDir)UnitTest\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(VCInstallDir)UnitTest\include;D:\LLVM\llvm-6.0.1.src\include;D:\LLVM\llvm-6.0.1.build\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;_HAS_EXCEPTIONS=0;GTEST_HAS_RTTI=0;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_DEPRECATE;_CRT_NONSTDC_NO_WARNINGS;_SCL_SECURE_NO_DEPRECATE;_SCL_SECURE_NO_WARNINGS;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;UNICODE;_UNICODE;__STDC_CONSTANT_MACROS;__STDC_FORMAT_MACROS;__STDC_LIMIT_MACROS;CMAKE_INTDIR="Debug";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <UseFullPaths>true</UseFullPaths>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <DisableSpecificWarnings>4141;4146;4180;4244;4258;4267;4291;4345;4351;4355;4456;4457;4458;4459;4503;4624;4722;4800;4100;4127;4512;4505;4610;4510;4702;4245;4706;4310;4701;4703;4389;4611;4805;4204;4577;4091;4592;4319;4324;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(VCInstallDir)UnitTest\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMCore.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMExecutionEngine.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMInterpreter.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMMC.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMMCJIT.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMSupport.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMX86CodeGen.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMX86Desc.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMX86Info.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMRuntimeDyld.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMMCDisassembler.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMAsmPrinter.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMDebugInfoCodeView.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMDebugInfoMSF.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMGlobalISel.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMSelectionDAG.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMCodeGen.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMTarget.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMBitWriter.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMScalarOpts.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMInstCombine.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMTransformUtils.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMAnalysis.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMObject.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMBitReader.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMMCParser.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMProfileData.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMX86AsmPrinter.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMX86Utils.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMBinaryFormat.lib;psapi.lib;shell32.lib;ole32.lib;uuid.lib;advapi32.lib;D:\LLVM\llvm-6.0.1.build\Debug\lib\LLVMDemangle.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;oleaut32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
