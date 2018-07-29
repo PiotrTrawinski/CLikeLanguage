@@ -1202,6 +1202,9 @@ bool CodeScope::interpret() {
             break;
         }
         case Statement::Kind::Scope: {
+            if (isGlobalScope) {
+                return errorMessage("global scope can only have variable and class declarations", statement->position);
+            }
             Scope* scope = (Scope*)statement;
             if (!scope->interpret()) {
                 return false;
@@ -1209,6 +1212,9 @@ bool CodeScope::interpret() {
             break;
         }
         case Statement::Kind::Value: {
+            if (isGlobalScope) {
+                return errorMessage("global scope can only have variable and class declarations", statement->position);
+            }
             Value* value = (Value*)statement;
             auto valueInterpret = value->interpret(this);
             if (!valueInterpret) {
@@ -1220,6 +1226,20 @@ bool CodeScope::interpret() {
         }
         }
     }
+
+    if (isGlobalScope) {
+        auto expectedMainType = FunctionType::Create();
+        expectedMainType->returnType = IntegerType::Create(IntegerType::Size::I64);
+        auto mainDeclarations = declarationMap.getDeclarations("main");
+        for (auto declaration : mainDeclarations) {
+            if (declaration->variable->isConst
+                && cmpPtr(declaration->variable->type, (Type*)expectedMainType)) {
+                return true;
+            }
+        }
+        return errorMessage("no correct main function found in global scope");
+    }
+
     return true;
 }
 Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
