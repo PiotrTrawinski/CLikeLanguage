@@ -30,6 +30,7 @@ bool Declaration::isFunctionDeclaration() {
         );
 }
 bool Declaration::interpret(Scope* scope, bool outOfOrder) {
+    this->scope = scope;
     if (status != Declaration::Status::Evaluated) {
         if (outOfOrder && !variable->isConst) {
             return false;
@@ -91,5 +92,20 @@ bool Declaration::operator==(const Statement& declaration) const {
             && Statement::operator==(other);
     } else {
         return false;
+    }
+}
+
+void Declaration::createLlvm(LlvmObject* llvmObj) {
+    if (value && value->isConstexpr && value->valueKind == Value::ValueKind::FunctionValue) {
+        auto functionValue = value->createLlvm(llvmObj);
+    } else {
+        llvmVariable = new llvm::AllocaInst(variable->type->createLlvm(llvmObj), 0, variable->name, llvmObj->block);
+        if (value) {
+            auto assignOperation = Operation::Create(position, Operation::Kind::Assign);
+            assignOperation->arguments.push_back(variable);
+            assignOperation->arguments.push_back(value);
+            assignOperation->interpret(scope);
+            assignOperation->createLlvm(llvmObj);
+        }
     }
 }

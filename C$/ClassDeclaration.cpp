@@ -1,6 +1,7 @@
 #include "ClassDeclaration.h"
 #include "Scope.h"
 #include "Type.h"
+#include "Declaration.h"
 
 using namespace std;
 
@@ -38,4 +39,24 @@ bool ClassDeclaration::operator==(const Statement& declaration) const {
     } else {
         return false;
     }
+}
+llvm::StructType* ClassDeclaration::getLlvmType(LlvmObject* llvmObj) {
+    if (!llvmType) {
+        llvmType = llvm::StructType::create(llvmObj->context, name+to_string(body->id));
+    }
+    return llvmType;
+}
+void ClassDeclaration::createLlvm(LlvmObject* llvmObj) {
+    llvmType = getLlvmType(llvmObj);
+    vector<llvm::Type*> types;
+
+    
+
+    for (auto declaration : body->declarations) {
+        if (declaration->variable->type->kind != Type::Kind::Function || !declaration->variable->isConst) {
+            types.push_back(declaration->variable->type->createLlvm(llvmObj));
+        }
+    }
+
+    llvmType->setBody(types);
 }
