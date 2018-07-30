@@ -16,11 +16,15 @@ Operation* Operation::Create(const CodePosition& position, Kind kind) {
     objects.emplace_back(make_unique<Operation>(position, kind));
     return objects.back().get();
 }
-Operation* Operation::expandAssignOperation(Kind kind) {
+optional<Value*> Operation::expandAssignOperation(Kind kind, Scope* scope) {
     auto assign = Operation::Create(position, Operation::Kind::Assign);
     auto operation = Operation::Create(position, kind);
     operation->arguments = {arguments[0], arguments[1]};
     assign->arguments = {arguments[0], operation};
+
+    auto assignInterpret = assign->interpret(scope);
+    if (!assignInterpret) return nullopt;
+    if (assignInterpret.value()) return assignInterpret.value();
     return assign;
 }
 bool Operation::interpretAllArguments(Scope* scope) {
@@ -178,28 +182,28 @@ optional<Value*> Operation::interpret(Scope* scope) {
     case Kind::Mul: {
         auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
             return val1 * val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Div: {
         auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
             return val1 / val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Mod: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 % val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Add: {
         auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
             return val1 + val2;
-        });
+        }, scope);
         if (value) return value;
         if (type) break;
 
@@ -298,35 +302,35 @@ optional<Value*> Operation::interpret(Scope* scope) {
     case Kind::Sub: {
         auto value = tryEvaluate2ArgArithmetic([](auto val1, auto val2){
             return val1 - val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Shl: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 << val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Shr: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 >> val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Sal: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 << val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     } 
     case Kind::Sar: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 >> val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
@@ -483,21 +487,21 @@ optional<Value*> Operation::interpret(Scope* scope) {
     case Kind::BitAnd: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 & val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::BitXor: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 ^ val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::BitOr: {
         auto value = tryEvaluate2ArgArithmeticIntegerOnly([](auto val1, auto val2){
             return val1 | val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
@@ -520,29 +524,29 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;
     }
     case Kind::AddAssign:
-        return expandAssignOperation(Operation::Kind::Add)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Add, scope);
     case Kind::SubAssign:
-        return expandAssignOperation(Operation::Kind::Sub)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Sub, scope);
     case Kind::MulAssign:
-        return expandAssignOperation(Operation::Kind::Mul)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Mul, scope);
     case Kind::DivAssign:
-        return expandAssignOperation(Operation::Kind::Div)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Div, scope);
     case Kind::ModAssign:
-        return expandAssignOperation(Operation::Kind::Mod)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Mod, scope);
     case Kind::ShlAssign:
-        return expandAssignOperation(Operation::Kind::Shl)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Shl, scope);
     case Kind::ShrAssign:
-        return expandAssignOperation(Operation::Kind::Shr)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Shr, scope);
     case Kind::SalAssign:
-        return expandAssignOperation(Operation::Kind::Sal)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Sal, scope);
     case Kind::SarAssign:
-        return expandAssignOperation(Operation::Kind::Sar)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::Sar, scope);
     case Kind::BitNegAssign:
-        return expandAssignOperation(Operation::Kind::BitNeg)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::BitNeg, scope);
     case Kind::BitOrAssign:
-        return expandAssignOperation(Operation::Kind::BitOr)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::BitOr, scope);
     case Kind::BitXorAssign:
-        return expandAssignOperation(Operation::Kind::BitXor)->interpret(scope);
+        return expandAssignOperation(Operation::Kind::BitXor, scope);
     default: 
         break;
     }
@@ -803,7 +807,212 @@ bool Operation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
+    switch (kind) {
+    case Kind::Minus: {
+        auto arg = arguments[0]->createLlvm(llvmObj);
+        auto zero = llvm::ConstantInt::get(type->createLlvm(llvmObj), 0);
+        if (type->kind == Type::Kind::Integer) {
+            return llvm::BinaryOperator::CreateSub(zero, arg, "", llvmObj->block);
+        } else {
+            return llvm::BinaryOperator::CreateFSub(zero, arg, "", llvmObj->block);
+        } 
+    }
+    case Kind::Mul: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            return llvm::BinaryOperator::CreateMul(arg1, arg2, "", llvmObj->block);
+        } else {
+            return llvm::BinaryOperator::CreateFMul(arg1, arg2, "", llvmObj->block);
+        } 
+    }
+    case Kind::Div: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)type)->isSigned()) {
+                return llvm::BinaryOperator::CreateSDiv(arg1, arg2, "", llvmObj->block);
+            } else {
+                return llvm::BinaryOperator::CreateUDiv(arg1, arg2, "", llvmObj->block);
+            }
+        } else {
+            return llvm::BinaryOperator::CreateFAdd(arg1, arg2, "", llvmObj->block);
+        } 
+    }
+    case Kind::Mod: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)type)->isSigned()) {
+                return llvm::BinaryOperator::CreateSRem(arg1, arg2, "", llvmObj->block);
+            } else {
+                return llvm::BinaryOperator::CreateURem(arg1, arg2, "", llvmObj->block);
+            }
+        } else {
+            return llvm::BinaryOperator::CreateFRem(arg1, arg2, "", llvmObj->block);
+        } 
+    }
+    case Kind::Add: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            return llvm::BinaryOperator::CreateAdd(arg1, arg2, "", llvmObj->block);
+        } else {
+            return llvm::BinaryOperator::CreateFAdd(arg1, arg2, "", llvmObj->block);
+        } 
+    }
+    case Kind::Sub: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            return llvm::BinaryOperator::CreateSub(arg1, arg2, "", llvmObj->block);
+        } else {
+            return llvm::BinaryOperator::CreateFSub(arg1, arg2, "", llvmObj->block);
+        } 
+    }
+    case Kind::Shl: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateShl(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::Shr: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateLShr(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::Sal: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateShl(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::Sar: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateAShr(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::Gt: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)type)->isSigned()) {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGT, arg1, arg2, "");
+            } else {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGT, arg1, arg2, "");
+            }
+            
+        } else {
+            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UGT, arg1, arg2, "");
+        }
+    }
+    case Kind::Lt: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)type)->isSigned()) {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, arg1, arg2, "");
+            } else {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULT, arg1, arg2, "");
+            }
 
+        } else {
+            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_ULT, arg1, arg2, "");
+        }
+    }
+    case Kind::Gte: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)type)->isSigned()) {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGE, arg1, arg2, "");
+            } else {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGE, arg1, arg2, "");
+            }
+
+        } else {
+            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UGE, arg1, arg2, "");
+        }
+    }
+    case Kind::Lte: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)type)->isSigned()) {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, arg1, arg2, "");
+            } else {
+                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULE, arg1, arg2, "");
+            }
+
+        } else {
+            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_ULE, arg1, arg2, "");
+        }
+    }
+    case Kind::Eq: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, arg1, arg2, "");
+        } else {
+            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UEQ, arg1, arg2, "");
+        }
+    }
+    case Kind::Neq: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_NE, arg1, arg2, "");
+        } else {
+            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UNE, arg1, arg2, "");
+        }
+    }
+    case Kind::LogicalNot: {
+        auto arg = arguments[0]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateNot(arg, "", llvmObj->block);
+    }
+    case Kind::LogicalAnd: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateAnd(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::LogicalOr: {  
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateOr(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::BitNeg: {
+        auto arg = arguments[0]->createLlvm(llvmObj);
+        if (type->kind == Type::Kind::Integer) {
+            llvm::BinaryOperator::CreateNeg(arg, "", llvmObj->block);
+        } else {
+            llvm::BinaryOperator::CreateFNeg(arg, "", llvmObj->block);
+        }
+    }
+    case Kind::BitAnd: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateAnd(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::BitXor: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateXor(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::BitOr: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return llvm::BinaryOperator::CreateOr(arg1, arg2, "", llvmObj->block);
+    }
+    case Kind::Assign: {
+        auto variable = (Variable*)arguments[0];
+        new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), variable->getReferenceLlvm(llvmObj), llvmObj->block);
+        return variable->createLlvm(llvmObj);
+    }
+    default:
+        internalError("unexpected operation when creating llvm", position);
+        break;
+    }
+    return nullptr;
+}
 
 
 /*
@@ -1511,4 +1720,15 @@ bool FlowOperation::operator==(const Statement& value) const {
     else {
         return false;
     }
+}
+llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
+    if (kind == Kind::Return) {
+        if (arguments.size() == 0) {
+            return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
+        }
+        else {
+            return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->createLlvm(llvmObj), llvmObj->block);
+        }
+    }
+    return nullptr;
 }

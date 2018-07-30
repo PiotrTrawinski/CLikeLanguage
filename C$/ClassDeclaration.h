@@ -1,5 +1,6 @@
 #pragma once
 #include "Statement.h"
+#include "LlvmObject.h"
 
 struct ClassScope;
 struct Type;
@@ -20,6 +21,11 @@ struct ClassDeclaration : Statement {
     ClassScope* body = nullptr;
     std::vector<Type*> templateTypes;
     Status status = Status::None;
+
+    // LLVM:
+    void createLlvm(LlvmObject* llvmObj);
+    llvm::StructType* getLlvmType(LlvmObject* llvmObj);
+    llvm::StructType* llvmType = nullptr;
 
 private:
     static std::vector<std::unique_ptr<ClassDeclaration>> objects;

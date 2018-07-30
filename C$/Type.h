@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include "LlvmObject.h"
 #include "operator==Utility.h"
 
 struct Value;
@@ -34,6 +35,7 @@ struct Type {
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual Type* getEffectiveType();
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     static Type* getSuitingArithmeticType(Type* val1, Type* val2);
 
@@ -51,6 +53,7 @@ struct OwnerPointerType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* underlyingType = nullptr;
 
@@ -64,6 +67,7 @@ struct RawPointerType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* underlyingType = nullptr;
  
@@ -77,6 +81,7 @@ struct MaybeErrorType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* underlyingType = nullptr;
   
@@ -91,6 +96,7 @@ struct ReferenceType : Type {
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     Type* getEffectiveType();
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* underlyingType = nullptr;
     
@@ -106,6 +112,7 @@ struct StaticArrayType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* elementType = nullptr;
     Value* size = nullptr;
@@ -121,6 +128,7 @@ struct DynamicArrayType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* elementType = nullptr;
 
@@ -134,6 +142,7 @@ struct ArrayViewType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* elementType = nullptr;
     
@@ -148,6 +157,7 @@ struct ClassType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     std::string name;
     ClassDeclaration* declaration;
@@ -163,6 +173,7 @@ struct FunctionType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* returnType = nullptr;
     std::vector<Type*> argumentTypes;
@@ -179,6 +190,7 @@ struct IntegerType : Type {
     bool isSigned();
     virtual bool operator==(const Type& type) const;
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Size size;
     
@@ -193,6 +205,7 @@ struct FloatType : Type {
     
     virtual bool operator==(const Type& type) const;
     //virtual std::unique_ptr<Type> copy();
+    virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Size size;
     

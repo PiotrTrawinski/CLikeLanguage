@@ -16,12 +16,12 @@ unique_ptr<LlvmObject> createLlvm(CodeScope* globalScope) {
     llvmObj->executionEngine = llvm::EngineBuilder(move(module)).setErrorStr(&errStr).create();
 
     if (!llvmObj->executionEngine) {
-        internalError("Failed to construct LLVM-ExecutionEngine", CodePosition(nullptr,0,0));
+        internalError("Failed to construct LLVM-ExecutionEngine");
         return nullptr;
     }
 
     if (verifyModule(*llvmObj->module)) {
-        internalError("Failed to construct LLVM-Model", CodePosition(nullptr,0,0));
+        internalError("Failed to construct LLVM-Model");
         return nullptr;
     }
 

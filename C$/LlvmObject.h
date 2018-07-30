@@ -3,6 +3,8 @@
 
 struct LlvmObject {
     llvm::LLVMContext context;
-    llvm::ExecutionEngine* executionEngine;
-    llvm::Module* module;
+    llvm::ExecutionEngine* executionEngine = nullptr;
+    llvm::Module* module = nullptr;
+    llvm::Function* function = nullptr;
+    llvm::BasicBlock* block = nullptr;
 };

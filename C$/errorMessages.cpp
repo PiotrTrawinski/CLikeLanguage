@@ -10,12 +10,16 @@ void printErrorCodePosition(const CodePosition& codePosition) {
 
 bool errorMessage(string message, const CodePosition& codePosition) {
     cerr << "Interpret Error: " << message << "\n";
-    printErrorCodePosition(codePosition);
+    if (codePosition.fileInfo) {
+        printErrorCodePosition(codePosition);
+    }
     return false;
 }
 
 bool internalError(string message, const CodePosition& codePosition) {
     cerr << "Internal Error: " << message << "\n";
-    printErrorCodePosition(codePosition);
+    if (codePosition.fileInfo) {
+        printErrorCodePosition(codePosition);
+    }
     return false;
 }

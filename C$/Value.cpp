@@ -41,6 +41,9 @@ bool Value::operator==(const Statement& value) const {
     value->isConstexpr = isConstexpr;
     return value;
 }*/
+llvm::Value* Value::createLlvm(LlvmObject* llvmObj) {
+    return nullptr;
+}
 
 
 /*
@@ -80,7 +83,7 @@ optional<Value*> Variable::interpret(Scope* scope) {
     if (type && !type->interpret(scope)) {
         return nullopt;
     }
-    Declaration* declaration = scope->findDeclaration(this);
+    declaration = scope->findDeclaration(this);
     if (!declaration) {
         return nullopt;
     }
@@ -110,7 +113,12 @@ bool Variable::operator==(const Statement& value) const {
     variable->isConst = isConst;
     return variable;
 }*/
-
+llvm::Value* Variable::getReferenceLlvm(LlvmObject* llvmObj) {
+    return declaration->llvmVariable;
+}
+llvm::Value* Variable::createLlvm(LlvmObject* llvmObj) {
+    return new llvm::LoadInst(declaration->llvmVariable, "", llvmObj->block);
+}
 
 /*
     IntegerValue
@@ -145,6 +153,9 @@ bool IntegerValue::operator==(const Statement& value) const {
     auto val = make_unique<IntegerValue>(position, value);
     return val;
 }*/
+llvm::Value* IntegerValue::createLlvm(LlvmObject* llvmObj) {
+    return llvm::ConstantInt::get(type->createLlvm(llvmObj), this->value);
+}
 
 
 /*
@@ -180,6 +191,9 @@ bool CharValue::operator==(const Statement& value) const {
     auto val = make_unique<CharValue>(position, value);
     return val;
 }*/
+llvm::Value* CharValue::createLlvm(LlvmObject* llvmObj) {
+    return llvm::ConstantInt::get(type->createLlvm(llvmObj), this->value);
+}
 
 
 /*
@@ -215,6 +229,9 @@ bool FloatValue::operator==(const Statement& value) const {
     auto val = make_unique<FloatValue>(position, value);
     return val;
 }*/
+llvm::Value* FloatValue::createLlvm(LlvmObject* llvmObj) {
+    return llvm::ConstantFP::get(type->createLlvm(llvmObj), this->value);
+}
 
 
 /*
@@ -245,6 +262,9 @@ bool BoolValue::operator==(const Statement& value) const {
     else {
         return false;
     }
+}
+llvm::Value* BoolValue::createLlvm(LlvmObject* llvmObj) {
+    return llvm::ConstantInt::get(type->createLlvm(llvmObj), this->value);
 }
 
 
@@ -405,4 +425,17 @@ bool FunctionValue::operator==(const Statement& value) const {
     else {
         return false;
     }
+}
+llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj) {
+    auto function = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction(
+    "", 
+    (llvm::FunctionType*)((llvm::PointerType*)type->createLlvm(llvmObj))->getElementType())
+    );
+
+    auto oldFunction = llvmObj->function; 
+    llvmObj->function = function;
+    this->body->createLlvm(llvmObj);
+    llvmObj->function = oldFunction;
+
+    return function;
 }

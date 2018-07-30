@@ -52,7 +52,7 @@ struct Scope : Statement {
     virtual Declaration* findAndInterpretDeclaration(const std::string& name)=0;
     Declaration* findDeclaration(Variable* variable);
     virtual bool operator==(const Statement& scope) const;
-    virtual void createLlvm(LlvmObject* LlvmObj)=0;
+    virtual void createLlvm(LlvmObject* llvmObj)=0;
   
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
@@ -71,7 +71,7 @@ struct CodeScope : Scope {
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
-    virtual void createLlvm(LlvmObject* LlvmObj);
+    virtual void createLlvm(LlvmObject* llvmObj);
 
     bool isGlobalScope;
     std::vector<Statement*> statements;
@@ -84,7 +84,7 @@ struct FunctionScope : CodeScope {
     FunctionScope(const CodePosition& position, Scope* parentScope, FunctionValue* function);
     static FunctionScope* Create(const CodePosition& position, Scope* parentScope, FunctionValue* function);
     virtual bool operator==(const Statement& scope) const;
-    virtual void createLlvm(LlvmObject* LlvmObj);
+    virtual void createLlvm(LlvmObject* llvmObj);
 
     FunctionValue* function;
 
@@ -99,7 +99,7 @@ struct ClassScope : Scope {
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
-    virtual void createLlvm(LlvmObject* LlvmObj);
+    virtual void createLlvm(LlvmObject* llvmObj);
 
     std::vector<Declaration*> declarations;
     ClassDeclaration* classDeclaration = nullptr;

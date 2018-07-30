@@ -32,6 +32,15 @@ Type* Type::getEffectiveType() {
 /*unique_ptr<Type> Type::copy() {
     return make_unique<Type>(this->kind);
 }*/
+llvm::Type* Type::createLlvm(LlvmObject* llvmObj) {
+    switch (kind) {
+    case Kind::Bool:
+        return llvm::Type::getInt1Ty(llvmObj->context);
+    case Kind::Void:
+        return llvm::Type::getVoidTy(llvmObj->context);
+    }
+    return nullptr;
+}
 
 Type* getSuitingIntegerType(IntegerType* i1, IntegerType* i2) {
     if (i1->isSigned() || i2->isSigned()) {
@@ -90,7 +99,9 @@ bool OwnerPointerType::operator==(const Type& type) const {
 /*unique_ptr<Type> OwnerPointerType::copy() {
     return make_unique<OwnerPointerType>(this->underlyingType->copy());
 }*/
-
+llvm::Type* OwnerPointerType::createLlvm(LlvmObject* llvmObj) {
+    return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
+}
 
 /*
     RawPointerType
@@ -118,7 +129,13 @@ bool RawPointerType::operator==(const Type& type) const {
 /*unique_ptr<Type> RawPointerType::copy() {
     return make_unique<RawPointerType>(this->underlyingType->copy());
 }*/
-
+llvm::Type* RawPointerType::createLlvm(LlvmObject* llvmObj) {
+    if (underlyingType->kind == Type::Kind::Void) {
+        return llvm::PointerType::get(llvm::Type::getInt8Ty(llvmObj->context), 0);
+    } else {
+        return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
+    }
+}
 
 /*
     MaybeErrorType
@@ -147,7 +164,9 @@ bool MaybeErrorType::operator==(const Type& type) const {
 /*unique_ptr<Type> MaybeErrorType::copy() {
     return make_unique<MaybeErrorType>(this->underlyingType->copy());
 }*/
-
+llvm::Type* MaybeErrorType::createLlvm(LlvmObject* llvmObj) {
+    return llvm::Type::getFloatTy(llvmObj->context);
+}
 
 /*
     ReferenceType
@@ -178,7 +197,9 @@ Type* ReferenceType::getEffectiveType() {
 /*unique_ptr<Type> ReferenceType::copy() {
     return make_unique<ReferenceType>(this->underlyingType->copy());
 }*/
-
+llvm::Type* ReferenceType::createLlvm(LlvmObject* llvmObj) {
+    return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
+}
 
 /*
     StaticArrayType
@@ -226,6 +247,10 @@ bool StaticArrayType::operator==(const Type& type) const {
         return make_unique<StaticArrayType>(this->elementType->copy(), this->sizeAsInt);
     }
 }*/
+llvm::Type* StaticArrayType::createLlvm(LlvmObject* llvmObj) {
+    return llvm::Type::getFloatTy(llvmObj->context);
+}
+
 
 
 /*
@@ -254,6 +279,10 @@ bool DynamicArrayType::operator==(const Type& type) const {
 /*unique_ptr<Type> DynamicArrayType::copy() {
     return make_unique<DynamicArrayType>(this->elementType->copy());
 }*/
+llvm::Type* DynamicArrayType::createLlvm(LlvmObject* llvmObj) {
+    return llvm::Type::getFloatTy(llvmObj->context);
+}
+
 
 
 /*
@@ -282,6 +311,9 @@ bool ArrayViewType::operator==(const Type& type) const {
 /*unique_ptr<Type> ArrayViewType::copy() {
     return make_unique<ArrayViewType>(this->elementType->copy());
 }*/
+llvm::Type* ArrayViewType::createLlvm(LlvmObject* llvmObj) {
+    return llvm::Type::getFloatTy(llvmObj->context);
+}
 
 
 /*
@@ -324,6 +356,10 @@ bool ClassType::operator==(const Type& type) const {
     }
     return type;
 }*/
+llvm::Type* ClassType::createLlvm(LlvmObject* llvmObj) {
+    return declaration->getLlvmType(llvmObj);
+}
+
 
 
 /*
@@ -360,6 +396,16 @@ bool FunctionType::operator==(const Type& type) const {
     }
     return type;
 }*/
+llvm::Type* FunctionType::createLlvm(LlvmObject* llvmObj) {
+    vector<llvm::Type*> types;
+    for (auto argType : argumentTypes) {
+        types.push_back(argType->createLlvm(llvmObj));
+    }
+    return llvm::PointerType::get(
+        llvm::FunctionType::get(returnType->createLlvm(llvmObj), types, false), 
+        0
+    );
+}
 
 
 /*
@@ -396,6 +442,22 @@ bool IntegerType::operator==(const Type& type) const {
 /*unique_ptr<Type> IntegerType::copy() {
     return make_unique<IntegerType>(size);
 }*/
+llvm::Type* IntegerType::createLlvm(LlvmObject* llvmObj) {
+    switch (size) {
+    case Size::I8:
+    case Size::U8:
+        return llvm::Type::getInt8Ty(llvmObj->context);
+    case Size::I16:
+    case Size::U16:
+        return llvm::Type::getInt16Ty(llvmObj->context);
+    case Size::I32:
+    case Size::U32:
+        return llvm::Type::getInt32Ty(llvmObj->context);
+    case Size::I64:
+    case Size::U64:
+        return llvm::Type::getInt64Ty(llvmObj->context);
+    }
+}
 
 
 /*
@@ -421,6 +483,14 @@ bool FloatType::operator==(const Type& type) const {
 /*unique_ptr<Type> FloatType::copy() {
     return make_unique<FloatType>(size);
 }*/
+llvm::Type* FloatType::createLlvm(LlvmObject* llvmObj) {
+    switch (size) {
+    case Size::F32:
+        return llvm::Type::getFloatTy(llvmObj->context);
+    case Size::F64:
+        return llvm::Type::getDoubleTy(llvmObj->context);
+    }
+}
 
 
 /*

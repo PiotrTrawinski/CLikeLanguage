@@ -15,10 +15,13 @@ struct Declaration : Statement {
     static Declaration* Create(const CodePosition& position);
     bool interpret(Scope* scope, bool outOfOrder=false);
     virtual bool operator==(const Statement& declaration) const;
+    void createLlvm(LlvmObject* llvmObj);
 
     Variable* variable = nullptr;
     Value* value = nullptr;
     Status status = Status::None;
+    Scope* scope = nullptr;
+    llvm::AllocaInst* llvmVariable;
     
 private:
     static std::vector<std::unique_ptr<Declaration>> objects;

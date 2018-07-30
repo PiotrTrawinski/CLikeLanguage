@@ -24,6 +24,7 @@ struct Value : Statement {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     ValueKind valueKind;
     Type* type = nullptr;
@@ -39,10 +40,13 @@ struct Variable : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
 
     std::string name;
     bool isConst = false;
-    
+    Declaration* declaration;
+
 private:
     static std::vector<std::unique_ptr<Variable>> objects;
 };
@@ -52,6 +56,7 @@ struct IntegerValue : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     uint64_t value;
     
@@ -64,6 +69,7 @@ struct CharValue : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     uint8_t value;
     
@@ -76,6 +82,7 @@ struct FloatValue : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     double value;
     
@@ -87,6 +94,7 @@ struct BoolValue : Value {
     static BoolValue* Create(const CodePosition& position, bool value);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
+    llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     bool value;
 
@@ -122,6 +130,7 @@ struct FunctionValue : Value {
     static FunctionValue* Create(const CodePosition& position, Type* type, Scope* parentScope);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     //std::vector<std::string> argumentNames;
     std::vector<Declaration*> arguments;

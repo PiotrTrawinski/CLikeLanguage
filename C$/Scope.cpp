@@ -1202,6 +1202,9 @@ bool CodeScope::interpret() {
             break;
         }
         case Statement::Kind::Scope: {
+            if (isGlobalScope) {
+                return errorMessage("global scope can only have variable and class declarations", statement->position);
+            }
             Scope* scope = (Scope*)statement;
             if (!scope->interpret()) {
                 return false;
@@ -1209,6 +1212,9 @@ bool CodeScope::interpret() {
             break;
         }
         case Statement::Kind::Value: {
+            if (isGlobalScope) {
+                return errorMessage("global scope can only have variable and class declarations", statement->position);
+            }
             Value* value = (Value*)statement;
             auto valueInterpret = value->interpret(this);
             if (!valueInterpret) {
@@ -1220,6 +1226,20 @@ bool CodeScope::interpret() {
         }
         }
     }
+
+    if (isGlobalScope) {
+        auto expectedMainType = FunctionType::Create();
+        expectedMainType->returnType = IntegerType::Create(IntegerType::Size::I64);
+        auto mainDeclarations = declarationMap.getDeclarations("main");
+        for (auto declaration : mainDeclarations) {
+            if (declaration->variable->isConst
+                && cmpPtr(declaration->variable->type, (Type*)expectedMainType)) {
+                return true;
+            }
+        }
+        return errorMessage("no correct main function found in global scope");
+    }
+
     return true;
 }
 Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
@@ -1237,8 +1257,35 @@ Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
     }
     return nullptr;
 }
-void CodeScope::createLlvm(LlvmObject* LlvmObj) {
+void CodeScope::createLlvm(LlvmObject* llvmObj) {
+    for (int i = 0; i < statements.size(); ++i) {
+        auto& statement = statements[i];
+        switch (statement->kind) {
+        case Statement::Kind::Declaration:{
+            Declaration* declaration = (Declaration*)statement;
+            declaration->createLlvm(llvmObj);
+            break;
+        }
+        case Statement::Kind::ClassDeclaration:{
+            ClassDeclaration* declaration = (ClassDeclaration*)statement;
+            declaration->createLlvm(llvmObj);
+            break;
+        }
+        case Statement::Kind::Scope: {
+            Scope* scope = (Scope*)statement;
+            scope->createLlvm(llvmObj);
+            break;
+        }
+        case Statement::Kind::Value: {
+            Value* value = (Value*)statement;
+            if (isGlobalScope) {
 
+            }
+            value->createLlvm(llvmObj);
+            break;
+        }
+        }
+    }
 }
 
 /*
@@ -1315,7 +1362,7 @@ bool ClassScope::interpret() {
 Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
     return nullptr;
 }
-void ClassScope::createLlvm(LlvmObject* LlvmObj) {
+void ClassScope::createLlvm(LlvmObject* llvmObj) {
 
 }
 
@@ -1340,8 +1387,11 @@ bool FunctionScope::operator==(const Statement& scope) const {
         return false;
     }
 }
-void FunctionScope::createLlvm(LlvmObject* LlvmObj) {
-
+void FunctionScope::createLlvm(LlvmObject* llvmObj) {
+    auto oldBlock = llvmObj->block;
+    llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "EntryPoint", llvmObj->function);
+    CodeScope::createLlvm(llvmObj);
+    llvmObj->block = oldBlock;
 }
 
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Value.h"
+#include "LlvmObject.h"
 #include <algorithm>
 
 struct Operation : Value {
@@ -47,15 +48,17 @@ struct Operation : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    
 
     Kind kind;
     bool wasInterpreted = false;
     std::vector<Value*> arguments;
-    
+
 private:
     static std::vector<std::unique_ptr<Operation>> objects;
 
-    Operation* expandAssignOperation(Kind kind);
+    std::optional<Value*> expandAssignOperation(Kind kind, Scope* scope);
 
     template<typename Function> Value* evaluate(Value* val1, Value* val2, Function function) {
         if (val1->valueKind == Value::ValueKind::Integer && val2->valueKind == Value::ValueKind::Integer) {
@@ -142,12 +145,35 @@ private:
         return nullptr;
     }
 
-    template<typename Function> Value* tryEvaluate2ArgArithmetic(Function function) {
+    template<typename Function> Value* tryEvaluate2ArgArithmetic(Function function, Scope* scope) {
         auto type1 = arguments[0]->type->getEffectiveType();
         auto type2 = arguments[1]->type->getEffectiveType();
         type = Type::getSuitingArithmeticType(type1, type2);
         if (type && arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
             return evaluate(arguments[0], arguments[1], function);
+        }
+        if (type) {
+            auto cast1 = CastOperation::Create(position, type);
+            cast1->arguments.push_back(arguments[0]);
+            auto cast1Interpret = cast1->interpret(scope);
+            if (!cast1Interpret) {
+                type = nullptr;
+                internalError("casting failed, but shouldn't", position);
+                return nullptr;
+            }
+            if (cast1Interpret.value()) arguments[0] = cast1Interpret.value();
+            else arguments[0] = cast1;
+
+            auto cast2 = CastOperation::Create(position, type);
+            cast2->arguments.push_back(arguments[0]);
+            auto cast2Interpret = cast2->interpret(scope);
+            if (!cast2Interpret) {
+                type = nullptr;
+                internalError("casting failed, but shouldn't", position);
+                return nullptr;
+            }
+            if (cast2Interpret.value()) arguments[0] = cast2Interpret.value();
+            else arguments[0] = cast2;
         }
         return nullptr;
     }
@@ -163,7 +189,7 @@ private:
         }
         return nullptr;
     }
-    template<typename Function> Value* tryEvaluate2ArgArithmeticIntegerOnly(Function function) {
+    template<typename Function> Value* tryEvaluate2ArgArithmeticIntegerOnly(Function function, Scope* scope) {
         auto type1 = arguments[0]->type->getEffectiveType();
         auto type2 = arguments[1]->type->getEffectiveType();
         type = Type::getSuitingArithmeticType(type1, type2);
@@ -173,6 +199,29 @@ private:
         }
         if (type && arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
             return evaluateIntegerOnly(arguments[0], arguments[1], function);
+        }
+        if (type) {
+            auto cast1 = CastOperation::Create(position, type);
+            cast1->arguments.push_back(arguments[0]);
+            auto cast1Interpret = cast1->interpret(scope);
+            if (!cast1Interpret) {
+                type = nullptr;
+                internalError("casting failed, but shouldn't", position);
+                return nullptr;
+            }
+            if (cast1Interpret.value()) arguments[0] = cast1Interpret.value();
+            else arguments[0] = cast1;
+
+            auto cast2 = CastOperation::Create(position, type);
+            cast2->arguments.push_back(arguments[0]);
+            auto cast2Interpret = cast2->interpret(scope);
+            if (!cast2Interpret) {
+                type = nullptr;
+                internalError("casting failed, but shouldn't", position);
+                return nullptr;
+            }
+            if (cast2Interpret.value()) arguments[0] = cast2Interpret.value();
+            else arguments[0] = cast2;
         }
         return nullptr;
     }
@@ -264,6 +313,8 @@ struct FlowOperation : Operation {
     virtual bool operator==(const Statement& value) const;
 
     Scope* scopePtr = nullptr;
+
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
 private:
     static std::vector<std::unique_ptr<FlowOperation>> objects;
