@@ -159,7 +159,6 @@ private:
             if (!cast1Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
-                return nullptr;
             }
             if (cast1Interpret.value()) arguments[0] = cast1Interpret.value();
             else arguments[0] = cast1;
@@ -170,7 +169,6 @@ private:
             if (!cast2Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
-                return nullptr;
             }
             if (cast2Interpret.value()) arguments[1] = cast2Interpret.value();
             else arguments[1] = cast2;
@@ -207,7 +205,6 @@ private:
             if (!cast1Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
-                return nullptr;
             }
             if (cast1Interpret.value()) arguments[0] = cast1Interpret.value();
             else arguments[0] = cast1;
@@ -218,7 +215,6 @@ private:
             if (!cast2Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
-                return nullptr;
             }
             if (cast2Interpret.value()) arguments[1] = cast2Interpret.value();
             else arguments[1] = cast2;
@@ -258,8 +254,7 @@ private:
     template<typename T> std::optional<Value*> evaluateConstexprIntegerIndex(std::vector<Value*> staticArrayValues, uint64_t indexValue) {
         auto value = (T)indexValue;
         if (value >= staticArrayValues.size()) {
-            errorMessage("array index outside the bounds of an array", position);
-            return nullopt;
+            return errorMessageOpt("array index outside the bounds of an array", position);
         }
         return staticArrayValues[value];
     }

@@ -19,7 +19,7 @@ bool ClassDeclaration::interpret() {
         return true;
     }
     if (status == Status::InEvaluation) {
-        return errorMessage("recursive class declarations", position);
+        return errorMessageBool("recursive class declarations", position);
     }
     status = Status::InEvaluation;
     body->classDeclaration = this;

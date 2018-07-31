@@ -37,10 +37,10 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
         }
         bool addToMapStatus = false;
         if (variable->type && !variable->type->interpret(scope)) {
-            return errorMessage("unknown type: " + DeclarationMap::toString(variable->type), position);
+            return errorMessageBool("unknown type: " + DeclarationMap::toString(variable->type), position);
         }
         if (value && value->type && !value->type->interpret(scope)) {
-            return errorMessage("unknown type: " + DeclarationMap::toString(value->type), position);
+            return errorMessageBool("unknown type: " + DeclarationMap::toString(value->type), position);
         }
         if (isFunctionDeclaration()) {
             addToMapStatus = scope->declarationMap.addFunctionDeclaration(this);
@@ -48,7 +48,7 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
             addToMapStatus = scope->declarationMap.addVariableDeclaration(this);
         }
         if (!addToMapStatus) {
-            return errorMessage("2 same declarations of " + variable->name + ".\n"
+            return errorMessageBool("2 same declarations of " + variable->name + ".\n"
                 + "1 at line " + to_string(position.lineNumber) + "\n"
                 + "2 at line " + to_string(scope->declarationMap.getDeclarations(variable->name)[0]->position.lineNumber),
                 position);

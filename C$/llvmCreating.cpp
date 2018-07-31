@@ -17,12 +17,10 @@ unique_ptr<LlvmObject> createLlvm(CodeScope* globalScope) {
 
     if (!llvmObj->executionEngine) {
         internalError("Failed to construct LLVM-ExecutionEngine");
-        return nullptr;
     }
 
     if (verifyModule(*llvmObj->module)) {
         internalError("Failed to construct LLVM-Model");
-        return nullptr;
     }
 
     std::error_code ec;

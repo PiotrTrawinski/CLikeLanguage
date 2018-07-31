@@ -355,8 +355,7 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
                     }
                 }
 
-                errorMessage(message, position);
-                return nullopt;
+                return errorMessageOpt(message, position);
             }
         }
         type = StaticArrayType::Create(deducedType, values.size());
@@ -406,7 +405,6 @@ optional<Value*> FunctionValue::interpret(Scope* scope) {
     for (auto& argument : arguments) {
         if (argument->value) {
             internalError("function argument declaration has value", argument->position);
-            return nullopt;
         }
         argument->status = Declaration::Status::Completed;
         body->declarationMap.addVariableDeclaration(argument);

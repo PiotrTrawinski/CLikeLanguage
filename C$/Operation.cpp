@@ -89,14 +89,12 @@ optional<Value*> Operation::interpret(Scope* scope) {
         }
 
         if (!classType) {
-            errorMessage("can use '.' operation on class or pointer to class type only, got "
+            return errorMessageOpt("can use '.' operation on class or pointer to class type only, got "
                 + DeclarationMap::toString(arguments[0]->type), position
             );
-            return nullopt;
         }
         if (arguments[1]->valueKind != Value::ValueKind::Variable) {
-            errorMessage("right side of '.' operation needs to be a variable name", position);
-            return nullopt;
+            return errorMessageOpt("right side of '.' operation needs to be a variable name", position);
         }
         
         Variable* field = (Variable*)arguments[1];
@@ -109,16 +107,14 @@ optional<Value*> Operation::interpret(Scope* scope) {
         }
         
         if (viableDeclarations.size() == 0) {
-            errorMessage("class " + DeclarationMap::toString(effectiveType1)
+            return errorMessageOpt("class " + DeclarationMap::toString(effectiveType1)
                 + " has no field named " + field->name, position
             );
-            return nullopt;
         }
         if (viableDeclarations.size() > 1) {
-            errorMessage("class " + DeclarationMap::toString(effectiveType1)
+            return errorMessageOpt("class " + DeclarationMap::toString(effectiveType1)
                 + " has more then 1 field named " + field->name, position
             );
-            return nullopt;
         }
         Declaration* declaration = viableDeclarations.back();
 
@@ -129,8 +125,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
     }
     case Kind::Address: {
         if (!isLvalue(arguments[0])) {
-            errorMessage("You can only take address of an l-value", position);
-            return nullopt;
+            return errorMessageOpt("You can only take address of an l-value", position);
         }
         type = RawPointerType::Create(arguments[0]->type);
         break;
@@ -499,8 +494,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
     }
     case Kind::Assign:{
         if (!isLvalue(arguments[0])) {
-            errorMessage("left argument of an assignment must be an l-value", position);
-            return nullopt;
+            return errorMessageOpt("left argument of an assignment must be an l-value", position);
         }
         auto cast = CastOperation::Create(arguments[1]->position, arguments[0]->type);
         /*if (arguments[0]->type->kind == Type::Kind::Reference) {
@@ -558,8 +552,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
             message += DeclarationMap::toString(arguments[1]->type);
         }
 
-        errorMessage(message, position);
-        return nullopt;
+        return errorMessageOpt(message, position);
     }
 
     wasInterpreted = true;
@@ -954,7 +947,6 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
             return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UNE, arg1, arg2, "");
         } else {
             internalError("!= operation expects integer and float types only in llvm creating, got " + DeclarationMap::toString(arguments[0]->type), position);
-            return nullptr;
         }
     }
     case Kind::LogicalNot: {
@@ -1001,7 +993,6 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     }
     default:
         internalError("unexpected operation when creating llvm", position);
-        break;
     }
     return nullptr;
 }
@@ -1032,8 +1023,7 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
         return nullopt;
     }
     if (!type->interpret(scope) || !argType->interpret(scope)) {
-        errorMessage("cannot cast to unknown type " + DeclarationMap::toString(type), position);
-        return nullopt;
+        return errorMessageOpt("cannot cast to unknown type " + DeclarationMap::toString(type), position);
     }
 
     auto effectiveType = arguments[0]->type->getEffectiveType();
@@ -1043,8 +1033,7 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     } 
     else if (type->kind == Type::Kind::Reference) {
         if (!isLvalue(arguments[0])){
-            errorMessage("cannot cast non-lvalue to reference type", position);
-            return nullopt;
+            return errorMessageOpt("cannot cast non-lvalue to reference type", position);
         }
         if (cmpPtr(effectiveType, type->getEffectiveType())) {
             return nullptr;
@@ -1144,7 +1133,7 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     }
 
     if (!onlyTry) {
-        errorMessage("cannot cast " + 
+        return errorMessageOpt("cannot cast " + 
             DeclarationMap::toString(arguments[0]->type) + 
             " to " + DeclarationMap::toString(type), position
         );
@@ -1314,7 +1303,6 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
         }
         else {
             internalError("only integer and float types can be casted to integer in llvm stage", position);
-            return nullptr;
         }
     } else if (type->kind == Type::Kind::Float) {
         auto floatType = (FloatType*)type;
@@ -1334,11 +1322,9 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
         }
         else {
             internalError("only integer and float types can be casted to float in llvm stage", position);
-            return nullptr;
         }
     } else {
         internalError("can only cast to integer and float types in llvm stage", position);
-        return nullptr;
     }
     return nullptr;
 }
@@ -1365,10 +1351,9 @@ optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
     if (indexInterpret.value()) index = indexInterpret.value();
 
     if (index->type->kind != Type::Kind::Integer) {
-        errorMessage("array index must be an integer value, got " 
+        return errorMessageOpt("array index must be an integer value, got " 
             + DeclarationMap::toString(index->type), position
         );
-        return nullopt;
     }
 
     if (index->isConstexpr && arguments[0]->isConstexpr && arguments[0]->valueKind == Value::ValueKind::StaticArray) {
@@ -1397,13 +1382,11 @@ optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
         else if (index->valueKind == Value::ValueKind::Char) {
             auto indexValue = ((CharValue*)index)->value;
             if (indexValue >= staticArrayValues.size()) {
-                errorMessage("array index outside the bounds of an array", position);
-                return nullopt;
+                return errorMessageOpt("array index outside the bounds of an array", position);
             }
             return staticArrayValues[indexValue];
         } else {
             internalError("expected constexpr integer or char in array index", position);
-            return nullopt;
         }
     }
 
@@ -1421,8 +1404,7 @@ optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
             break;
     }
     if (!type) {
-        errorMessage("cannot index value of type " + DeclarationMap::toString(arguments[0]->type), position);
-        return nullopt;
+        return errorMessageOpt("cannot index value of type " + DeclarationMap::toString(arguments[0]->type), position);
     }
 
     return nullptr;
@@ -1562,7 +1544,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
             return FindFunctionStatus::Fail;
         } 
         if (possibleDeclarations.size() > 1) {
-            errorMessage("ambogous function call", position);
+            errorMessageBool("ambogous function call", position);
             return FindFunctionStatus::Error;
         }
 
@@ -1611,8 +1593,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
             actualScope = actualScope->parentScope;
         } while (status != FindFunctionStatus::Success && actualScope);
         if (status != FindFunctionStatus::Success) {
-            errorMessage("no fitting function to call", position);
-            return nullopt;
+            return errorMessageOpt("no fitting function to call", position);
         }
     } else if (function->valueKind == Value::ValueKind::Operation
         && (((Operation*)function)->kind == Operation::Kind::Dot)
@@ -1622,10 +1603,9 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         Variable* var = (Variable*)dotOperation->arguments[1];
 
         if (functionType->argumentTypes.size()-1 != arguments.size()) {
-            errorMessage("expected " + to_string(functionType->argumentTypes.size()-1) 
+            return errorMessageOpt("expected " + to_string(functionType->argumentTypes.size()-1) 
                 + " arguments, got "+ to_string(arguments.size()), position
             );
-            return nullopt;
         }
         for (int i = 0; i < functionType->argumentTypes.size()-1; ++i) {
             if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
@@ -1649,10 +1629,9 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     else if (function->type->kind == Type::Kind::Function) {
         auto functionType = (FunctionType*)function->type;
         if (functionType->argumentTypes.size() != arguments.size()) {
-            errorMessage("expected " + to_string(functionType->argumentTypes.size()) 
+            return errorMessageOpt("expected " + to_string(functionType->argumentTypes.size()) 
                 + " arguments, got "+ to_string(arguments.size()), position
             );
-            return nullopt;
         }
         for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
             if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
@@ -1667,8 +1646,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
 
         type = functionType->returnType;
     } else {
-        errorMessage("function call on non function value", position);
-        return nullopt;
+        return errorMessageOpt("function call on non function value", position);
     }
 
     return nullptr;
@@ -1758,8 +1736,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
     case Kind::Remove: {
         type = Type::Create(Type::Kind::Void);
         if (arguments.size() == 0 || arguments[0]->valueKind != Value::ValueKind::Variable) {
-            errorMessage("remove for-loop statement requires variable name", position);
-            return nullopt;
+            return errorMessageOpt("remove for-loop statement requires variable name", position);
         }
         string varName = ((Variable*)arguments[0])->name;
         scopePtr = scope;
@@ -1782,8 +1759,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             }
         }
         if (!scopePtr) {
-            errorMessage("cannot tie remove statment with any loop", position);
-            return nullopt;
+            return errorMessageOpt("cannot tie remove statment with any loop", position);
         }
         break;
     }
@@ -1791,8 +1767,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         type = Type::Create(Type::Kind::Void);
         scopePtr = scope;
         if (arguments.size() == 1 && arguments[0]->valueKind != Value::ValueKind::Variable) {
-            errorMessage("continue loop statement needs no value or variable name", position);
-            return nullopt;
+            return errorMessageOpt("continue loop statement needs no value or variable name", position);
         }
         while (scopePtr) {
             if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
@@ -1826,8 +1801,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             }
         }
         if (!scopePtr) {
-            errorMessage("cannot tie continue statment with any loop", position);
-            return nullopt;
+            return errorMessageOpt("cannot tie continue statment with any loop", position);
         }
         break;
     }
@@ -1835,8 +1809,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         type = Type::Create(Type::Kind::Void);
         scopePtr = scope;
         if (arguments.size() == 1 && arguments[0]->valueKind != Value::ValueKind::Variable) {
-            errorMessage("break loop statement needs no value or variable name", position);
-            return nullopt;
+            return errorMessageOpt("break loop statement needs no value or variable name", position);
         }
         while (scopePtr) {
             if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
@@ -1870,8 +1843,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             }
         }
         if (!scopePtr) {
-            errorMessage("cannot tie break statment with any loop", position);
-            return nullopt;
+            return errorMessageOpt("cannot tie break statment with any loop", position);
         }
         break;
     }
@@ -1884,15 +1856,13 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                 auto returnType = ((FunctionType*)functionValue->type)->returnType;
                 if (arguments.size() == 0) {
                     if (returnType->kind != Type::Kind::Void) {
-                        errorMessage("expected return value of type " + DeclarationMap::toString(returnType)
+                        return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
                             + " got nothing", position);
-                        return nullopt;
                     } 
                 }
                 else if (!cmpPtr(arguments[0]->type, returnType)) {
-                    errorMessage("expected return value of type " + DeclarationMap::toString(returnType)
+                    return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
                         + " got value of type " + DeclarationMap::toString(arguments[0]->type), position);
-                    return nullopt;
                 }
                 break;
             } else {

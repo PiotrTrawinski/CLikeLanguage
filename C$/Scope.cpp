@@ -34,13 +34,13 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
     auto& token = tokens[i];
     switch (token.type) {
     case Token::Type::Char:
-        return errorMessage("statement cannot start with a char value", token.codePosition);
+        return errorMessageBool("statement cannot start with a char value", token.codePosition);
     case Token::Type::StringLiteral:
-        return errorMessage("statement cannot start with a string literal", token.codePosition);
+        return errorMessageBool("statement cannot start with a string literal", token.codePosition);
     case Token::Type::Integer:
-        return errorMessage("statement cannot start with an integer value", token.codePosition);
+        return errorMessageBool("statement cannot start with an integer value", token.codePosition);
     case Token::Type::Float:
-        return errorMessage("statement cannot start with a float value", token.codePosition);
+        return errorMessageBool("statement cannot start with a float value", token.codePosition);
     case Token::Type::Symbol:
         if (token.value == "{") {
             i += 1;
@@ -73,9 +73,9 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
         if (keyword) {
             switch (keyword->kind) {
             case Keyword::Kind::SpecialValue:
-                return errorMessage("statement cannot start with r-value", token.codePosition);
+                return errorMessageBool("statement cannot start with r-value", token.codePosition);
             case Keyword::Kind::TypeName:
-                return errorMessage("statement cannot start with type name", token.codePosition);
+                return errorMessageBool("statement cannot start with type name", token.codePosition);
             case Keyword::Kind::ScopeStart: {
                 Scope* scope = nullptr;
                 switch (((ScopeStartKeyword*)keyword)->value) {
@@ -86,7 +86,7 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                 case ScopeStartKeyword::Value::If:
                     scope = IfScope::Create(token.codePosition, this);     break;
                 case ScopeStartKeyword::Value::Else:
-                    return errorMessage("start of an else scope not directly after an if scope", token.codePosition);
+                    return errorMessageBool("start of an else scope not directly after an if scope", token.codePosition);
                 case ScopeStartKeyword::Value::While:
                     scope = WhileScope::Create(token.codePosition, this);  break;
                 case ScopeStartKeyword::Value::For:
@@ -122,17 +122,17 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
             }
         }
         else if (i + 1 >= tokens.size()) {
-            return errorMessage("unexpected end of file", token.codePosition);
+            return errorMessageBool("unexpected end of file", token.codePosition);
         }
         else if (tokens[i + 1].value == ":" || tokens[i + 1].value == "&") {
             // declaration
             if (i + 3 >= tokens.size()) {
-                return errorMessage("unexpected end of assignment", token.codePosition);
+                return errorMessageBool("unexpected end of assignment", token.codePosition);
             }
             if (tokens[i + 3].value == "class") {
                 // class declaration/scope
                 if (tokens[i + 1].value + tokens[i+2].value != "::") {
-                    return errorMessage("unexpected symbols in class declaration. Did you mean to use '::'?", tokens[i+1].codePosition);
+                    return errorMessageBool("unexpected symbols in class declaration. Did you mean to use '::'?", tokens[i+1].codePosition);
                 }
                 i += 4;
                 auto classDeclaration = ClassDeclaration::Create(token.codePosition, token.value);
@@ -209,8 +209,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             if (lastWasLambda >= 0) {
                 break;
             }
-            errorMessage("unexpected end of file", tokens[i-1].codePosition);
-            return nullopt;
+            return errorMessageOpt("unexpected end of file", tokens[i-1].codePosition);
         }
         switch (tokens[i].type) {
         case Token::Type::Integer:
@@ -336,8 +335,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                                 lastWasLambda = 1;
                                 expectValue = false;
                             } else {
-                                errorMessage("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
-                                return nullopt;
+                                return errorMessageOpt("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
                             }
                         }
                     } else {
@@ -387,8 +385,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
         }
         case Token::Type::Symbol:
             if (tokens[i].value == "}") {
-                errorMessage("unexpected '}' symbol", tokens[i].codePosition);
-                return nullopt;
+                return errorMessageOpt("unexpected '}' symbol", tokens[i].codePosition);
             }
             if (expectValue) {
                 if (tokens[i].value == "(") {
@@ -419,12 +416,10 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         if (tokens[i].value != ")") {
                             while (true) {
                                 if (tokens[i].type != Token::Type::Label) {
-                                    errorMessage("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
-                                    return nullopt;
+                                    return errorMessageOpt("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
                                 }
                                 if (tokens[i+1].value != ":") {
-                                    errorMessage("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
-                                    return nullopt;
+                                    return errorMessageOpt("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
                                 }
                                 int declarationStart = i;
                                 //lambda->argumentNames.push_back(tokens[i].value);
@@ -475,29 +470,24 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         i += 2;
                     }
                     if (tokens[i].type != Token::Type::Label) {
-                        errorMessage("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
-                        return nullopt;
+                        return errorMessageOpt("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
                     }
                     if (tokens[i + 1].value != ">") {
-                        errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
-                        return nullopt;
+                        return errorMessageOpt("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
                     }
                     templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
                     i += 2;
                     if (tokens[i].value != "(") {
-                        errorMessage("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
-                        return nullopt;
+                        return errorMessageOpt("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
                     }
                     i += 1;
                     if (tokens[i].value != ")") {
                         while (true) {
                             if (tokens[i].type != Token::Type::Label) {
-                                errorMessage("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
-                                return nullopt;
+                                return errorMessageOpt("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
                             }
                             if (tokens[i+1].value != ":") {
-                                errorMessage("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
-                                return nullopt;
+                                return errorMessageOpt("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
                             }
                             int declarationStart = i;
                             //templateFunction->argumentNames.push_back(tokens[i].value);
@@ -546,8 +536,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         j += 1;
                     }
                     if (openSquereBrackets != 0) {
-                        errorMessage("missing closing ']'", tokens[i].codePosition);
-                        return nullopt;
+                        return errorMessageOpt("missing closing ']'", tokens[i].codePosition);
                     }
 
                     if (tokens[j].value == "(") {
@@ -576,8 +565,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                                 return nullopt;
                             }
                             if (value->valueKind == Value::ValueKind::Empty) {
-                                errorMessage("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
-                                return nullopt;
+                                return errorMessageOpt("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
                             }
                             staticArray->values.push_back(value);
                         } while(tokens[i].value != "]");
@@ -631,8 +619,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         stack.pop_back();
                     }
                     if (stack.size() <= 0) {
-                        errorMessage("incorrect bracketing '(' ')'", tokens[i].codePosition);
-                        return nullopt;
+                        return errorMessageOpt("incorrect bracketing '(' ')'", tokens[i].codePosition);
                     }
                     i += 1;
                     stack.pop_back();
@@ -648,8 +635,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         if (isSubArrayIndexing)
                             if (tokens[j].value == ":" && openSquereBrackets == 1) {
                                 if (isSubArrayIndexing) {
-                                    errorMessage("unexpected ':' symbol in subarray indexing", tokens[j].codePosition);
-                                    return nullopt;
+                                    return errorMessageOpt("unexpected ':' symbol in subarray indexing", tokens[j].codePosition);
                                 }
                                 isSubArrayIndexing = true;
                             }
@@ -805,8 +791,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
 
     while (stack.size() > 0) {
         if (stack.back()->kind == Operation::Kind::LeftBracket) {
-            errorMessage("incorrect bracketing '(' ')'", tokens[i-1].codePosition);
-            return nullopt;
+            return errorMessageOpt("incorrect bracketing '(' ')'", tokens[i-1].codePosition);
         }
         out.push_back(stack.back());
         stack.pop_back();
@@ -862,8 +847,7 @@ Value* Scope::getValue(const vector<Token>& tokens, int& i, const vector<string>
             message += "]";
         }
         message += ", got '" + tokens[i].value + "'";
-        errorMessage(message, tokens[i].codePosition);
-        return nullptr;
+        return errorMessageNull(message, tokens[i].codePosition);
     }
     if (skipOnGoodDelimiter) {
         i += 1;
@@ -891,7 +875,7 @@ optional<vector<Type*>> Scope::getFunctionArgumentTypes(const vector<Token>& tok
         } else if (tokens[i].value == "," && tokens[i+1].value != ")") {
             i += 1;
         } else {
-            if(writeError) errorMessage("expected function argument type, got " + tokens[i+1].value, tokens[i+1].codePosition);
+            if(writeError) errorMessageBool("expected function argument type, got " + tokens[i+1].value, tokens[i+1].codePosition);
             return nullopt;
         }
     }
@@ -952,18 +936,18 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             i += 2;
         }
         if (tokens[i].type != Token::Type::Label) {
-            if (writeError) errorMessage("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
+            if (writeError) errorMessageBool("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
             return nullptr;
         }
         if (tokens[i + 1].value != ">") {
-            if (writeError) errorMessage("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
+            if (writeError) errorMessageBool("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
             return nullptr;
         }
         templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
         i += 2;
 
         if (tokens[i].value != "(") {
-            if (writeError) errorMessage("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
+            if (writeError) errorMessageBool("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
             return nullptr;
         }
         i += 1;
@@ -1059,7 +1043,7 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             type = className;
         }
     } else {
-        if (writeError) errorMessage("unexpected '" + tokens[i].value + "' during type interpreting", tokens[i].codePosition);
+        if (writeError) errorMessageBool("unexpected '" + tokens[i].value + "' during type interpreting", tokens[i].codePosition);
         return nullptr;
     }
     if (!type) {
@@ -1082,7 +1066,7 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             message += "]";
         }
         message += ", got '" + tokens[i].value + "'";
-        if (writeError) errorMessage(message, tokens[i].codePosition);
+        if (writeError) errorMessageBool(message, tokens[i].codePosition);
         return nullptr;
     }
 }
@@ -1094,8 +1078,7 @@ Declaration* Scope::findDeclaration(Variable* variable) {
             return declaration;
         } else {
             if (parentScope == nullptr) {
-                errorMessage("missing declaration of variable " + variable->name, variable->position);
-                return nullptr;
+                return errorMessageNull("missing declaration of variable " + variable->name, variable->position);
             }
             return parentScope->findDeclaration(variable);
         }
@@ -1104,17 +1087,14 @@ Declaration* Scope::findDeclaration(Variable* variable) {
         switch (declarations[0]->status) {
         case Declaration::Status::None:
             internalError("impossible state", variable->position);
-            return nullptr;
         case Declaration::Status::InEvaluation:
-            errorMessage("recursive variable dependency", variable->position);
-            return nullptr;
+            return errorMessageNull("recursive variable dependency", variable->position);
         case Declaration::Status::Evaluated:
             if (declarations[0]->variable->isConstexpr) {
                 return declarations[0];
             } else {
                 if (parentScope == nullptr) {
-                    errorMessage("missing declaration of variable " + variable->name, variable->position);
-                    return nullptr;
+                    return errorMessageNull("missing declaration of variable " + variable->name, variable->position);
                 }
                 return parentScope->findDeclaration(variable);
             }
@@ -1130,8 +1110,7 @@ Declaration* Scope::findDeclaration(Variable* variable) {
                 msg += "\n";
             }
         }
-        errorMessage(msg, variable->position);
-        return nullptr;
+        return errorMessageNull(msg, variable->position);
     }
 }
 
@@ -1163,14 +1142,14 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
         if (statementValue) {
             if (statementValue.isScopeEnd) {
                 if (isGlobalScope) {
-                    return errorMessage("unexpected '}'. (trying to close global scope)", tokens[i-1].codePosition);
+                    return errorMessageBool("unexpected '}'. (trying to close global scope)", tokens[i-1].codePosition);
                 } else {
                     break;
                 }
             } else {
                 if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
                     if (!classDeclarationMap.add((ClassDeclaration*)statementValue.statement)) {
-                        return errorMessage("redefinition of class declaration", statementValue.statement->position);
+                        return errorMessageBool("redefinition of class declaration", statementValue.statement->position);
                     }
                 }
                 statements.push_back(statementValue.statement);
@@ -1201,7 +1180,7 @@ bool CodeScope::interpret() {
         }
         case Statement::Kind::Scope: {
             if (isGlobalScope) {
-                return errorMessage("global scope can only have variable and class declarations", statement->position);
+                return errorMessageBool("global scope can only have variable and class declarations", statement->position);
             }
             Scope* scope = (Scope*)statement;
             if (!scope->interpret()) {
@@ -1211,7 +1190,7 @@ bool CodeScope::interpret() {
         }
         case Statement::Kind::Value: {
             if (isGlobalScope) {
-                return errorMessage("global scope can only have variable and class declarations", statement->position);
+                return errorMessageBool("global scope can only have variable and class declarations", statement->position);
             }
             Value* value = (Value*)statement;
             auto valueInterpret = value->interpret(this);
@@ -1235,7 +1214,7 @@ bool CodeScope::interpret() {
                 return true;
             }
         }
-        return errorMessage("no correct main function found in global scope");
+        return errorMessageBool("no correct main function found in global scope");
     }
 
     return true;
@@ -1308,7 +1287,7 @@ bool ClassScope::operator==(const Statement& scope) const {
 }
 bool ClassScope::createCodeTree(const vector<Token>& tokens, int& i) {
     if (tokens[i].value != "{") {
-        return errorMessage("expected '{' (class scope opening)", tokens[i].codePosition);
+        return errorMessageBool("expected '{' (class scope opening)", tokens[i].codePosition);
     }
     i += 1;
 
@@ -1322,7 +1301,7 @@ bool ClassScope::createCodeTree(const vector<Token>& tokens, int& i) {
                     auto declaration = (Declaration*)statementValue.statement;
                     declarations.push_back(declaration);
                 } else {
-                    return errorMessage("non-declaration statement found in class scope", tokens[i-1].codePosition);
+                    return errorMessageBool("non-declaration statement found in class scope", tokens[i-1].codePosition);
                 }
             }
         } else {
@@ -1419,8 +1398,7 @@ struct ForScopeDeclarationType {
 };
 optional<ForScopeDeclarationType> readForScopeDeclarationType(const vector<Token>& tokens, int& i) {
     if ((tokens[i].value != ":" && tokens[i].value != "&") || (tokens[i].value == "&" && (tokens[i+1].value != ":" && tokens[i+1].value != "="))) {
-        errorMessage("expected declaration of for-each array element (:: or := or &: or &= or :)", tokens[i].codePosition);
-        return nullopt;
+        return errorMessageOpt("expected declaration of for-each array element (:: or := or &: or &= or :)", tokens[i].codePosition);
     }
 
     ForScopeDeclarationType declarationType;
@@ -1460,16 +1438,16 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         // 4. for var1, var2 _declarationType_ _array_ {}
         auto var1 = (Variable*)firstValue;
         if (!var1) {
-            return errorMessage("expected a new element iterator variable name", tokens[i-1].codePosition);
+            return errorMessageBool("expected a new element iterator variable name", tokens[i-1].codePosition);
         }
         if (i + 5 >= tokens.size()) {
-            return errorMessage("unexpected end of a file (tried to interpret a for loop)", tokens[tokens.size()-1].codePosition);
+            return errorMessageBool("unexpected end of a file (tried to interpret a for loop)", tokens[tokens.size()-1].codePosition);
         }
         i += 1; // now is on the start of var2
         auto var2Value = getValue(tokens, i, {":", "&"});
         auto var2 = (Variable*)var2Value;
         if (!var2) {
-            return errorMessage("expected a new index variable name", tokens[i-1].codePosition);
+            return errorMessageBool("expected a new index variable name", tokens[i-1].codePosition);
         }
         // now i shows start of _declarationType_
         auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
@@ -1493,7 +1471,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
         auto var1 = (Variable*)firstValue;
         if (!var1) {
-            return errorMessage("expected a new for loop iterator variable name", tokens[i-1].codePosition);
+            return errorMessageBool("expected a new for loop iterator variable name", tokens[i-1].codePosition);
         }
 
         auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
@@ -1564,7 +1542,7 @@ bool ForScope::interpret() {
             message += DeclarationMap::toString(forIterData.step->type);
             message += "; ";
             message += DeclarationMap::toString(forIterData.lastValue->type);
-            return errorMessage(message, position);
+            return errorMessageBool(message, position);
         }
 
         forIterData.iterVariable->type = Type::getSuitingArithmeticType(
@@ -1687,11 +1665,11 @@ bool IfScope::createCodeTree(const vector<Token>& tokens, int& i) {
         i += 1;
         auto statementValue = readStatement(tokens, i);
         if (statementValue.isScopeEnd) {
-            return errorMessage("unexpected '}' (trying to close unopened if scope)", tokens[i-1].codePosition);
+            return errorMessageBool("unexpected '}' (trying to close unopened if scope)", tokens[i-1].codePosition);
         } else if (!statementValue.statement) {
             return false;
         } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
-            return errorMessage("expected expression, got class declaration", tokens[i-1].codePosition);
+            return errorMessageBool("expected expression, got class declaration", tokens[i-1].codePosition);
         }
         statements.push_back(statementValue.statement);
     }
@@ -1731,11 +1709,11 @@ bool ElseScope::createCodeTree(const vector<Token>& tokens, int& i) {
     } else {
         auto statementValue = readStatement(tokens, i);
         if (statementValue.isScopeEnd) {
-            return errorMessage("unexpected '}' (trying to close unopened else scope)", tokens[i-1].codePosition);
+            return errorMessageBool("unexpected '}' (trying to close unopened else scope)", tokens[i-1].codePosition);
         } else if (!statementValue.statement) {
             return false;
         } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
-            return errorMessage("expected expression, got class declaration", tokens[i-1].codePosition);
+            return errorMessageBool("expected expression, got class declaration", tokens[i-1].codePosition);
         }
         statements.push_back(statementValue.statement);
         return true;
@@ -1761,11 +1739,11 @@ bool DeferScope::createCodeTree(const vector<Token>& tokens, int& i) {
     } else {
         auto statementValue = readStatement(tokens, i);
         if (statementValue.isScopeEnd) {
-            return errorMessage("unexpected '}' (trying to close unopened defer scope)", tokens[i-1].codePosition);
+            return errorMessageBool("unexpected '}' (trying to close unopened defer scope)", tokens[i-1].codePosition);
         } else if (!statementValue.statement) {
             return false;
         } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
-            return errorMessage("expected expression, got class declaration", tokens[i-1].codePosition);
+            return errorMessageBool("expected expression, got class declaration", tokens[i-1].codePosition);
         }
         statements.push_back(statementValue.statement);
         return true;
