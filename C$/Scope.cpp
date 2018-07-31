@@ -1161,20 +1161,21 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return true;
 }
 bool CodeScope::interpret() {
+    bool wereErrors = false;
     for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
         switch (statement->kind) {
         case Statement::Kind::Declaration:{
             Declaration* declaration = (Declaration*)statement;
             if (!declaration->interpret(this)) {
-                return false;
+                wereErrors = true;
             }
             break;
         }
         case Statement::Kind::ClassDeclaration:{
             ClassDeclaration* declaration = (ClassDeclaration*)statement;
             if (!declaration->interpret()) {
-                return false;
+                wereErrors = true;
             }
             break;
         }
@@ -1184,7 +1185,7 @@ bool CodeScope::interpret() {
             }
             Scope* scope = (Scope*)statement;
             if (!scope->interpret()) {
-                return false;
+                wereErrors = true;
             }
             break;
         }
@@ -1195,13 +1196,17 @@ bool CodeScope::interpret() {
             Value* value = (Value*)statement;
             auto valueInterpret = value->interpret(this);
             if (!valueInterpret) {
-                return false;
+                wereErrors = true;
             } else if (valueInterpret.value()) {
                 statement = valueInterpret.value();
             }
             break;
         }
         }
+    }
+
+    if (wereErrors) {
+        return false;
     }
 
     if (isGlobalScope) {
@@ -1312,10 +1317,11 @@ bool ClassScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return true;
 }
 bool ClassScope::interpret() {
+    bool wereErrors = false;
     for (auto& declaration : declarations) {
         if (!declaration->value || declaration->value->valueKind != Value::ValueKind::FunctionValue) {
             if (!declaration->interpret(this)) {
-                return false;
+                wereErrors = true;
             }
         }
     }
@@ -1330,11 +1336,11 @@ bool ClassScope::interpret() {
                 lambda->arguments.back()->variable->type = lambdaType->argumentTypes.back();
             }
             if (!declaration->interpret(this)) {
-                return false;
+                wereErrors = true;
             }
         }
     }
-    return true;
+    return !wereErrors;
 }
 Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
     return nullptr;
