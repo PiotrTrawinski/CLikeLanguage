@@ -1171,17 +1171,20 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
     for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
         switch (statement->kind) {
-        case Statement::Kind::Declaration:{
+        case Statement::Kind::Declaration: {
             Declaration* declaration = (Declaration*)statement;
             if (!declaration->interpret(this)) {
                 wereErrors = true;
+            }
+            if (hasReturnStatement && !declaration->variable->isConstexpr) {
+                warningMessage("unreachable statement", statement->position);
             }
             if (!declaration->value) {
                 uninitializedDeclarations.insert(declaration);
             }
             break;
         }
-        case Statement::Kind::ClassDeclaration:{
+        case Statement::Kind::ClassDeclaration: {
             ClassDeclaration* declaration = (ClassDeclaration*)statement;
             if (!declaration->interpret()) {
                 wereErrors = true;
@@ -1192,17 +1195,25 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             if (isGlobalScope) {
                 return errorMessageBool("global scope can only have variable and class declarations", statement->position);
             }
+            if (hasReturnStatement) {
+                warningMessage("unreachable scope statement", statement->position);
+            }
             Scope* scope = (Scope*)statement;
+            scope->hasReturnStatement = hasReturnStatement;
             scope->parentUninitializedDeclarations = uninitializedDeclarations;
             if (!scope->interpret()) {
                 wereErrors = true;
             }
             uninitializedDeclarations = scope->getUninitializedDeclarations();
+            hasReturnStatement = hasReturnStatement || scope->getHasReturnStatement();
             break;
         }
         case Statement::Kind::Value: {
             if (isGlobalScope) {
                 return errorMessageBool("global scope can only have variable and class declarations", statement->position);
+            }
+            if (hasReturnStatement) {
+                warningMessage("unreachable statement", statement->position);
             }
             Value* value = (Value*)statement;
             auto valueInterpret = value->interpret(this);
@@ -1365,6 +1376,9 @@ Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
 }
 unordered_set<Declaration*> ClassScope::getUninitializedDeclarations() {
     return parentUninitializedDeclarations;
+}
+bool ClassScope::getHasReturnStatement() {
+    return false;
 }
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
 
@@ -1617,6 +1631,9 @@ bool ForScope::interpret() {
 unordered_set<Declaration*> ForScope::getUninitializedDeclarations() {
     return parentUninitializedDeclarations;
 }
+bool ForScope::getHasReturnStatement() {
+    return false;
+}
 bool ForIterData::operator==(const ForIterData& other) const {
     return cmpPtr(this->iterVariable, other.iterVariable)
         && cmpPtr(this->firstValue, other.firstValue)
@@ -1668,6 +1685,9 @@ bool WhileScope::interpret() {
 }
 unordered_set<Declaration*> WhileScope::getUninitializedDeclarations() {
     return parentUninitializedDeclarations;
+}
+bool WhileScope::getHasReturnStatement() {
+    return conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
 }
 
 
@@ -1733,6 +1753,7 @@ bool IfScope::interpret() {
     parentUninitializedDeclarations = uninitializedDeclarations;
     if (elseScope) {
         elseScope->parentUninitializedDeclarations = uninitializedDeclarations;
+        elseScope->hasReturnStatement = hasReturnStatement || conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
         if (!elseScope->interpret()) {
             elseScopeErrors = true;
         }
@@ -1749,10 +1770,13 @@ unordered_set<Declaration*> IfScope::getUninitializedDeclarations() {
     return parentUninitializedDeclarations;
 }
 bool IfScope::getHasReturnStatement() {
+    if (conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value) {
+        return true;
+    }
     if (elseScope) {
         return hasReturnStatement && elseScope->getHasReturnStatement();
     } else {
-        return hasReturnStatement;
+        return false;
     }
 }
 
@@ -1816,4 +1840,7 @@ bool DeferScope::createCodeTree(const vector<Token>& tokens, int& i) {
 }
 unordered_set<Declaration*> DeferScope::getUninitializedDeclarations() {
     return parentUninitializedDeclarations;
+}
+bool DeferScope::getHasReturnStatement() {
+    return false;
 }

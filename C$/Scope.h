@@ -109,6 +109,7 @@ struct ClassScope : Scope {
     virtual bool operator==(const Statement& scope) const;
     virtual void createLlvm(LlvmObject* llvmObj);
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
+    virtual bool getHasReturnStatement();
 
     std::vector<Declaration*> declarations;
     ClassDeclaration* classDeclaration = nullptr;
@@ -139,6 +140,7 @@ struct ForScope : CodeScope {
     virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
+    virtual bool getHasReturnStatement();
 
     std::variant<ForIterData, ForEachData> data;
     
@@ -152,6 +154,7 @@ struct WhileScope : CodeScope {
     virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
+    virtual bool getHasReturnStatement();
 
     Value* conditionExpression = nullptr;
     
@@ -177,7 +180,7 @@ struct ElseScope : CodeScope {
     ElseScope(const CodePosition& position, Scope* parentScope);
     static ElseScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
-    
+
 private:
     static std::vector<std::unique_ptr<ElseScope>> objects;
 };
@@ -186,7 +189,8 @@ struct DeferScope : CodeScope {
     static DeferScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
-    
+    virtual bool getHasReturnStatement();
+
 private:
     static std::vector<std::unique_ptr<DeferScope>> objects;
 };
