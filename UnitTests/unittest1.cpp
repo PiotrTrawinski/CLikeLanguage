@@ -434,7 +434,6 @@ wstring toWstring(Operation* operation, int indent, bool isStart, bool firstCall
         case Operation::Kind::FunctionCall: str += L"function call"; break;
         case Operation::Kind::ArrayIndex: str += L"[x]"; break;
         case Operation::Kind::ArraySubArray: str += L"[x:y]"; break;
-        case Operation::Kind::Reference: str += L"& (reference)"; break;
         case Operation::Kind::Address: str += L"@"; break;
         case Operation::Kind::GetValue: str += L"$"; break;
         case Operation::Kind::Allocation: str += L"alloc"; break;
@@ -889,7 +888,7 @@ namespace codeTreeCreating {
             Value* outValue = solveReversePolishNotation(values);
             AssertAreEqual(expected, outValue);
         }
-        TEST_METHOD(getReferenceOfArrayElement) {
+        /*TEST_METHOD(getReferenceOfArrayElement) {
             // &tab[2]  --->  tab [2] &
             CodePosition codePosition(nullptr, 0, 0);
 
@@ -908,7 +907,7 @@ namespace codeTreeCreating {
 
             Value* outValue = solveReversePolishNotation(values);
             AssertAreEqual(expected, outValue);
-        }
+        }*/
     };
     TEST_CLASS(GetReversePolishNotation) {
     public:
@@ -1176,7 +1175,7 @@ namespace codeTreeCreating {
         }
         TEST_METHOD(arithmeticOperationWithBrackets) {
             FileInfo fileInfo("fileName");
-            // x = ($y + 3) * &(x);  -->  x y $ 3 + x & * =
+            // x = ($y + 3) * $(x);  -->  x y $ 3 + x $ * =
             vector<Token> tokens = {
                 {Token::Type::Label,   "x",  1, 1,  &fileInfo},
                 {Token::Type::Symbol,  "=",  1, 2,  &fileInfo},
@@ -1187,7 +1186,7 @@ namespace codeTreeCreating {
                 {Token::Type::Integer, "3",  1, 7,  &fileInfo},
                 {Token::Type::Symbol,  ")",  1, 8,  &fileInfo},
                 {Token::Type::Symbol,  "*",  1, 9,  &fileInfo},
-                {Token::Type::Symbol,  "&",  1, 10, &fileInfo},
+                {Token::Type::Symbol,  "$",  1, 10, &fileInfo},
                 {Token::Type::Symbol,  "(",  1, 11, &fileInfo},
                 {Token::Type::Label,   "x",  1, 12, &fileInfo},
                 {Token::Type::Symbol,  ")",  1, 13, &fileInfo},
@@ -1202,7 +1201,7 @@ namespace codeTreeCreating {
             expected.push_back(IntegerValue::Create(tokens[6].codePosition, 3));
             expected.push_back(Operation::Create(tokens[5].codePosition, Operation::Kind::Add));
             expected.push_back(Variable::Create(tokens[11].codePosition, "x"));
-            expected.push_back(Operation::Create(tokens[9].codePosition, Operation::Kind::Reference));
+            expected.push_back(Operation::Create(tokens[9].codePosition, Operation::Kind::GetValue));
             expected.push_back(Operation::Create(tokens[8].codePosition, Operation::Kind::Mul));
             expected.push_back(Operation::Create(tokens[1].codePosition, Operation::Kind::Assign));
             

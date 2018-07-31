@@ -79,21 +79,36 @@ bool Value::isLvalue(Value* value) {
     }
     return false;
 }
-optional<Value*> Variable::interpret(Scope* scope) {
+bool Variable::interpretTypeAndDeclaration(Scope* scope) {
     if (type && !type->interpret(scope)) {
-        return nullopt;
+        return false;
     }
     declaration = scope->findDeclaration(this);
     if (!declaration) {
+        return false;
+    }
+    return true;
+}
+optional<Value*> Variable::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+    if (!interpretTypeAndDeclaration(scope)) {
         return nullopt;
     }
     isConstexpr = declaration->variable->isConstexpr;
     type = declaration->variable->type;
     isConst = declaration->variable->isConst;
 
+    if (scope->uninitializedDeclarations.find(declaration) != scope->uninitializedDeclarations.end()) {
+        warningMessage("use of maybe unitialized variable " + name, position);
+    }
+
     if (isConstexpr) {
         return declaration->value;
     }
+
     return nullptr;
 }
 bool Variable::operator==(const Statement& value) const {
@@ -328,19 +343,19 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
         }
         bool found = false;
         for (auto& elementType : elementTypes) {
-            if (*element->type == *elementType) {
+            if (*element->type->getEffectiveType() == *elementType) {
                 found = true;
                 break;
             }
         }
         if (!found) {
-            elementTypes.push_back(element->type);
+            elementTypes.push_back(element->type->getEffectiveType());
         }
     }
     if (elementTypes.size() == 1) {
         type = StaticArrayType::Create(*elementTypes.begin(), values.size());
     } else {
-        // if multiple different types it have to be arithmetic values (ints, floats)
+        // if multiple different types it has to be arithmetic values (ints, floats)
         // otherwise cannot deduce type of the array
         Type* deducedType = elementTypes[0];
         for (auto& elementType : elementTypes) {
@@ -355,8 +370,7 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
                     }
                 }
 
-                errorMessage(message, position);
-                return nullopt;
+                return errorMessageOpt(message, position);
             }
         }
         type = StaticArrayType::Create(deducedType, values.size());
@@ -406,7 +420,6 @@ optional<Value*> FunctionValue::interpret(Scope* scope) {
     for (auto& argument : arguments) {
         if (argument->value) {
             internalError("function argument declaration has value", argument->position);
-            return nullopt;
         }
         argument->status = Declaration::Status::Completed;
         body->declarationMap.addVariableDeclaration(argument);

@@ -37,10 +37,10 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
         }
         bool addToMapStatus = false;
         if (variable->type && !variable->type->interpret(scope)) {
-            return errorMessage("unknown type: " + DeclarationMap::toString(variable->type), position);
+            return errorMessageBool("unknown type: " + DeclarationMap::toString(variable->type), position);
         }
         if (value && value->type && !value->type->interpret(scope)) {
-            return errorMessage("unknown type: " + DeclarationMap::toString(value->type), position);
+            return errorMessageBool("unknown type: " + DeclarationMap::toString(value->type), position);
         }
         if (isFunctionDeclaration()) {
             addToMapStatus = scope->declarationMap.addFunctionDeclaration(this);
@@ -48,7 +48,7 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
             addToMapStatus = scope->declarationMap.addVariableDeclaration(this);
         }
         if (!addToMapStatus) {
-            return errorMessage("2 same declarations of " + variable->name + ".\n"
+            return errorMessageBool("2 same declarations of " + variable->name + ".\n"
                 + "1 at line " + to_string(position.lineNumber) + "\n"
                 + "2 at line " + to_string(scope->declarationMap.getDeclarations(variable->name)[0]->position.lineNumber),
                 position);
@@ -65,14 +65,24 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
                 value = cast;
             }
             auto valueInterpret = value->interpret(scope);
-            if (!valueInterpret) {
-                return false;
-            } 
-            if (valueInterpret.value()) {
-                value = valueInterpret.value();
+            if (!valueInterpret) return false;
+            if (valueInterpret.value()) value = valueInterpret.value();
+            if (byReference && value->type->kind != Type::Kind::Reference) {
+                auto refCast = CastOperation::Create(value->position, ReferenceType::Create(value->type));
+                refCast->arguments.push_back(value);
+                auto refCastInterpret = refCast->interpret(scope);
+                if (!refCastInterpret) return false;
+                if (refCastInterpret.value()) value = refCastInterpret.value();
+                else value = refCastInterpret.value();
+                variable->type = value->type;
+            }
+            else if (!byReference && value->type->kind == Type::Kind::Reference) {
+                variable->type = ((ReferenceType*)value->type)->underlyingType;
+            } else {
+                variable->type = value->type;
             }
             variable->isConstexpr = variable->isConst && value->isConstexpr;
-            variable->type = value->type;
+            
         }
         status = Declaration::Status::Evaluated;
     }

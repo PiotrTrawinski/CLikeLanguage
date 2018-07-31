@@ -3,6 +3,7 @@
 #include <variant>
 #include <vector>
 #include <optional>
+#include <unordered_set>
 
 #include "Statement.h"
 #include "Token.h"
@@ -53,12 +54,17 @@ struct Scope : Statement {
     Declaration* findDeclaration(Variable* variable);
     virtual bool operator==(const Statement& scope) const;
     virtual void createLlvm(LlvmObject* llvmObj)=0;
-  
+    virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
+    virtual bool getHasReturnStatement();
+
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
     DeclarationMap declarationMap;
     ClassDeclarationMap classDeclarationMap;
     int id = -1;
+    std::unordered_set<Declaration*> parentUninitializedDeclarations;
+    std::unordered_set<Declaration*> uninitializedDeclarations;
+    bool hasReturnStatement = false;
 
 protected:
     static int ID_COUNT;
@@ -68,6 +74,7 @@ struct CodeScope : Scope {
     CodeScope(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false);
     static CodeScope* Create(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    bool interpretNoUnitializedDeclarationsSet();
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
@@ -85,6 +92,7 @@ struct FunctionScope : CodeScope {
     static FunctionScope* Create(const CodePosition& position, Scope* parentScope, FunctionValue* function);
     virtual bool operator==(const Statement& scope) const;
     virtual void createLlvm(LlvmObject* llvmObj);
+    virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
 
     FunctionValue* function;
 
@@ -100,6 +108,7 @@ struct ClassScope : Scope {
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
     virtual void createLlvm(LlvmObject* llvmObj);
+    virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
 
     std::vector<Declaration*> declarations;
     ClassDeclaration* classDeclaration = nullptr;
@@ -129,6 +138,7 @@ struct ForScope : CodeScope {
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
+    virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
 
     std::variant<ForIterData, ForEachData> data;
     
@@ -141,6 +151,7 @@ struct WhileScope : CodeScope {
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
+    virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
 
     Value* conditionExpression = nullptr;
     
@@ -153,6 +164,8 @@ struct IfScope : CodeScope {
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
+    virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
+    virtual bool getHasReturnStatement();
 
     Value* conditionExpression = nullptr;
     CodeScope* elseScope = nullptr;
@@ -172,6 +185,7 @@ struct DeferScope : CodeScope {
     DeferScope(const CodePosition& position, Scope* parentScope);
     static DeferScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     
 private:
     static std::vector<std::unique_ptr<DeferScope>> objects;
