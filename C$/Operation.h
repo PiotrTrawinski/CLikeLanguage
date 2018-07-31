@@ -165,15 +165,15 @@ private:
             else arguments[0] = cast1;
 
             auto cast2 = CastOperation::Create(position, type);
-            cast2->arguments.push_back(arguments[0]);
+            cast2->arguments.push_back(arguments[1]);
             auto cast2Interpret = cast2->interpret(scope);
             if (!cast2Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
                 return nullptr;
             }
-            if (cast2Interpret.value()) arguments[0] = cast2Interpret.value();
-            else arguments[0] = cast2;
+            if (cast2Interpret.value()) arguments[1] = cast2Interpret.value();
+            else arguments[1] = cast2;
         }
         return nullptr;
     }
@@ -213,15 +213,15 @@ private:
             else arguments[0] = cast1;
 
             auto cast2 = CastOperation::Create(position, type);
-            cast2->arguments.push_back(arguments[0]);
+            cast2->arguments.push_back(arguments[1]);
             auto cast2Interpret = cast2->interpret(scope);
             if (!cast2Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
                 return nullptr;
             }
-            if (cast2Interpret.value()) arguments[0] = cast2Interpret.value();
-            else arguments[0] = cast2;
+            if (cast2Interpret.value()) arguments[1] = cast2Interpret.value();
+            else arguments[1] = cast2;
         }
         return nullptr;
     }
@@ -236,6 +236,7 @@ struct CastOperation : Operation {
     std::optional<Value*> interpret(Scope* scope, bool onlyTry);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     Type* argType;
     

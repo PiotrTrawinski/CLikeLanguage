@@ -168,7 +168,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (effectiveType1->kind == Type::Kind::Integer) {
             type = IntegerType::Create(IntegerType::Size::I64);
         } else if (effectiveType1->kind == Type::Kind::Float) {
-            type = FloatType::Create(FloatType::Size::F64);
+            type = effectiveType1;
         }
         if (arguments[0]->valueKind == Value::ValueKind::Integer) {
             return IntegerValue::Create(position, -(int64_t)((IntegerValue*)arguments[0])->value);
@@ -837,7 +837,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
                 return llvm::BinaryOperator::CreateUDiv(arg1, arg2, "", llvmObj->block);
             }
         } else {
-            return llvm::BinaryOperator::CreateFAdd(arg1, arg2, "", llvmObj->block);
+            return llvm::BinaryOperator::CreateFDiv(arg1, arg2, "", llvmObj->block);
         } 
     }
     case Kind::Mod: {
@@ -894,8 +894,8 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Gt: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
-            if (((IntegerType*)type)->isSigned()) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)arguments[0]->type)->isSigned()) {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGT, arg1, arg2, "");
             } else {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGT, arg1, arg2, "");
@@ -908,8 +908,8 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Lt: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
-            if (((IntegerType*)type)->isSigned()) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)arguments[0]->type)->isSigned()) {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, arg1, arg2, "");
             } else {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULT, arg1, arg2, "");
@@ -922,8 +922,8 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Gte: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
-            if (((IntegerType*)type)->isSigned()) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)arguments[0]->type)->isSigned()) {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGE, arg1, arg2, "");
             } else {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGE, arg1, arg2, "");
@@ -936,8 +936,8 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Lte: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
-            if (((IntegerType*)type)->isSigned()) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)arguments[0]->type)->isSigned()) {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, arg1, arg2, "");
             } else {
                 return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULE, arg1, arg2, "");
@@ -950,7 +950,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Eq: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
             return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, arg1, arg2, "");
         } else {
             return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UEQ, arg1, arg2, "");
@@ -959,10 +959,13 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Neq: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
             return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_NE, arg1, arg2, "");
-        } else {
+        } else if (arguments[0]->type->kind == Type::Kind::Float) {
             return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UNE, arg1, arg2, "");
+        } else {
+            internalError("!= operation expects integer and float types only in llvm creating, got " + DeclarationMap::toString(arguments[0]->type), position);
+            return nullptr;
         }
     }
     case Kind::LogicalNot: {
@@ -1050,10 +1053,6 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
         return arguments[0];
     } 
     else if (type->kind == Type::Kind::Bool) {
-        if (effectiveType->kind != Type::Kind::Class) {
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
         if (arguments[0]->isConstexpr) {
             if (arguments[0]->valueKind == Value::ValueKind::Char) {
                 return BoolValue::Create(position, ((CharValue*)arguments[0])->value != 0);
@@ -1070,6 +1069,32 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
             if (arguments[0]->valueKind == Value::ValueKind::StaticArray) {
                 return BoolValue::Create(position, ((StaticArrayValue*)arguments[0])->values.size() != 0);
             }
+        }
+        if (effectiveType->kind != Type::Kind::Class) {
+            if (!onlyTry) wasInterpreted = true;
+            if (arguments[0]->type->kind == Type::Kind::Integer) {
+                auto op = Operation::Create(position, Operation::Kind::Neq);
+                op->arguments.push_back(arguments[0]);
+                auto integerValue = IntegerValue::Create(position, 0);
+                integerValue->type = IntegerType::Create(((IntegerType*)arguments[0]->type)->size);
+                op->arguments.push_back(integerValue);
+                auto opInterpret = op->interpret(scope);
+                if (!opInterpret) return nullopt;
+                if (opInterpret.value()) return opInterpret.value();
+                else return op;
+            } 
+            if (arguments[0]->type->kind == Type::Kind::Float) {
+                auto op = Operation::Create(position, Operation::Kind::Neq);
+                op->arguments.push_back(arguments[0]);
+                auto integerValue = FloatValue::Create(position, 0);
+                integerValue->type = FloatType::Create(((FloatType*)arguments[0]->type)->size);
+                op->arguments.push_back(integerValue);
+                auto opInterpret = op->interpret(scope);
+                if (!opInterpret) return nullopt;
+                if (opInterpret.value()) return opInterpret.value();
+                else return op;
+            } 
+            return nullptr;
         }
     }
     else if (type->kind == Type::Kind::Integer) {
@@ -1145,6 +1170,177 @@ bool CastOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
+    auto arg = arguments[0]->createLlvm(llvmObj);
+    if (type->kind == Type::Kind::Integer) {
+        auto integerType = (IntegerType*)type;
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            auto sizeCast = integerType->size;
+            auto sizeArg = ((IntegerType*)arguments[0]->type)->size;
+            auto llvmI8Type = llvm::Type::getInt8Ty(llvmObj->context);
+            auto llvmI16Type = llvm::Type::getInt16Ty(llvmObj->context);
+            auto llvmI32Type = llvm::Type::getInt32Ty(llvmObj->context);
+            auto llvmI64Type = llvm::Type::getInt64Ty(llvmObj->context);
+            switch (sizeCast) {
+            case IntegerType::Size::I8:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return arg;
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return new llvm::SExtInst(arg, llvmI16Type, "", llvmObj->block);
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return new llvm::SExtInst(arg, llvmI32Type, "", llvmObj->block);
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
+                }
+            case IntegerType::Size::I16:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return arg;
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return new llvm::SExtInst(arg, llvmI32Type, "", llvmObj->block);
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
+                }
+            case IntegerType::Size::I32:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return arg;
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
+                }
+            case IntegerType::Size::I64:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return new llvm::TruncInst(arg, llvmI32Type, "", llvmObj->block);
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return arg;
+                }
+            case IntegerType::Size::U8:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return arg;
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return new llvm::ZExtInst(arg, llvmI16Type, "", llvmObj->block);
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return new llvm::ZExtInst(arg, llvmI32Type, "", llvmObj->block);
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
+                }
+            case IntegerType::Size::U16:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return arg;
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return new llvm::ZExtInst(arg, llvmI32Type, "", llvmObj->block);
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
+                }
+            case IntegerType::Size::U32:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return arg;
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
+                }
+            case IntegerType::Size::U64:
+                switch (sizeArg) {
+                case IntegerType::Size::I8:
+                case IntegerType::Size::U8:
+                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
+                case IntegerType::Size::I16:
+                case IntegerType::Size::U16:
+                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
+                case IntegerType::Size::I32:
+                case IntegerType::Size::U32:
+                    return new llvm::TruncInst(arg, llvmI32Type, "", llvmObj->block);
+                case IntegerType::Size::I64:
+                case IntegerType::Size::U64:
+                    return arg;
+                }
+            }
+        }
+        else if (arguments[0]->type->kind == Type::Kind::Float) {
+            if (integerType->isSigned()) {
+                return new llvm::FPToSIInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+            } else {
+                return new llvm::FPToUIInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+            }
+        }
+        else {
+            internalError("only integer and float types can be casted to integer in llvm stage", position);
+            return nullptr;
+        }
+    } else if (type->kind == Type::Kind::Float) {
+        auto floatType = (FloatType*)type;
+        if (arguments[0]->type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)arguments[0]->type)->isSigned()) {
+                return new llvm::SIToFPInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+            } else {
+                return new llvm::UIToFPInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+            }
+        } 
+        else if (arguments[0]->type->kind == Type::Kind::Float) {
+            if (floatType->size == FloatType::Size::F32) {
+                return new llvm::FPTruncInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+            } else {
+                return new llvm::FPExtInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+            }
+        }
+        else {
+            internalError("only integer and float types can be casted to float in llvm stage", position);
+            return nullptr;
+        }
+    } else {
+        internalError("can only cast to integer and float types in llvm stage", position);
+        return nullptr;
+    }
+    return nullptr;
+}
 
 
 /*
