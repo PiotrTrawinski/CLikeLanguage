@@ -1028,7 +1028,7 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             case TypeKeyword::Value::Float:
                 type = FloatType::Create(FloatType::Size::F64); break;
             case TypeKeyword::Value::F32:
-                type = FloatType::Create(FloatType::Size::F64); break;
+                type = FloatType::Create(FloatType::Size::F32); break;
             case TypeKeyword::Value::F64:
                 type = FloatType::Create(FloatType::Size::F64); break;
             case TypeKeyword::Value::Bool:
