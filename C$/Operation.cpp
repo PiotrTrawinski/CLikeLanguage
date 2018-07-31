@@ -48,14 +48,14 @@ optional<Value*> Operation::interpret(Scope* scope) {
         return nullptr;
     }
     
-    if (kind != Kind::Dot && !interpretAllArguments(scope)) {
+    if (kind != Kind::Assign && kind != Kind::Dot && !interpretAllArguments(scope)) {
         return nullopt;
     }
 
     Type* effectiveType1 = nullptr;
     Type* effectiveType2 = nullptr;
 
-    if (kind != Kind::Dot) {
+    if (kind != Kind::Assign && kind != Kind::Dot) {
         if (arguments.size() >= 1) {
             effectiveType1 = arguments[0]->type->getEffectiveType();
         }
@@ -493,6 +493,14 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;
     }
     case Kind::Assign:{
+        if (arguments[0]->valueKind == Value::ValueKind::Variable) {
+            auto variable = (Variable*)arguments[0];
+            if (!variable->interpretTypeAndDeclaration(scope)) {
+                return nullopt;
+            }
+            scope->uninitializedDeclarations.erase(variable->declaration);
+        }
+        interpretAllArguments(scope);
         if (!isLvalue(arguments[0])) {
             return errorMessageOpt("left argument of an assignment must be an l-value", position);
         }

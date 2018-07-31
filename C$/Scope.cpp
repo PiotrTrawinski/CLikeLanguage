@@ -1113,6 +1113,12 @@ Declaration* Scope::findDeclaration(Variable* variable) {
         return errorMessageNull(msg, variable->position);
     }
 }
+unordered_set<Declaration*> Scope::getUninitializedDeclarations() {
+    return uninitializedDeclarations;
+}
+bool Scope::getHasReturnStatement() {
+    return hasReturnStatement;
+}
 
 /*
     CodeScope
@@ -1160,7 +1166,7 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
     }
     return true;
 }
-bool CodeScope::interpret() {
+bool CodeScope::interpretNoUnitializedDeclarationsSet() {
     bool wereErrors = false;
     for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
@@ -1169,6 +1175,9 @@ bool CodeScope::interpret() {
             Declaration* declaration = (Declaration*)statement;
             if (!declaration->interpret(this)) {
                 wereErrors = true;
+            }
+            if (!declaration->value) {
+                uninitializedDeclarations.insert(declaration);
             }
             break;
         }
@@ -1184,9 +1193,11 @@ bool CodeScope::interpret() {
                 return errorMessageBool("global scope can only have variable and class declarations", statement->position);
             }
             Scope* scope = (Scope*)statement;
+            scope->parentUninitializedDeclarations = uninitializedDeclarations;
             if (!scope->interpret()) {
                 wereErrors = true;
             }
+            uninitializedDeclarations = scope->getUninitializedDeclarations();
             break;
         }
         case Statement::Kind::Value: {
@@ -1223,6 +1234,10 @@ bool CodeScope::interpret() {
     }
 
     return true;
+}
+bool CodeScope::interpret() {
+    uninitializedDeclarations = parentUninitializedDeclarations;
+    return interpretNoUnitializedDeclarationsSet();
 }
 Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
     for (int i = 0; i < statements.size(); ++i) {
@@ -1324,6 +1339,9 @@ bool ClassScope::interpret() {
                 wereErrors = true;
             }
         }
+        if (!declaration->value) {
+            uninitializedDeclarations.insert(declaration);
+        }
     }
     for (auto& declaration : declarations) {
         if (declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
@@ -1345,6 +1363,9 @@ bool ClassScope::interpret() {
 Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
     return nullptr;
 }
+unordered_set<Declaration*> ClassScope::getUninitializedDeclarations() {
+    return parentUninitializedDeclarations;
+}
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
 
 }
@@ -1360,6 +1381,9 @@ vector<unique_ptr<FunctionScope>> FunctionScope::objects;
 FunctionScope* FunctionScope::Create(const CodePosition& position, Scope* parentScope, FunctionValue* function) {
     objects.emplace_back(make_unique<FunctionScope>(position, parentScope, function));
     return objects.back().get();
+}
+unordered_set<Declaration*> FunctionScope::getUninitializedDeclarations() {
+    return parentUninitializedDeclarations;
 }
 bool FunctionScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
@@ -1525,6 +1549,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return CodeScope::createCodeTree(tokens, i);
 }
 bool ForScope::interpret() {
+    uninitializedDeclarations = parentUninitializedDeclarations;
     if (holds_alternative<ForIterData>(data)) {
         auto& forIterData = get<ForIterData>(data);
 
@@ -1587,7 +1612,10 @@ bool ForScope::interpret() {
         indexDeclaration->status = Declaration::Status::Completed;
         declarationMap.addVariableDeclaration(indexDeclaration);
     }
-    return CodeScope::interpret();
+    return interpretNoUnitializedDeclarationsSet();
+}
+unordered_set<Declaration*> ForScope::getUninitializedDeclarations() {
+    return parentUninitializedDeclarations;
 }
 bool ForIterData::operator==(const ForIterData& other) const {
     return cmpPtr(this->iterVariable, other.iterVariable)
@@ -1634,8 +1662,14 @@ bool WhileScope::interpret() {
     auto valueInterpret = boolCondition->interpret(parentScope);
     if (!valueInterpret) return false;
     if (valueInterpret.value()) conditionExpression = valueInterpret.value();
-    return CodeScope::interpret();
+    uninitializedDeclarations = parentScope->uninitializedDeclarations;
+    parentUninitializedDeclarations = uninitializedDeclarations;
+    return interpretNoUnitializedDeclarationsSet();
 }
+unordered_set<Declaration*> WhileScope::getUninitializedDeclarations() {
+    return parentUninitializedDeclarations;
+}
+
 
 /*
     IfScope
@@ -1694,7 +1728,32 @@ bool IfScope::interpret() {
     auto valueInterpret = boolCondition->interpret(parentScope);
     if (!valueInterpret) return false;
     if (valueInterpret.value()) conditionExpression = valueInterpret.value();
-    return CodeScope::interpret();
+    bool elseScopeErrors = false;
+    uninitializedDeclarations = parentScope->uninitializedDeclarations;
+    parentUninitializedDeclarations = uninitializedDeclarations;
+    if (elseScope) {
+        elseScope->parentUninitializedDeclarations = uninitializedDeclarations;
+        if (!elseScope->interpret()) {
+            elseScopeErrors = true;
+        }
+    }
+    return interpretNoUnitializedDeclarationsSet() && !elseScopeErrors;
+}
+unordered_set<Declaration*> IfScope::getUninitializedDeclarations() {
+    if (elseScope) {
+        for (auto declaration : elseScope->uninitializedDeclarations) {
+            uninitializedDeclarations.insert(declaration);
+        }
+        return uninitializedDeclarations;
+    }
+    return parentUninitializedDeclarations;
+}
+bool IfScope::getHasReturnStatement() {
+    if (elseScope) {
+        return hasReturnStatement && elseScope->getHasReturnStatement();
+    } else {
+        return hasReturnStatement;
+    }
 }
 
 /*
@@ -1755,4 +1814,6 @@ bool DeferScope::createCodeTree(const vector<Token>& tokens, int& i) {
         return true;
     }
 }
-
+unordered_set<Declaration*> DeferScope::getUninitializedDeclarations() {
+    return parentUninitializedDeclarations;
+}

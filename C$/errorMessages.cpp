@@ -35,3 +35,10 @@ void internalError(const string& message, const CodePosition& codePosition) {
     cerr << "Internal Error: " << message << "\n";
     exit(1);
 }
+
+void warningMessage(const string& message, const CodePosition& codePosition) {
+    if (codePosition.fileInfo) {
+        printErrorCodePosition(codePosition);
+    }
+    cerr << "Warning: " << message << "\n";
+}

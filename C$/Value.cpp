@@ -79,21 +79,36 @@ bool Value::isLvalue(Value* value) {
     }
     return false;
 }
-optional<Value*> Variable::interpret(Scope* scope) {
+bool Variable::interpretTypeAndDeclaration(Scope* scope) {
     if (type && !type->interpret(scope)) {
-        return nullopt;
+        return false;
     }
     declaration = scope->findDeclaration(this);
     if (!declaration) {
+        return false;
+    }
+    return true;
+}
+optional<Value*> Variable::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+    if (!interpretTypeAndDeclaration(scope)) {
         return nullopt;
     }
     isConstexpr = declaration->variable->isConstexpr;
     type = declaration->variable->type;
     isConst = declaration->variable->isConst;
 
+    if (scope->uninitializedDeclarations.find(declaration) != scope->uninitializedDeclarations.end()) {
+        warningMessage("use of maybe unitialized variable " + name, position);
+    }
+
     if (isConstexpr) {
         return declaration->value;
     }
+
     return nullptr;
 }
 bool Variable::operator==(const Statement& value) const {

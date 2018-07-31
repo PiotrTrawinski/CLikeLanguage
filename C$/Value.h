@@ -38,6 +38,7 @@ struct Variable : Value {
     Variable(const CodePosition& position, const std::string& name="");
     static Variable* Create(const CodePosition& position, const std::string& name="");
     virtual std::optional<Value*> interpret(Scope* scope);
+    bool interpretTypeAndDeclaration(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
@@ -46,6 +47,7 @@ struct Variable : Value {
     std::string name;
     bool isConst = false;
     Declaration* declaration;
+    bool wasInterpreted = false;
 
 private:
     static std::vector<std::unique_ptr<Variable>> objects;
