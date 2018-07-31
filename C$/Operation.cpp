@@ -1856,6 +1856,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         break;
     }
     case Kind::Return: {
+        scope->hasReturnStatement = true;
         type = Type::Create(Type::Kind::Void);
         scopePtr = scope;
         while (scopePtr) {
