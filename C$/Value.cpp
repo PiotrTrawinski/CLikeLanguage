@@ -328,19 +328,19 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
         }
         bool found = false;
         for (auto& elementType : elementTypes) {
-            if (*element->type == *elementType) {
+            if (*element->type->getEffectiveType() == *elementType) {
                 found = true;
                 break;
             }
         }
         if (!found) {
-            elementTypes.push_back(element->type);
+            elementTypes.push_back(element->type->getEffectiveType());
         }
     }
     if (elementTypes.size() == 1) {
         type = StaticArrayType::Create(*elementTypes.begin(), values.size());
     } else {
-        // if multiple different types it have to be arithmetic values (ints, floats)
+        // if multiple different types it has to be arithmetic values (ints, floats)
         // otherwise cannot deduce type of the array
         Type* deducedType = elementTypes[0];
         for (auto& elementType : elementTypes) {

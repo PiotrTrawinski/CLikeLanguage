@@ -30,10 +30,12 @@ int main(int argc, char** argv) {
         return 4;
     }
 
-    auto statusLlvmCreating = createLlvm(globalScope);
-    if (!statusLlvmCreating) {
-        cerr << "Compiling failed: there were errors during llvm creating\n";
-        return 5;
+    if (argc < 3 || strcmp(argv[2], "-nollvm")) {
+        auto statusLlvmCreating = createLlvm(globalScope);
+        if (!statusLlvmCreating) {
+            cerr << "Compiling failed: there were errors during llvm creating\n";
+            return 5;
+        }
     }
 
     return 0;

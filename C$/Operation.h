@@ -17,7 +17,7 @@ struct Operation : Value {
         AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
         ShlAssign, ShrAssign, SalAssign, SarAssign, 
         BitNegAssign, BitOrAssign, BitXorAssign,
-        Reference, Address, GetValue,
+        Address, GetValue,
         Dot,
         ArrayIndex, ArraySubArray,
         Cast,

@@ -127,14 +127,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
         break;
     }
-    case Kind::Reference: {
-        if (!isLvalue(arguments[0])) {
-            errorMessage("You can only take referenece of an l-value", position);
-            return nullopt;
-        }
-        type = ReferenceType::Create(arguments[0]->type);
-        break;
-    }
     case Kind::Address: {
         if (!isLvalue(arguments[0])) {
             errorMessage("You can only take address of an l-value", position);
@@ -580,7 +572,6 @@ string Operation::kindToString(Kind kind) {
     case Kind::FunctionCall: return "function call";
     case Kind::ArrayIndex: return "[x] (array index)";
     case Kind::ArraySubArray: return "[x:y] (sub-array)";
-    case Kind::Reference: return "& (reference)";
     case Kind::Address: return "@ (address)";
     case Kind::GetValue: return "$ (valueOf)";
     case Kind::Allocation: return "alloc";
@@ -632,7 +623,6 @@ int Operation::priority(Kind kind) {
     case Kind::ArrayIndex:
     case Kind::ArraySubArray:
         return 1;
-    case Kind::Reference:
     case Kind::Address:
     case Kind::GetValue:
     case Kind::Allocation:
@@ -729,7 +719,6 @@ int Operation::numberOfArguments(Kind kind) {
         return 0;
     case Kind::ArrayIndex:
     case Kind::ArraySubArray:
-    case Kind::Reference:
     case Kind::Address:
     case Kind::GetValue:
     case Kind::Deallocation:
@@ -1049,9 +1038,21 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
 
     auto effectiveType = arguments[0]->type->getEffectiveType();
 
-    if (cmpPtr(effectiveType, type)) {
+    if (cmpPtr(arguments[0]->type, type)) {
         return arguments[0];
     } 
+    else if (type->kind == Type::Kind::Reference) {
+        if (!isLvalue(arguments[0])){
+            errorMessage("cannot cast non-lvalue to reference type", position);
+            return nullopt;
+        }
+        if (cmpPtr(effectiveType, type->getEffectiveType())) {
+            return nullptr;
+        }
+    }
+    else if (cmpPtr(effectiveType, type)) {
+        return arguments[0];
+    }
     else if (type->kind == Type::Kind::Bool) {
         if (arguments[0]->isConstexpr) {
             if (arguments[0]->valueKind == Value::ValueKind::Char) {
@@ -1628,7 +1629,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         }
         for (int i = 0; i < functionType->argumentTypes.size()-1; ++i) {
             if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
-                auto cast = CastOperation::Create(arguments[i]->position, functionType->argumentTypes[i]);
+                auto cast = CastOperation::Create(position, functionType->argumentTypes[i]);
                 cast->arguments.push_back(arguments[i]);
                 auto castInterpret = cast->interpret(scope);
                 if (!castInterpret) return nullopt;
@@ -1655,7 +1656,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         }
         for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
             if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
-                auto cast = CastOperation::Create(arguments[i]->position, functionType->argumentTypes[i]);
+                auto cast = CastOperation::Create(position, functionType->argumentTypes[i]);
                 cast->arguments.push_back(arguments[i]);
                 auto castInterpret = cast->interpret(scope);
                 if (!castInterpret) return nullopt;

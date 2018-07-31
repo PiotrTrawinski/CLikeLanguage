@@ -19,6 +19,7 @@ struct Declaration : Statement {
 
     Variable* variable = nullptr;
     Value* value = nullptr;
+    bool byReference = false;
     Status status = Status::None;
     Scope* scope = nullptr;
     llvm::AllocaInst* llvmVariable;

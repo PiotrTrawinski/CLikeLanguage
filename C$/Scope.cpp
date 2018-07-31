@@ -153,6 +153,7 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                     }
                 }
                 auto declaration = Declaration::Create(token.codePosition);
+                declaration->byReference = declareByReference;
                 declaration->variable->isConst = tokens[i].value == ":";
                 declaration->variable->name = token.value;
                 declaration->variable->type = type;
@@ -589,9 +590,6 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     expectValue = true;
                 } else if (tokens[i].value == "!") {
                     appendOperator(stack, out, Operation::Kind::LogicalNot, tokens[i++].codePosition);
-                    expectValue = true;
-                } else if (tokens[i].value == "&") {
-                    appendOperator(stack, out, Operation::Kind::Reference, tokens[i++].codePosition);
                     expectValue = true;
                 } else if (tokens[i].value == "@") {
                     appendOperator(stack, out, Operation::Kind::Address, tokens[i++].codePosition);
