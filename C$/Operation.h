@@ -30,6 +30,7 @@ struct Operation : Value {
         Remove,
         Continue,
         Return,
+        ErrorResolve,
         LeftBracket // not really operator - only for convinience in reverse polish notation
     };
 
@@ -54,6 +55,7 @@ struct Operation : Value {
     Kind kind;
     bool wasInterpreted = false;
     std::vector<Value*> arguments;
+    bool containsErrorResolve = false;
 
 private:
     static std::vector<std::unique_ptr<Operation>> objects;
@@ -314,4 +316,18 @@ struct FlowOperation : Operation {
 
 private:
     static std::vector<std::unique_ptr<FlowOperation>> objects;
+};
+
+struct ErrorResolveOperation : Operation {
+    ErrorResolveOperation(const CodePosition& position);
+    static ErrorResolveOperation* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual bool operator==(const Statement& value) const;
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+
+    CodeScope* onErrorScope = nullptr;
+    CodeScope* onSuccessScope = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<ErrorResolveOperation>> objects;
 };

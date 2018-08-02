@@ -36,6 +36,8 @@ bool Operation::interpretAllArguments(Scope* scope) {
         if (valInterpret.value()) {
             val = valInterpret.value();
         }
+        if (!val->type) {
+        }
         if (!val->type->interpret(scope)) {
             return false;
         }
@@ -61,6 +63,11 @@ optional<Value*> Operation::interpret(Scope* scope) {
         }
         if (arguments.size() >= 2) {
             effectiveType2 = arguments[1]->type->getEffectiveType();
+        }
+        for (auto argument : arguments) {
+            if (argument->valueKind == Value::ValueKind::Operation) {
+                containsErrorResolve |= ((Operation*)argument)->containsErrorResolve;
+            }
         }
     }
 
@@ -498,12 +505,34 @@ optional<Value*> Operation::interpret(Scope* scope) {
             if (!variable->interpretTypeAndDeclaration(scope)) {
                 return nullopt;
             }
-            scope->uninitializedDeclarations.erase(variable->declaration);
         }
-        interpretAllArguments(scope);
+
+        auto arg1Interpret = arguments[1]->interpret(scope);
+        if (!arg1Interpret) return nullopt;
+        if (arg1Interpret.value()) arguments[1] = arg1Interpret.value();
+        if (!arguments[1]->type->interpret(scope)) return nullopt;
+
+        if (arguments[1]->valueKind == Value::ValueKind::Operation) {
+            containsErrorResolve = ((Operation*)arguments[1])->containsErrorResolve;
+        }
+
+        if (!containsErrorResolve && arguments[0]->valueKind == Value::ValueKind::Variable) {
+            auto variable = (Variable*)arguments[0];
+            scope->maybeUninitializedDeclarations.erase(variable->declaration);
+            scope->declarationsInitState.at(variable->declaration) = true;
+        }
+
+        auto arg0Interpret = arguments[0]->interpret(scope);
+        if (!arg0Interpret) return nullopt;
+        if (arg0Interpret.value()) arguments[0] = arg0Interpret.value();
+        if (!arguments[0]->type->interpret(scope)) return nullopt;
+
+
+
         if (!isLvalue(arguments[0])) {
             return errorMessageOpt("left argument of an assignment must be an l-value", position);
         }
+
         auto cast = CastOperation::Create(arguments[1]->position, arguments[0]->type);
         /*if (arguments[0]->type->kind == Type::Kind::Reference) {
             cast->argType = ((ReferenceType*)arguments[0]->type)->underlyingType;
@@ -511,6 +540,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         }*/
         cast->arguments.push_back(arguments[1]);
         arguments[1] = cast;
+
         auto castInterpret = arguments[1]->interpret(scope);
         if (!castInterpret) return nullopt;
         if (castInterpret.value()) arguments[1] = castInterpret.value();
@@ -623,6 +653,7 @@ int Operation::priority(Kind kind) {
     case Kind::FunctionCall:
     case Kind::ArrayIndex:
     case Kind::ArraySubArray:
+    case Kind::ErrorResolve:
         return 1;
     case Kind::Address:
     case Kind::GetValue:
@@ -687,6 +718,7 @@ bool Operation::isLeftAssociative(Kind kind) {
     case Kind::FunctionCall:
     case Kind::ArrayIndex:
     case Kind::ArraySubArray:
+    case Kind::ErrorResolve:
     case Kind::Mul:
     case Kind::Div:
     case Kind::Mod:
@@ -726,6 +758,7 @@ int Operation::numberOfArguments(Kind kind) {
     case Kind::BitNeg:
     case Kind::LogicalNot:
     case Kind::Minus:
+    case Kind::ErrorResolve:
         return 1;
     case Kind::Dot:
     case Kind::Mul:
@@ -1032,6 +1065,9 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     }
     if (!type->interpret(scope) || !argType->interpret(scope)) {
         return errorMessageOpt("cannot cast to unknown type " + DeclarationMap::toString(type), position);
+    }
+    if (arguments[0]->valueKind == Value::ValueKind::Operation) {
+        containsErrorResolve = ((Operation*)arguments[0])->containsErrorResolve;
     }
 
     auto effectiveType = arguments[0]->type->getEffectiveType();
@@ -1906,5 +1942,56 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
             return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->createLlvm(llvmObj), llvmObj->block);
         }
     }
+    return nullptr;
+}
+
+
+ErrorResolveOperation::ErrorResolveOperation(const CodePosition& position) : 
+    Operation(position, Operation::Kind::ErrorResolve)
+{
+    containsErrorResolve = true;
+}
+vector<unique_ptr<ErrorResolveOperation>> ErrorResolveOperation::objects;
+ErrorResolveOperation* ErrorResolveOperation::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<ErrorResolveOperation>(position));
+    return objects.back().get();
+}
+optional<Value*> ErrorResolveOperation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
+
+    if (arguments[0]->type->kind != Type::Kind::MaybeError) {
+        return errorMessageOpt("error-resolve operation can only be used on '?' (maybe error) types. got "
+            + DeclarationMap::toString(arguments[0]->type), position);
+    }
+    type = ((MaybeErrorType*)arguments[0]->type)->underlyingType;
+
+    if (onErrorScope) {
+        scope->onErrorScopeToInterpret = onErrorScope;
+    }
+    if (onSuccessScope) {
+        scope->onSuccessScopeToInterpret = onSuccessScope;
+    }
+
+    return nullptr;
+}
+bool ErrorResolveOperation::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const ErrorResolveOperation&>(value);
+        return this->onErrorScope == other.onErrorScope
+            && this->onSuccessScope == other.onSuccessScope
+            && Operation::operator==(other);
+    }
+    else {
+        return false;
+    }
+}
+llvm::Value* ErrorResolveOperation::createLlvm(LlvmObject* llvmObj) {
     return nullptr;
 }
