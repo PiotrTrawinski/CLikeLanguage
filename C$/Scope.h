@@ -26,7 +26,9 @@ struct Scope : Statement {
         While,
         If,
         Else,
-        Defer
+        Defer,
+        OnError,
+        OnSuccess
     };
     struct ReadStatementValue {
         ReadStatementValue(Statement* statement) {
@@ -42,7 +44,7 @@ struct Scope : Statement {
         bool isScopeEnd = false;
     };
 
-    Scope(const CodePosition& position, Owner owner, Scope* parentScope);
+    Scope(const CodePosition& position, Owner ownmaybeUninitializedDeclarationser, Scope* parentScope);
     ReadStatementValue readStatement(const std::vector<Token>& tokens, int& i);
     std::optional<std::vector<Value*>> getReversePolishNotation(const std::vector<Token>& tokens, int& i);
     Type* getType(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool writeError=true);
@@ -56,15 +58,22 @@ struct Scope : Statement {
     virtual void createLlvm(LlvmObject* llvmObj)=0;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
+    virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
+    virtual std::vector<Declaration*> getDeclarationsOrder();
 
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
     DeclarationMap declarationMap;
     ClassDeclarationMap classDeclarationMap;
     int id = -1;
-    std::unordered_set<Declaration*> parentUninitializedDeclarations;
-    std::unordered_set<Declaration*> uninitializedDeclarations;
+    std::unordered_set<Declaration*> parentMaybeUninitializedDeclarations;
+    std::unordered_set<Declaration*> maybeUninitializedDeclarations;
+    std::unordered_map<Declaration*, bool> declarationsInitState;
+    std::vector<Declaration*> declarationsOrder;
     bool hasReturnStatement = false;
+
+    Scope* onErrorScopeToInterpret = nullptr;
+    Scope* onSuccessScopeToInterpret = nullptr;
 
 protected:
     static int ID_COUNT;
@@ -169,6 +178,8 @@ struct IfScope : CodeScope {
     virtual bool operator==(const Statement& scope) const;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
+    virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
+    virtual std::vector<Declaration*> getDeclarationsOrder();
 
     Value* conditionExpression = nullptr;
     CodeScope* elseScope = nullptr;
@@ -188,8 +199,14 @@ struct DeferScope : CodeScope {
     DeferScope(const CodePosition& position, Scope* parentScope);
     static DeferScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    virtual bool interpret();
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
+    virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
+    virtual std::vector<Declaration*> getDeclarationsOrder();
+
+    std::unordered_map<Declaration*, bool> declarationsInitStateCopy;
+    std::vector<Declaration*> declarationsOrderCopy;
 
 private:
     static std::vector<std::unique_ptr<DeferScope>> objects;

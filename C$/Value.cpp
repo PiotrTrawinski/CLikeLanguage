@@ -97,12 +97,13 @@ optional<Value*> Variable::interpret(Scope* scope) {
     if (!interpretTypeAndDeclaration(scope)) {
         return nullopt;
     }
+
     isConstexpr = declaration->variable->isConstexpr;
     type = declaration->variable->type;
     isConst = declaration->variable->isConst;
 
-    if (scope->uninitializedDeclarations.find(declaration) != scope->uninitializedDeclarations.end()) {
-        warningMessage("use of maybe unitialized variable " + name, position);
+    if (scope->maybeUninitializedDeclarations.find(declaration) != scope->maybeUninitializedDeclarations.end()) {
+        warningMessage("use of possibly unitialized variable " + name, position);
     }
 
     if (isConstexpr) {
