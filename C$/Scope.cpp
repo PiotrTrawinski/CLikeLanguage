@@ -379,36 +379,6 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     }
                 } 
                 if (!isTemplateFunctionCall) {
-                    // its either (special operator; variable; non-template function call)
-                    /*if (tokens[i].value == "alloc") {
-                    appendOperator(stack, out, Operation::Kind::Allocation, tokens[i++].codePosition);
-                    expectValue = true;
-                    }
-                    else if (tokens[i].value == "dealloc") {
-                    appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
-                    expectValue = true;
-                    }*/ /*else if (tokens[i + 1].value == "(") {
-                    // function call
-                    auto functionCall = FunctionCallOperation::Create(tokens[i].codePosition);
-                    functionCall->name = tokens[i].value;
-                    i += 2;
-                    if (tokens[i].value == ")") {
-                    i += 1;
-                    } else {
-                    bool endOfArguments = false;
-                    do {
-                    auto value = getValue(tokens, i, {",", ")"});
-                    if (!value) return nullopt;
-                    if (tokens[i].value == ")") {
-                    endOfArguments = true;
-                    }
-                    functionCall->arguments.push_back(value);
-                    i += 1;
-                    } while(!endOfArguments);
-                    }
-                    out.push_back(functionCall);
-                    expectValue = false;
-                    }*/ 
                     // variable
                     auto variable = Variable::Create(tokens[i].codePosition);
                     variable->name = tokens[i].value;
@@ -560,7 +530,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 }
                 else if (tokens[i].value == "[") {
                     int firstSquereBracketIndex = i;
-                    // static array ([x, y, z, ...]) or type cast ([T]())
+                    // static array ([x, y, z, ...]) or type cast ([T])
                     int openSquereBrackets = 1;
                     int j = i+1;
                     while (j < tokens.size() && openSquereBrackets != 0) {
@@ -575,14 +545,15 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         return errorMessageOpt("missing closing ']'", tokens[i].codePosition);
                     }
 
-                    if (tokens[j].value == "(") {
+                    if (tokens[j].type != Token::Type::Symbol || tokens[j].value == "(" || tokens[j].value == "!" || tokens[j].value == "@"
+                        || tokens[j].value == "~"|| tokens[j].value == "$"|| tokens[j].value == "[") {
                         // type cast
                         i += 1;
                         auto type = getType(tokens, i, {"]"});
                         if (!type) {
                             return nullopt;
                         }
-                        i += 2;
+                        /*i += 2;
                         auto argument = getValue(tokens, i, {")"}, true);
                         if (!argument) {
                             return nullopt;
@@ -590,7 +561,11 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         auto castOperation = CastOperation::Create(tokens[firstSquereBracketIndex].codePosition, type);
                         castOperation->arguments.push_back(argument);
                         appendOperator(stack, out, castOperation);
-                        expectValue = false;
+                        expectValue = false;*/
+                        i += 1;
+                        auto castOperation = CastOperation::Create(tokens[firstSquereBracketIndex].codePosition, type);
+                        appendOperator(stack, out, castOperation);
+                        expectValue = true;
                     } else {
                         // static array
                         auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);

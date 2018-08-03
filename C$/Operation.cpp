@@ -747,9 +747,9 @@ bool Operation::isLeftAssociative(Kind kind) {
 int Operation::numberOfArguments(Kind kind) {
     switch (kind) {
     case Kind::FunctionCall:
-    case Kind::Cast:
     case Kind::Allocation:
         return 0;
+    case Kind::Cast:
     case Kind::ArrayIndex:
     case Kind::ArraySubArray:
     case Kind::Address:

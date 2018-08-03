@@ -943,16 +943,14 @@ namespace codeTreeCreating {
             Assert::AreEqual(i, 1);
         }
         TEST_METHOD(castOperation) {
-            //[i8](y);
+            //[i8]y;
             FileInfo fileInfo("fileName");
             vector<Token> tokens = {
                 {Token::Type::Symbol, "[", 1, 1, &fileInfo},
                 {Token::Type::Label, "i8", 1, 2, &fileInfo},
                 {Token::Type::Symbol, "]", 1, 4, &fileInfo},
-                {Token::Type::Symbol, "(", 1, 5, &fileInfo},
-                {Token::Type::Label,  "y", 1, 6, &fileInfo},
-                {Token::Type::Symbol, ")", 1, 7, &fileInfo},
-                {Token::Type::Symbol, ";", 1, 8, &fileInfo},
+                {Token::Type::Label,  "y", 1, 5, &fileInfo},
+                {Token::Type::Symbol, ";", 1, 6, &fileInfo},
             };
             int i = 0;
 
@@ -961,7 +959,7 @@ namespace codeTreeCreating {
                 tokens[0].codePosition,
                 IntegerType::Create(IntegerType::Size::I8)
             );
-            castOperation->arguments.push_back(Variable::Create(tokens[4].codePosition, "y"));
+            expected.push_back(Variable::Create(tokens[3].codePosition, "y"));
             expected.push_back(castOperation);
 
             CodeScope scope(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr);
@@ -969,7 +967,7 @@ namespace codeTreeCreating {
 
             Assert::IsTrue(actual.has_value(), L"has value");
             Assert::AreEqual(expected, actual.value());
-            Assert::AreEqual(i, 6);
+            Assert::AreEqual(i, 4);
         }
         TEST_METHOD(arrayValueSingleIntegerElement) {
             //[7];
