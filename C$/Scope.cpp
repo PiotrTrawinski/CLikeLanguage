@@ -1752,8 +1752,25 @@ bool WhileScope::interpret() {
 unordered_set<Declaration*> WhileScope::getUninitializedDeclarations() {
     return parentMaybeUninitializedDeclarations;
 }
+bool WhileScope::findBreakStatement(CodeScope* scope) {
+    for (auto statement : scope->statements) {
+        auto codeScope = dynamic_cast<CodeScope*>(statement);
+        if (codeScope && findBreakStatement(codeScope)) {
+            return true;
+        }
+
+        auto flowOperation = dynamic_cast<FlowOperation*>(statement);
+        if (flowOperation && flowOperation->kind == Operation::Kind::Break) {
+            return true;
+        }
+    }
+    return false;
+}
 bool WhileScope::getHasReturnStatement() {
-    return conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
+    return hasReturnStatement || (
+        conditionExpression->isConstexpr 
+        && ((BoolValue*)conditionExpression)->value
+        && !findBreakStatement(this));
 }
 
 
@@ -1836,13 +1853,10 @@ unordered_set<Declaration*> IfScope::getUninitializedDeclarations() {
     return parentMaybeUninitializedDeclarations;
 }
 bool IfScope::getHasReturnStatement() {
-    if (conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value) {
-        return true;
-    }
     if (elseScope) {
         return hasReturnStatement && elseScope->getHasReturnStatement();
     } else {
-        return false;
+        return hasReturnStatement;
     }
 }
 unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
