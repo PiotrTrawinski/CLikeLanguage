@@ -161,6 +161,7 @@ struct WhileScope : CodeScope {
     static WhileScope* Create(const CodePosition& position, Scope* parentScope);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
+    bool findBreakStatement(CodeScope* scope);
     virtual bool operator==(const Statement& scope) const;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
