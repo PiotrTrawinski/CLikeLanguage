@@ -1760,6 +1760,11 @@ bool TemplateFunctionCallOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+
+
+/*
+    FlowOperation
+*/
 FlowOperation::FlowOperation(const CodePosition& position, Kind kind) : 
     Operation(position, kind)
 {}
@@ -1785,6 +1790,20 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         string varName = ((Variable*)arguments[0])->name;
         scopePtr = scope;
         while (scopePtr) {
+            for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
+                auto declaration = scopePtr->declarationsOrder[i];
+                if (declaration->variable->type->kind == Type::Kind::Class
+                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
+                {
+                    if (scope->declarationsInitState.at(declaration)) {
+                        variablesToDestroy.push_back(declaration);
+                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
+                            scope->maybeUninitializedDeclarations.end()) {
+                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on remove statement ", position);
+                        }
+                    }
+                }
+            }
             if (scopePtr->owner == Scope::Owner::For) {
                 auto forScope = (ForScope*)scopePtr;
                 if (holds_alternative<ForEachData>(forScope->data)) {
@@ -1814,6 +1833,20 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             return errorMessageOpt("continue loop statement needs no value or variable name", position);
         }
         while (scopePtr) {
+            for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
+                auto declaration = scopePtr->declarationsOrder[i];
+                if (declaration->variable->type->kind == Type::Kind::Class
+                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
+                {
+                    if (scope->declarationsInitState.at(declaration)) {
+                        variablesToDestroy.push_back(declaration);
+                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
+                            scope->maybeUninitializedDeclarations.end()) {
+                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on continue statement ", position);
+                        }
+                    }
+                }
+            }
             if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
                 break;
             } 
@@ -1856,6 +1889,20 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             return errorMessageOpt("break loop statement needs no value or variable name", position);
         }
         while (scopePtr) {
+            for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
+                auto declaration = scopePtr->declarationsOrder[i];
+                if (declaration->variable->type->kind == Type::Kind::Class
+                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
+                {
+                    if (scope->declarationsInitState.at(declaration)) {
+                        variablesToDestroy.push_back(declaration);
+                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
+                            scope->maybeUninitializedDeclarations.end()) {
+                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on break statement ", position);
+                        }
+                    }
+                }
+            }
             if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
                 break;
             } 
@@ -1896,6 +1943,20 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         type = Type::Create(Type::Kind::Void);
         scopePtr = scope;
         while (scopePtr) {
+            for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
+                auto declaration = scopePtr->declarationsOrder[i];
+                if (declaration->variable->type->kind == Type::Kind::Class
+                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
+                {
+                    if (scope->declarationsInitState.at(declaration)) {
+                        variablesToDestroy.push_back(declaration);
+                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
+                            scope->maybeUninitializedDeclarations.end()) {
+                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on return statement ", position);
+                        }
+                    }
+                }
+            }
             if (scopePtr->owner == Scope::Owner::Function) {
                 auto functionValue = ((FunctionScope*)scopePtr)->function;
                 auto returnType = ((FunctionType*)functionValue->type)->returnType;

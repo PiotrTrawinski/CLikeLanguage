@@ -59,7 +59,6 @@ struct Scope : Statement {
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
     virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
-    virtual std::vector<Declaration*> getDeclarationsOrder();
 
     Scope* parentScope; // nullptr if and only if global scope
     Owner owner;
@@ -180,7 +179,6 @@ struct IfScope : CodeScope {
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
     virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
-    virtual std::vector<Declaration*> getDeclarationsOrder();
 
     Value* conditionExpression = nullptr;
     CodeScope* elseScope = nullptr;
@@ -204,7 +202,6 @@ struct DeferScope : CodeScope {
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
     virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
-    virtual std::vector<Declaration*> getDeclarationsOrder();
 
     std::unordered_map<Declaration*, bool> declarationsInitStateCopy;
     std::vector<Declaration*> declarationsOrderCopy;

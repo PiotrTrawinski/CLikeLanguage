@@ -311,6 +311,7 @@ struct FlowOperation : Operation {
     virtual bool operator==(const Statement& value) const;
 
     Scope* scopePtr = nullptr;
+    std::vector<Declaration*> variablesToDestroy;
 
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
