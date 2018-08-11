@@ -1133,9 +1133,6 @@ bool Scope::getHasReturnStatement() {
 unordered_map<Declaration*, bool> Scope::getDeclarationsInitState() {
     return declarationsInitState;
 }
-vector<Declaration*> Scope::getDeclarationsOrder() {
-    return declarationsOrder;
-}
 
 /*
     CodeScope
@@ -1226,12 +1223,10 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             Scope* scope = (Scope*)statement;
             scope->hasReturnStatement = hasReturnStatement;
             scope->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
-            scope->declarationsOrder = declarationsOrder;
             scope->declarationsInitState = declarationsInitState;
             if (!scope->interpret()) {
                 wereErrors = true;
             }
-            declarationsOrder = scope->getDeclarationsOrder();
             declarationsInitState = scope->getDeclarationsInitState();
             maybeUninitializedDeclarations = scope->getUninitializedDeclarations();
             hasReturnStatement = hasReturnStatement || scope->getHasReturnStatement();
@@ -1258,8 +1253,13 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
         if (onErrorScopeToInterpret) {
             onErrorScopeToInterpret->hasReturnStatement = hasReturnStatement;
             onErrorScopeToInterpret->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
+            onErrorScopeToInterpret->declarationsInitState = declarationsInitState;
+            onErrorScopeToInterpret->declarationsInitState.at(declarationDependingOnErrorScope) = false;
             if (!onErrorScopeToInterpret->interpret()) {
                 wereErrors = true;
+            }
+            if (!onSuccessScopeToInterpret) {
+                declarationsInitState = onErrorScopeToInterpret->getDeclarationsInitState();
             }
 
             if (onErrorScopeToInterpret->hasReturnStatement) {
@@ -1275,8 +1275,12 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             onSuccessScopeToInterpret->hasReturnStatement = hasReturnStatement;
             onSuccessScopeToInterpret->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
             onSuccessScopeToInterpret->parentMaybeUninitializedDeclarations.erase(declarationDependingOnErrorScope);
+            onSuccessScopeToInterpret->declarationsInitState = declarationsInitState;
             if (!onSuccessScopeToInterpret->interpret()) {
                 wereErrors = true;
+            }
+            if (!onErrorScopeToInterpret) {
+                declarationsInitState = onSuccessScopeToInterpret->getDeclarationsInitState();
             }
         }
 
@@ -1286,12 +1290,33 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
                 onErrorScopeToInterpret->maybeUninitializedDeclarations.insert(declaration);
             }
             maybeUninitializedDeclarations = onErrorScopeToInterpret->maybeUninitializedDeclarations;
+            auto newDeclarationsInitState = onErrorScopeToInterpret->declarationsInitState;
+            for (auto declaration : declarationsOrder) {
+                if ((onSuccessScopeToInterpret->declarationsInitState.find(declaration) != onSuccessScopeToInterpret->declarationsInitState.end()
+                    && onSuccessScopeToInterpret->declarationsInitState.at(declaration))){
+                    newDeclarationsInitState.at(declaration) = true;
+                }
+            }
+            declarationsInitState = newDeclarationsInitState;
         }
 
         onErrorScopeToInterpret = nullptr;
         onSuccessScopeToInterpret = nullptr;
         declarationDependingOnErrorScope = nullptr;
     }
+
+    if (!hasReturnStatement) {
+        for (auto declaration : declarationsOrder) {
+            if (declarationsInitState.at(declaration)
+                && maybeUninitializedDeclarations.find(declaration) != maybeUninitializedDeclarations.end()) {
+                if (declaration->variable->type->kind == Type::Kind::Class
+                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) {
+                    warningMessage("end of scope destruction of maybe uninitialized variable " + declaration->variable->name, position);
+                }
+            }
+        }
+    }
+    
 
     if (wereErrors) {
         return false;
@@ -1834,21 +1859,30 @@ bool IfScope::interpret() {
     bool elseScopeErrors = false;
     maybeUninitializedDeclarations = parentScope->maybeUninitializedDeclarations;
     parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
+    if (!interpretNoUnitializedDeclarationsSet()) {
+        return false;
+    }
     if (elseScope) {
         elseScope->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
         elseScope->hasReturnStatement = hasReturnStatement || conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
+        elseScope->declarationsInitState = declarationsInitState;
         if (!elseScope->interpret()) {
             elseScopeErrors = true;
         }
     }
-    return interpretNoUnitializedDeclarationsSet() && !elseScopeErrors;
+    return !elseScopeErrors;
 }
 unordered_set<Declaration*> IfScope::getUninitializedDeclarations() {
-    if (elseScope) {
-        for (auto declaration : elseScope->maybeUninitializedDeclarations) {
-            maybeUninitializedDeclarations.insert(declaration);
-        }
+    if (conditionExpression->isConstexpr
+        && ((BoolValue*)conditionExpression)->value) {
         return maybeUninitializedDeclarations;
+    }
+    if (elseScope) {
+        auto uninitializedDeclarations = maybeUninitializedDeclarations;
+        for (auto declaration : elseScope->maybeUninitializedDeclarations) {
+            uninitializedDeclarations.insert(declaration);
+        }
+        return uninitializedDeclarations;
     }
     return parentMaybeUninitializedDeclarations;
 }
@@ -1860,10 +1894,18 @@ bool IfScope::getHasReturnStatement() {
     }
 }
 unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
-    return declarationsInitState;
-}
-vector<Declaration*> IfScope::getDeclarationsOrder() {
-    return declarationsOrder;
+    if (elseScope) {
+        auto newDeclarationsInitState = declarationsInitState;
+        for (auto declaration : parentScope->declarationsOrder) {
+            if ((elseScope->declarationsInitState.find(declaration) != elseScope->declarationsInitState.end()
+                && elseScope->declarationsInitState.at(declaration))){
+                newDeclarationsInitState.at(declaration) = true;
+            }
+        }
+        return newDeclarationsInitState;
+    } else {
+        return declarationsInitState;
+    }
 }
 /*unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
     return declarationsInitStateCopy;
@@ -1931,7 +1973,6 @@ bool DeferScope::createCodeTree(const vector<Token>& tokens, int& i) {
     }
 }
 bool DeferScope::interpret() {
-    declarationsOrderCopy = declarationsOrder;
     declarationsInitStateCopy = declarationsInitState;
     return CodeScope::interpret();
 }
@@ -1944,6 +1985,4 @@ bool DeferScope::getHasReturnStatement() {
 unordered_map<Declaration*, bool> DeferScope::getDeclarationsInitState() {
     return declarationsInitStateCopy;
 }
-vector<Declaration*> DeferScope::getDeclarationsOrder() {
-    return declarationsOrderCopy;
-}
+
