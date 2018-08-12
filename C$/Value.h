@@ -138,6 +138,7 @@ struct FunctionValue : Value {
     std::vector<Declaration*> arguments;
     
     FunctionScope* body = nullptr;
+    llvm::Function* llvmFunction = nullptr;
 
 private:
     static std::vector<std::unique_ptr<FunctionValue>> objects;

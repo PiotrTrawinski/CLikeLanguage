@@ -1706,6 +1706,13 @@ bool FunctionCallOperation::operator==(const Statement& value) const {
         return false;
     }
 }
+llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
+    vector<llvm::Value*> args;
+    for (auto arg : arguments) {
+        args.push_back(arg->createLlvm(llvmObj));
+    }
+    return llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
+}
 
 /*unique_ptr<Value> FunctionCallOperation::copy() {
     auto value = make_unique<FunctionCallOperation>(position);

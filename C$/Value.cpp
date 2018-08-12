@@ -133,6 +133,9 @@ llvm::Value* Variable::getReferenceLlvm(LlvmObject* llvmObj) {
     return declaration->llvmVariable;
 }
 llvm::Value* Variable::createLlvm(LlvmObject* llvmObj) {
+    if (declaration->isFunctionArgument) {
+        return declaration->llvmVariable;
+    }
     return new llvm::LoadInst(declaration->llvmVariable, "", llvmObj->block);
 }
 
@@ -441,15 +444,18 @@ bool FunctionValue::operator==(const Statement& value) const {
     }
 }
 llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj) {
-    auto function = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction(
+    if (llvmFunction) {
+        return llvmFunction;
+    }
+    llvmFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction(
     "", 
     (llvm::FunctionType*)((llvm::PointerType*)type->createLlvm(llvmObj))->getElementType())
     );
 
     auto oldFunction = llvmObj->function; 
-    llvmObj->function = function;
+    llvmObj->function = llvmFunction;
     this->body->createLlvm(llvmObj);
     llvmObj->function = oldFunction;
 
-    return function;
+    return llvmFunction;
 }
