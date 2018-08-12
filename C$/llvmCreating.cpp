@@ -23,9 +23,5 @@ unique_ptr<LlvmObject> createLlvm(CodeScope* globalScope) {
         internalError("Failed to construct LLVM-Model");
     }
 
-    std::error_code ec;
-    llvm::raw_fd_ostream llvmCodeFile("llvmCode.ll", ec, llvm::sys::fs::OpenFlags(0));
-    llvmCodeFile << *llvmObj->module;
-
     return llvmObj;
 }
