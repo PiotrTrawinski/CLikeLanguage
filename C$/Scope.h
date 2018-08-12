@@ -61,6 +61,7 @@ struct Scope : Statement {
     virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
 
     Scope* parentScope; // nullptr if and only if global scope
+    FunctionValue* mainFunction = nullptr; // other then nullptr if and only if global scope
     Owner owner;
     DeclarationMap declarationMap;
     ClassDeclarationMap classDeclarationMap;
