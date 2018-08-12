@@ -1501,7 +1501,14 @@ bool FunctionScope::operator==(const Statement& scope) const {
 }
 void FunctionScope::createLlvm(LlvmObject* llvmObj) {
     auto oldBlock = llvmObj->block;
-    llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "EntryPoint", llvmObj->function);
+    llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "Begin", llvmObj->function);
+    auto* arg = llvmObj->function->args().begin();
+    for (int i = 0; i < function->arguments.size(); ++i) {
+        function->arguments[i]->llvmVariable = arg;
+        function->arguments[i]->llvmVariable->setName(function->arguments[i]->variable->name);
+        function->arguments[i]->isFunctionArgument = true;
+        arg += 1;
+    }
     CodeScope::createLlvm(llvmObj);
     llvmObj->block = oldBlock;
 }
@@ -1736,6 +1743,10 @@ bool ForEachData::operator==(const ForEachData& other) const {
         && cmpPtr(this->it, other.it)
         && cmpPtr(this->index, other.index);
 }
+void ForScope::createLlvm(LlvmObject* llvmObj) {
+
+}
+
 
 /*
     WhileScope
@@ -1792,10 +1803,23 @@ bool WhileScope::findBreakStatement(CodeScope* scope) {
     return false;
 }
 bool WhileScope::getHasReturnStatement() {
-    return hasReturnStatement || (
-        conditionExpression->isConstexpr 
+    return conditionExpression->isConstexpr 
         && ((BoolValue*)conditionExpression)->value
-        && !findBreakStatement(this));
+        && (hasReturnStatement || !findBreakStatement(this));
+}
+void WhileScope::createLlvm(LlvmObject* llvmObj) {
+    auto whileConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "whileCondition", llvmObj->function);
+    auto whileBlock          = llvm::BasicBlock::Create(llvmObj->context, "while",          llvmObj->function);
+    auto afterWhileBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterWhile",     llvmObj->function);
+
+    llvm::BranchInst::Create(whileConditionBlock, llvmObj->block);
+    llvmObj->block = whileConditionBlock;
+    llvm::BranchInst::Create(whileBlock, afterWhileBlock, conditionExpression->createLlvm(llvmObj), whileConditionBlock);
+
+    llvmObj->block = whileBlock;
+    CodeScope::createLlvm(llvmObj);
+    if (!hasReturnStatement) llvm::BranchInst::Create(whileConditionBlock, whileBlock);
+    llvmObj->block = afterWhileBlock;
 }
 
 
@@ -1864,7 +1888,7 @@ bool IfScope::interpret() {
     }
     if (elseScope) {
         elseScope->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
-        elseScope->hasReturnStatement = hasReturnStatement || conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
+        elseScope->hasReturnStatement = conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
         elseScope->declarationsInitState = declarationsInitState;
         if (!elseScope->interpret()) {
             elseScopeErrors = true;
@@ -1906,6 +1930,18 @@ unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
     } else {
         return declarationsInitState;
     }
+}
+void IfScope::createLlvm(LlvmObject* llvmObj) {
+    auto ifBlock    = llvm::BasicBlock::Create(llvmObj->context, "if",   llvmObj->function);
+    auto elseBlock  = llvm::BasicBlock::Create(llvmObj->context, "else", llvmObj->function);
+    llvm::BranchInst::Create(ifBlock, elseBlock, conditionExpression->createLlvm(llvmObj), llvmObj->block);
+    llvmObj->block = ifBlock;
+    CodeScope::createLlvm(llvmObj);
+    llvmObj->block = elseBlock;
+    elseScope->createLlvm(llvmObj);
+    llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "afterIfElse", llvmObj->function);
+    if (!hasReturnStatement) llvm::BranchInst::Create(llvmObj->block, ifBlock);
+    if (!elseScope->hasReturnStatement) llvm::BranchInst::Create(llvmObj->block, elseBlock);
 }
 /*unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
     return declarationsInitStateCopy;

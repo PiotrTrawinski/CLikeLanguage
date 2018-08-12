@@ -22,7 +22,8 @@ struct Declaration : Statement {
     bool byReference = false;
     Status status = Status::None;
     Scope* scope = nullptr;
-    llvm::AllocaInst* llvmVariable;
+    llvm::Value* llvmVariable;
+    bool isFunctionArgument = false;
     
 private:
     static std::vector<std::unique_ptr<Declaration>> objects;
