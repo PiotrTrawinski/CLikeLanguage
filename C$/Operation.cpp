@@ -124,8 +124,12 @@ optional<Value*> Operation::interpret(Scope* scope) {
             );
         }
         Declaration* declaration = viableDeclarations.back();
+        if (declaration->variable->isConstexpr) {
+            return declaration->value;
+        }
 
         arguments[1] = declaration->variable;
+        ((Variable*)arguments[1])->declaration = declaration;
         type = declaration->variable->type;
 
         break;
@@ -830,8 +834,56 @@ bool Operation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
+    switch (kind) {
+    case Kind::Dot: {
+        auto effectiveType0 = arguments[0]->type->getEffectiveType();
+        ClassType* classType = nullptr;
+        switch (effectiveType0->kind) {
+        case Type::Kind::Class: {
+            classType = (ClassType*)effectiveType0;
+            break;
+        }
+        case Type::Kind::RawPointer:
+            classType = (ClassType*)((RawPointerType*)effectiveType0)->underlyingType;
+            break;
+        case Type::Kind::OwnerPointer:
+            classType = (ClassType*)((OwnerPointerType*)effectiveType0)->underlyingType;
+            break;
+        }
+        auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
+        auto& declarations = classType->declaration->body->declarations;
+        int declarationIndex = 0;
+        for (auto declaration : declarations) {
+            if (declaration == accessedDeclaration) {
+                break;
+            }
+            declarationIndex += 1;
+        }
+        if (declarationIndex == declarations.size()) {
+            internalError("couldn't find index of field during llvm creating", position);
+        }
+        
+        llvm::Value* arg0 = arguments[0]->getReferenceLlvm(llvmObj);
+        vector<llvm::Value*> indexList;
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), declarationIndex));
+        return llvm::GetElementPtrInst::Create(
+            ((llvm::PointerType*)arg0->getType())->getElementType(),
+            arg0,
+            indexList,
+            "",
+            llvmObj->block
+        );
+    }
+    default: return nullptr;
+    }
+}
 llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     switch (kind) {
+    case Kind::Dot: {
+        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+    }
     case Kind::Minus: {
         auto arg = arguments[0]->createLlvm(llvmObj);
         auto zero = llvm::ConstantInt::get(type->createLlvm(llvmObj), 0);
@@ -1028,9 +1080,12 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         return llvm::BinaryOperator::CreateOr(arg1, arg2, "", llvmObj->block);
     }
     case Kind::Assign: {
-        auto variable = (Variable*)arguments[0];
+        /*auto variable = (Variable*)arguments[0];
         new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), variable->getReferenceLlvm(llvmObj), llvmObj->block);
-        return variable->createLlvm(llvmObj);
+        return variable->createLlvm(llvmObj);*/
+
+        new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), arguments[0]->getReferenceLlvm(llvmObj), llvmObj->block);
+        return arguments[0]->createLlvm(llvmObj);
     }
     default:
         internalError("unexpected operation when creating llvm", position);
