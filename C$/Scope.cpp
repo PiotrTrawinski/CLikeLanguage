@@ -1811,15 +1811,13 @@ bool WhileScope::getHasReturnStatement() {
 void WhileScope::createLlvm(LlvmObject* llvmObj) {
     auto whileConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "whileCondition", llvmObj->function);
     auto whileBlock          = llvm::BasicBlock::Create(llvmObj->context, "while",          llvmObj->function);
-    auto afterWhileBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterWhile",     llvmObj->function);
-
     llvm::BranchInst::Create(whileConditionBlock, llvmObj->block);
-    llvmObj->block = whileConditionBlock;
-    llvm::BranchInst::Create(whileBlock, afterWhileBlock, conditionExpression->createLlvm(llvmObj), whileConditionBlock);
-
     llvmObj->block = whileBlock;
     CodeScope::createLlvm(llvmObj);
     if (!hasReturnStatement) llvm::BranchInst::Create(whileConditionBlock, llvmObj->block);
+    auto afterWhileBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterWhile",     llvmObj->function);
+    llvmObj->block = whileConditionBlock;
+    llvm::BranchInst::Create(whileBlock, afterWhileBlock, conditionExpression->createLlvm(llvmObj), whileConditionBlock);
     llvmObj->block = afterWhileBlock;
 }
 
@@ -1934,24 +1932,29 @@ unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
 }
 void IfScope::createLlvm(LlvmObject* llvmObj) {
     if (elseScope) {
-        auto ifBlock          = llvm::BasicBlock::Create(llvmObj->context, "if",          llvmObj->function);
-        auto elseBlock        = llvm::BasicBlock::Create(llvmObj->context, "else",        llvmObj->function);
-        auto afterIfElseBlock = llvm::BasicBlock::Create(llvmObj->context, "afterIfElse", llvmObj->function);
-        llvm::BranchInst::Create(ifBlock, elseBlock, conditionExpression->createLlvm(llvmObj), llvmObj->block);
+        auto ifBlock = llvm::BasicBlock::Create(llvmObj->context, "if", llvmObj->function);
+        auto oldBlock = llvmObj->block;
         llvmObj->block = ifBlock;
         CodeScope::createLlvm(llvmObj);
-        if (!hasReturnStatement) llvm::BranchInst::Create(afterIfElseBlock, llvmObj->block);
+        auto afterIfBlock = llvmObj->block;
+        auto elseBlock = llvm::BasicBlock::Create(llvmObj->context, "else", llvmObj->function);
+        llvmObj->block = oldBlock;
+        llvm::BranchInst::Create(ifBlock, elseBlock, conditionExpression->createLlvm(llvmObj), llvmObj->block);
         llvmObj->block = elseBlock;
         elseScope->createLlvm(llvmObj);
+        auto afterIfElseBlock = llvm::BasicBlock::Create(llvmObj->context, "afterIfElse", llvmObj->function);
+        if (!hasReturnStatement) llvm::BranchInst::Create(afterIfElseBlock, afterIfBlock);
         if (!elseScope->hasReturnStatement) llvm::BranchInst::Create(afterIfElseBlock, llvmObj->block);
         llvmObj->block = afterIfElseBlock;
     } else {
         auto ifBlock      = llvm::BasicBlock::Create(llvmObj->context, "if",      llvmObj->function);
-        auto afterIfBlock = llvm::BasicBlock::Create(llvmObj->context, "afterIf", llvmObj->function);
-        llvm::BranchInst::Create(ifBlock, afterIfBlock, conditionExpression->createLlvm(llvmObj), llvmObj->block);
+        auto oldBlock = llvmObj->block;
         llvmObj->block = ifBlock;
         CodeScope::createLlvm(llvmObj);
+        auto afterIfBlock = llvm::BasicBlock::Create(llvmObj->context, "afterIf", llvmObj->function);
         if (!hasReturnStatement) llvm::BranchInst::Create(afterIfBlock, llvmObj->block);
+        llvmObj->block = oldBlock;
+        llvm::BranchInst::Create(ifBlock, afterIfBlock, conditionExpression->createLlvm(llvmObj), llvmObj->block);
         llvmObj->block = afterIfBlock;
     }
 }
