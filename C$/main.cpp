@@ -30,7 +30,6 @@ int main(int argc, char** argv) {
         return 2;
     }
     
-    
     start = high_resolution_clock::now();
     auto globalScope = createCodeTree(tokens.value());
     auto codeTreeCreatingTime = nanoToSec(duration_cast<nanoseconds>(high_resolution_clock::now() - start).count());

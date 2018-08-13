@@ -44,6 +44,9 @@ bool Value::operator==(const Statement& value) const {
 llvm::Value* Value::createLlvm(LlvmObject* llvmObj) {
     return nullptr;
 }
+llvm::Value* Value::getReferenceLlvm(LlvmObject* llvmObj) {
+    return nullptr;
+}
 
 
 /*

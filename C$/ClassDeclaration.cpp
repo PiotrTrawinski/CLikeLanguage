@@ -53,7 +53,7 @@ void ClassDeclaration::createLlvm(LlvmObject* llvmObj) {
     
 
     for (auto declaration : body->declarations) {
-        if (declaration->variable->type->kind != Type::Kind::Function || !declaration->variable->isConst) {
+        if (!declaration->variable->isConstexpr) {
             types.push_back(declaration->variable->type->createLlvm(llvmObj));
         }
     }
