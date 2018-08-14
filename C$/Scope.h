@@ -53,7 +53,7 @@ struct Scope : Statement {
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i)=0;
     virtual bool interpret()=0;
     virtual Declaration* findAndInterpretDeclaration(const std::string& name)=0;
-    Declaration* findDeclaration(Variable* variable);
+    Declaration* findDeclaration(Variable* variable, bool ignoreClassScopes=false);
     virtual bool operator==(const Statement& scope) const;
     virtual void createLlvm(LlvmObject* llvmObj)=0;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();

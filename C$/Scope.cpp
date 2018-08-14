@@ -1081,7 +1081,14 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
         return nullptr;
     }
 }
-Declaration* Scope::findDeclaration(Variable* variable) {
+Declaration* Scope::findDeclaration(Variable* variable, bool ignoreClassScopes) {
+    if (owner == Owner::Class) {
+        if (ignoreClassScopes) {
+            return parentScope->findDeclaration(variable, ignoreClassScopes);
+        } else {
+            ignoreClassScopes = true;
+        }
+    }
     auto declarations = declarationMap.getDeclarations(variable->name);
     if (declarations.empty()) {
         Declaration* declaration = findAndInterpretDeclaration(variable->name);
@@ -1091,10 +1098,11 @@ Declaration* Scope::findDeclaration(Variable* variable) {
             if (parentScope == nullptr) {
                 return errorMessageNull("missing declaration of variable " + variable->name, variable->position);
             }
-            return parentScope->findDeclaration(variable);
+            return parentScope->findDeclaration(variable, ignoreClassScopes);
         }
     }
     else if (declarations.size() == 1) {
+        declarations[0]->scope = this;
         switch (declarations[0]->status) {
         case Declaration::Status::None:
             internalError("impossible state", variable->position);
@@ -1107,7 +1115,7 @@ Declaration* Scope::findDeclaration(Variable* variable) {
                 if (parentScope == nullptr) {
                     return errorMessageNull("missing declaration of variable " + variable->name, variable->position);
                 }
-                return parentScope->findDeclaration(variable);
+                return parentScope->findDeclaration(variable, ignoreClassScopes);
             }
         case Declaration::Status::Completed:
             return declarations[0];
@@ -1365,6 +1373,15 @@ Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
 }
 void CodeScope::createLlvm(LlvmObject* llvmObj) {
     for (int i = 0; i < statements.size(); ++i) {
+        switch (statements[i]->kind) {
+        case Statement::Kind::ClassDeclaration:{
+            ClassDeclaration* declaration = (ClassDeclaration*)statements[i];
+            declaration->createLlvm(llvmObj);
+            break;
+        }
+        }
+    }
+    for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
         if (!statement->isReachable) {
             continue;
@@ -1379,7 +1396,7 @@ void CodeScope::createLlvm(LlvmObject* llvmObj) {
         }
         case Statement::Kind::ClassDeclaration:{
             ClassDeclaration* declaration = (ClassDeclaration*)statement;
-            declaration->createLlvm(llvmObj);
+            declaration->body->createLlvm(llvmObj);
             break;
         }
         case Statement::Kind::Scope: {
@@ -1484,7 +1501,11 @@ bool ClassScope::getHasReturnStatement() {
     return false;
 }
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
-
+    for (auto& declaration : declarations) {
+        if (declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
+            declaration->createLlvm(llvmObj);
+        }
+    }
 }
 
 /*
