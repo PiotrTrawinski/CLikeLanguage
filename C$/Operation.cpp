@@ -854,19 +854,30 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
         auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
         auto& declarations = classType->declaration->body->declarations;
         int declarationIndex = 0;
+        bool found = false;
         for (auto declaration : declarations) {
+            if (declaration->variable->isConstexpr) {
+                continue;
+            }
             if (declaration == accessedDeclaration) {
+                found = true;
                 break;
             }
             declarationIndex += 1;
         }
-        if (declarationIndex == declarations.size()) {
+        if (!found) {
             internalError("couldn't find index of field during llvm creating", position);
         }
-        
-        llvm::Value* arg0 = arguments[0]->getReferenceLlvm(llvmObj);
+
+        llvm::Value* arg0;
+        if (effectiveType0->kind == Type::Kind::RawPointer) {
+            arg0 = arguments[0]->createLlvm(llvmObj);
+        } else {
+            arg0 = arguments[0]->getReferenceLlvm(llvmObj);
+        }
+
         vector<llvm::Value*> indexList;
-        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
         indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), declarationIndex));
         return llvm::GetElementPtrInst::Create(
             ((llvm::PointerType*)arg0->getType())->getElementType(),
@@ -882,7 +893,15 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
 llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     switch (kind) {
     case Kind::Dot: {
+        auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
+        if (accessedDeclaration->value && accessedDeclaration->value->isConstexpr) {
+            // is const member function
+            return accessedDeclaration->value->createLlvm(llvmObj);
+        }
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+    }
+    case Kind::Address: {
+        return arguments[0]->getReferenceLlvm(llvmObj);
     }
     case Kind::Minus: {
         auto arg = arguments[0]->createLlvm(llvmObj);
@@ -1673,6 +1692,10 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
     }*/
 }
 optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
     if (!interpretAllArguments(scope)) {
         return nullopt;
     }
@@ -1715,12 +1738,16 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
                 else arguments[i] = cast;
             }
         }
-        auto thisArgument = Operation::Create(position, Operation::Kind::Address);
-        thisArgument->arguments.push_back(dotOperation->arguments[0]);
-        if (!thisArgument->interpret(scope)) {
-            return nullopt;
+        if (dotOperation->arguments[0]->type->kind == Type::Kind::Class) {
+            auto thisArgument = Operation::Create(position, Operation::Kind::Address);
+            thisArgument->arguments.push_back(dotOperation->arguments[0]);
+            if (!thisArgument->interpret(scope)) {
+                return nullopt;
+            }
+            arguments.push_back(thisArgument);
+        } else {
+            arguments.push_back(dotOperation->arguments[0]);
         }
-        arguments.push_back(thisArgument);
         type = functionType->returnType;
     }
     else if (function->type->kind == Type::Kind::Function) {

@@ -50,7 +50,7 @@ void ClassDeclaration::createLlvm(LlvmObject* llvmObj) {
     llvmType = getLlvmType(llvmObj);
     vector<llvm::Type*> types;
 
-    
+    //body->createLlvm(llvmObj);
 
     for (auto declaration : body->declarations) {
         if (!declaration->variable->isConstexpr) {

@@ -100,6 +100,24 @@ optional<Value*> Variable::interpret(Scope* scope) {
     if (!interpretTypeAndDeclaration(scope)) {
         return nullopt;
     }
+    if (declaration->scope->owner == Scope::Owner::Class) {
+        Scope* searchScope = scope;
+        while (searchScope) {
+            if (searchScope->owner == Scope::Owner::Function) {
+                auto functionScope = (FunctionScope*)searchScope;
+                auto dotOperation = Operation::Create(position, Operation::Kind::Dot);
+                dotOperation->arguments.push_back(functionScope->function->arguments.back()->variable);
+                dotOperation->arguments.push_back(declaration->variable);
+                auto interpretValue = dotOperation->interpret(functionScope);
+                if (!interpretValue) internalError("couldn't translate implicit use of class member variable to 'this.'");
+                else if (interpretValue.value()) return interpretValue.value();
+                else return dotOperation;
+            } else {
+                searchScope = searchScope->parentScope;
+            }
+        }
+        internalError("couldn't find function scope, but class member variable used", position);
+    }
 
     isConstexpr = declaration->variable->isConstexpr;
     type = declaration->variable->type;
