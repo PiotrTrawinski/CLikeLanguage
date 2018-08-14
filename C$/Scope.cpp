@@ -1196,6 +1196,7 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             declarationsOrder.push_back(declaration);
             if (hasReturnStatement && !declaration->variable->isConstexpr) {
                 warningMessage("unreachable statement", statement->position);
+                statement->isReachable = false;
             }
             if (!declaration->value) {
                 maybeUninitializedDeclarations.insert(declaration);
@@ -1220,6 +1221,7 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             }
             if (hasReturnStatement) {
                 warningMessage("unreachable scope statement", statement->position);
+                statement->isReachable = false;
             }
             Scope* scope = (Scope*)statement;
             scope->hasReturnStatement = hasReturnStatement;
@@ -1239,6 +1241,7 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             }
             if (hasReturnStatement) {
                 warningMessage("unreachable statement", statement->position);
+                statement->isReachable = false;
             }
             Value* value = (Value*)statement;
             auto valueInterpret = value->interpret(this);
@@ -1246,6 +1249,9 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
                 wereErrors = true;
             } else if (valueInterpret.value()) {
                 statement = valueInterpret.value();
+                if (hasReturnStatement) {
+                    statement->isReachable = false;
+                }
             }
             break;
         }
@@ -1360,6 +1366,9 @@ Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
 void CodeScope::createLlvm(LlvmObject* llvmObj) {
     for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
+        if (!statement->isReachable) {
+            continue;
+        }
         switch (statement->kind) {
         case Statement::Kind::Declaration:{
             Declaration* declaration = (Declaration*)statement;
@@ -1507,7 +1516,13 @@ bool FunctionScope::interpret() {
         return true;
     }
     wasInterpreted = true;
-    return CodeScope::interpret();
+    bool interpretStatus = CodeScope::interpret();
+
+    if (!hasReturnStatement && ((FunctionType*)function->type)->returnType->kind != Type::Kind::Void) {
+        warningMessage("Not all control paths return value", position);
+    }
+
+    return interpretStatus;
 }
 void FunctionScope::createLlvm(LlvmObject* llvmObj) {
     auto oldBlock = llvmObj->block;
@@ -1520,6 +1535,16 @@ void FunctionScope::createLlvm(LlvmObject* llvmObj) {
         arg += 1;
     }
     CodeScope::createLlvm(llvmObj);
+    if (!hasReturnStatement) {
+        auto returnType = ((FunctionType*)function->type)->returnType;
+        if (returnType->kind == Type::Kind::Void) {
+            llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
+        } else {
+            auto returnValue = new llvm::AllocaInst(returnType->createLlvm(llvmObj), 0, "returnValue", llvmObj->block);
+            auto loadedReturnValue = new llvm::LoadInst(returnValue, "", llvmObj->block);
+            llvm::ReturnInst::Create(llvmObj->context, loadedReturnValue, llvmObj->block);
+        }
+    }
     llvmObj->block = oldBlock;
 }
 
