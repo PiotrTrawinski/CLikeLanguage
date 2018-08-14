@@ -16,6 +16,7 @@ struct Statement {
 
     Kind kind;
     CodePosition position;
+    bool isReachable = true;
 
 private:
     static std::vector<std::unique_ptr<Statement>> objects;
