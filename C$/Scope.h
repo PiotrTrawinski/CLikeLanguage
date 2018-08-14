@@ -100,9 +100,11 @@ struct FunctionScope : CodeScope {
     FunctionScope(const CodePosition& position, Scope* parentScope, FunctionValue* function);
     static FunctionScope* Create(const CodePosition& position, Scope* parentScope, FunctionValue* function);
     virtual bool operator==(const Statement& scope) const;
+    virtual bool interpret();
     virtual void createLlvm(LlvmObject* llvmObj);
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
 
+    bool wasInterpreted = false;
     FunctionValue* function;
 
 private:

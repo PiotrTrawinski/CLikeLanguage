@@ -23,7 +23,7 @@ bool DeclarationMap::addFunctionDeclaration(Declaration* declaration) {
         return false;
     }
     return addDeclaration(
-        declaration->variable->name/* + toString(declaration->value->type)*/, 
+        declaration->variable->name + toString(declaration->value->type), 
         declaration
     );
 }
@@ -111,5 +111,7 @@ string DeclarationMap::toString(Type* type) {
     }
     case Type::Kind::TemplateClass:
         return "TemplateClass";
+    default:
+        return "";
     }
 }

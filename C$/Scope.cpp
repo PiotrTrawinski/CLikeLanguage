@@ -1190,6 +1190,7 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             Declaration* declaration = (Declaration*)statement;
             if (!declaration->interpret(this)) {
                 wereErrors = true;
+                break;
             }
             declarationsInitState.insert({declaration, declaration->value});
             declarationsOrder.push_back(declaration);
@@ -1305,6 +1306,10 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
         declarationDependingOnErrorScope = nullptr;
     }
 
+    if (wereErrors) {
+        return false;
+    }
+
     if (!hasReturnStatement) {
         for (auto declaration : declarationsOrder) {
             if (declarationsInitState.at(declaration)
@@ -1315,11 +1320,6 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
                 }
             }
         }
-    }
-    
-
-    if (wereErrors) {
-        return false;
     }
 
     if (isGlobalScope) {
@@ -1363,7 +1363,9 @@ void CodeScope::createLlvm(LlvmObject* llvmObj) {
         switch (statement->kind) {
         case Statement::Kind::Declaration:{
             Declaration* declaration = (Declaration*)statement;
-            declaration->createLlvm(llvmObj);
+            if (!declaration->variable->isConstexpr || declaration->value->type->kind == Type::Kind::Function) {
+                declaration->createLlvm(llvmObj);
+            }
             break;
         }
         case Statement::Kind::ClassDeclaration:{
@@ -1499,6 +1501,13 @@ bool FunctionScope::operator==(const Statement& scope) const {
     } else {
         return false;
     }
+}
+bool FunctionScope::interpret() {
+    if (wasInterpreted) {
+        return true;
+    }
+    wasInterpreted = true;
+    return CodeScope::interpret();
 }
 void FunctionScope::createLlvm(LlvmObject* llvmObj) {
     auto oldBlock = llvmObj->block;
