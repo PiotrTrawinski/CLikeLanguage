@@ -106,8 +106,12 @@ bool Declaration::operator==(const Statement& declaration) const {
 }
 
 void Declaration::createLlvm(LlvmObject* llvmObj) {
-    if (value && value->isConstexpr && value->valueKind == Value::ValueKind::FunctionValue) {
-        auto functionValue = value->createLlvm(llvmObj);
+    if (value && variable->isConstexpr && value->valueKind == Value::ValueKind::FunctionValue) {
+        if (variable->name == "main") {
+            ((FunctionValue*)value)->createLlvm(llvmObj, "_main");
+        } else {
+            ((FunctionValue*)value)->createLlvm(llvmObj, variable->name);
+        }
     } else {
         llvmVariable = new llvm::AllocaInst(variable->type->createLlvm(llvmObj), 0, variable->name, llvmObj->block);
         if (value) {

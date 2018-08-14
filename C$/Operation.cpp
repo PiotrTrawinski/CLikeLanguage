@@ -124,7 +124,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
             );
         }
         Declaration* declaration = viableDeclarations.back();
-        if (declaration->variable->isConstexpr) {
+        if (declaration->variable->isConstexpr && declaration->value->valueKind != Value::ValueKind::FunctionValue) {
             return declaration->value;
         }
 
@@ -1680,7 +1680,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     if (!functionInterpret) return nullopt;
     if (functionInterpret.value()) function = functionInterpret.value();
 
-    if (function->valueKind == Value::ValueKind::Variable) {
+    if (function->valueKind == Value::ValueKind::Variable && function->isConstexpr) {
         string functionName = ((Variable*)function)->name;
         FindFunctionStatus status;
         Scope* actualScope = scope;
@@ -1696,11 +1696,10 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         }
     } else if (function->valueKind == Value::ValueKind::Operation
         && (((Operation*)function)->kind == Operation::Kind::Dot)
-        && ((Variable*)((Operation*)function)->arguments[1])->isConst) {
+        && ((Variable*)((Operation*)function)->arguments[1])->isConstexpr) {
         auto dotOperation = (Operation*)function;
         auto functionType = (FunctionType*)dotOperation->type;
         Variable* var = (Variable*)dotOperation->arguments[1];
-
         if (functionType->argumentTypes.size()-1 != arguments.size()) {
             return errorMessageOpt("expected " + to_string(functionType->argumentTypes.size()-1) 
                 + " arguments, got "+ to_string(arguments.size()), position
@@ -1722,7 +1721,6 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
             return nullopt;
         }
         arguments.push_back(thisArgument);
-
         type = functionType->returnType;
     }
     else if (function->type->kind == Type::Kind::Function) {

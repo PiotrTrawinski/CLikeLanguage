@@ -447,13 +447,16 @@ bool FunctionValue::operator==(const Statement& value) const {
     }
 }
 llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj) {
+    return createLlvm(llvmObj, "");
+}
+llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj, const string& functionName) {
     if (llvmFunction) {
         return llvmFunction;
     }
     llvmFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction(
-    "", 
-    (llvm::FunctionType*)((llvm::PointerType*)type->createLlvm(llvmObj))->getElementType())
-    );
+        functionName, 
+        (llvm::FunctionType*)((llvm::PointerType*)type->createLlvm(llvmObj))->getElementType())
+        );
 
     auto oldFunction = llvmObj->function; 
     llvmObj->function = llvmFunction;

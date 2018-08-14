@@ -134,6 +134,7 @@ struct FunctionValue : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    llvm::Value* createLlvm(LlvmObject* llvmObj, const std::string& name);
 
     //std::vector<std::string> argumentNames;
     std::vector<Declaration*> arguments;
