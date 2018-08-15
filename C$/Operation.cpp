@@ -155,6 +155,9 @@ optional<Value*> Operation::interpret(Scope* scope) {
             default:
                 break;
         }
+        if (type->kind == Type::Kind::Void) {
+            return errorMessageOpt("cannot getValue ($) of type void", position);
+        }
         break;
     }
     case Kind::Allocation:
@@ -903,6 +906,23 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Address: {
         return arguments[0]->getReferenceLlvm(llvmObj);
     }
+    case Kind::GetValue: {
+        switch (arguments[0]->type->kind) {
+        case Type::Kind::MaybeError: {
+            auto arg = arguments[0]->getReferenceLlvm(llvmObj);
+            vector<llvm::Value*> indexList;
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
+            auto gep = llvm::GetElementPtrInst::Create(
+                ((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block
+            );
+            return new llvm::LoadInst(gep, "", llvmObj->block);
+        }
+        default:
+            return nullptr;
+        }
+        break;
+    }
     case Kind::Minus: {
         auto arg = arguments[0]->createLlvm(llvmObj);
         auto zero = llvm::ConstantInt::get(type->createLlvm(llvmObj), 0);
@@ -1248,6 +1268,24 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     else if (type->kind == Type::Kind::RawPointer && effectiveType->kind == Type::Kind::RawPointer) {
         if (!onlyTry) wasInterpreted = true;
         return nullptr;
+    } else if (type->kind == Type::Kind::MaybeError) {
+        if (effectiveType->kind == Type::Kind::MaybeError) {
+            auto maybeErrorType = (MaybeErrorType*)effectiveType;
+            if (maybeErrorType->underlyingType->kind == Type::Kind::Void
+                || ((MaybeErrorType*)type)->underlyingType->kind == Type::Kind::Void) {
+                if (!onlyTry) wasInterpreted = true;
+                return nullptr;
+            }
+        } else {
+            auto cast = CastOperation::Create(position, ((MaybeErrorType*)type)->underlyingType);
+            cast->arguments.push_back(arguments[0]);
+            auto castInterpret = cast->interpret(scope);
+            if (!castInterpret) return nullopt;
+            else if (castInterpret.value()) arguments[0] = castInterpret.value();
+            else arguments[0] = cast;
+            if (!onlyTry) wasInterpreted = true;
+            return nullptr;
+        }
     }
 
     if (!onlyTry) {
@@ -1441,10 +1479,56 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
         else {
             internalError("only integer and float types can be casted to float in llvm stage", position);
         }
+    } else if (type->kind == Type::Kind::MaybeError) {
+        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
     } else {
         internalError("can only cast to integer and float types in llvm stage", position);
     }
     return nullptr;
+}
+llvm::Value* CastOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    //auto arg = arguments[0]->createLlvm(llvmObj);
+    if (type->kind == Type::Kind::MaybeError) {
+        if (arguments[0]->type->kind == Type::Kind::MaybeError) {
+            auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
+            if (maybeErrorType->underlyingType->kind == Type::Kind::Void) {
+                // ?T = ?void
+                auto var = new llvm::AllocaInst(type->createLlvm(llvmObj), 0, "", llvmObj->block);
+                vector<llvm::Value*> indexList;
+                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 1));
+                auto gep = llvm::GetElementPtrInst::Create(
+                    ((llvm::PointerType*)var->getType())->getElementType(), var, indexList, "", llvmObj->block
+                );
+                new llvm::StoreInst(arguments[0]->createLlvm(llvmObj), gep, llvmObj->block);
+                return var;
+            }
+            else if (((MaybeErrorType*)type)->underlyingType->kind == Type::Kind::Void) {
+                // ?void = ?T
+                auto argRef = arguments[0]->getReferenceLlvm(llvmObj);
+                vector<llvm::Value*> indexList;
+                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 1));
+                auto gep = llvm::GetElementPtrInst::Create(
+                    ((llvm::PointerType*)argRef->getType())->getElementType(), argRef, indexList, "", llvmObj->block
+                );
+                return gep;
+            }
+        } else {
+            // ?T = T
+            auto var = new llvm::AllocaInst(type->createLlvm(llvmObj), 0, "", llvmObj->block);
+            vector<llvm::Value*> indexList;
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
+            auto gep = llvm::GetElementPtrInst::Create(
+                ((llvm::PointerType*)var->getType())->getElementType(), var, indexList, "", llvmObj->block
+            );
+            new llvm::StoreInst(arguments[0]->createLlvm(llvmObj), gep, llvmObj->block);
+            return var;
+        }
+    } else {
+        internalError("could not get reference to object after casting", position);
+    }
 }
 
 
@@ -1589,7 +1673,6 @@ bool ArraySubArrayOperation::operator==(const Statement& value) const {
 /*
     FunctionCallOperation
 */
-
 FunctionCallOperation::FunctionCallOperation(const CodePosition& position) : 
     Operation(position, Operation::Kind::FunctionCall)
 {}
