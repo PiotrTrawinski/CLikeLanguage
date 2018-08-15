@@ -84,6 +84,7 @@ struct MaybeErrorType : Type {
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
     Type* underlyingType = nullptr;
+    llvm::Type* llvmType = nullptr;
   
 private:
     static std::vector<std::unique_ptr<MaybeErrorType>> objects;

@@ -236,6 +236,7 @@ struct CastOperation : Operation {
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
 
     Type* argType;
     

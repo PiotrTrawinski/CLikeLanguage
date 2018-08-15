@@ -165,7 +165,17 @@ bool MaybeErrorType::operator==(const Type& type) const {
     return make_unique<MaybeErrorType>(this->underlyingType->copy());
 }*/
 llvm::Type* MaybeErrorType::createLlvm(LlvmObject* llvmObj) {
-    return llvm::Type::getFloatTy(llvmObj->context);
+    if (!llvmType) {
+        if (underlyingType->kind == Type::Kind::Void) {
+            llvmType = llvm::Type::getInt64Ty(llvmObj->context);
+        } else {
+            llvmType = llvm::StructType::get(llvmObj->context, {
+                underlyingType->createLlvm(llvmObj),
+                llvm::Type::getInt64Ty(llvmObj->context)
+            });
+        }
+    }
+    return llvmType;
 }
 
 /*
