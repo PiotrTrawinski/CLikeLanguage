@@ -412,6 +412,38 @@ bool StaticArrayValue::operator==(const Statement& value) const {
         return false;
     }
 }
+llvm::Value* StaticArrayValue::createLlvm(LlvmObject* llvmObj) {
+    bool allElementsConstexpr = true;
+    for (auto value : values) {
+        if (!value->isConstexpr) {
+            allElementsConstexpr = false;
+            break;
+        }
+    }
+    if (allElementsConstexpr) {
+        vector<llvm::Constant*> llvmValues;
+        for (auto value : values) {
+            llvmValues.push_back((llvm::Constant*)value->createLlvm(llvmObj));
+        }
+        return llvm::ConstantArray::get((llvm::ArrayType*)type->createLlvm(llvmObj), llvmValues);
+    } else {
+        auto arrayValue = new llvm::AllocaInst(type->createLlvm(llvmObj), 0, "", llvmObj->block);
+        for (int i = 0; i < values.size(); ++i) {
+            vector<llvm::Value*> indexList;
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), i));
+            auto elementPtr = llvm::GetElementPtrInst::Create(
+                ((llvm::PointerType*)arrayValue->getType())->getElementType(),
+                arrayValue,
+                indexList,
+                "",
+                llvmObj->block
+            );
+            new llvm::StoreInst(values[i]->createLlvm(llvmObj), elementPtr, llvmObj->block);
+        }
+        return new llvm::LoadInst(arrayValue, "", llvmObj->block);
+    }
+}
 /*unique_ptr<Value> StaticArrayValue::copy() {
     auto val = make_unique<StaticArrayValue>(position);
     val->type = type->copy();

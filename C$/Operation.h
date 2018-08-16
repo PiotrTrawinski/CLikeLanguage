@@ -249,6 +249,8 @@ struct ArrayIndexOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     Value* index;
     
