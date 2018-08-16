@@ -258,7 +258,7 @@ bool StaticArrayType::operator==(const Type& type) const {
     }
 }*/
 llvm::Type* StaticArrayType::createLlvm(LlvmObject* llvmObj) {
-    return llvm::Type::getFloatTy(llvmObj->context);
+    return llvm::ArrayType::get(elementType->createLlvm(llvmObj), sizeAsInt);
 }
 
 

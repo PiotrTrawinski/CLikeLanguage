@@ -1630,6 +1630,22 @@ bool ArrayIndexOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+llvm::Value* ArrayIndexOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    auto arg = arguments[0]->getReferenceLlvm(llvmObj);
+    vector<llvm::Value*> indexList;
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    indexList.push_back(index->createLlvm(llvmObj));
+    return llvm::GetElementPtrInst::Create(
+        ((llvm::PointerType*)arg->getType())->getElementType(),
+        arg,
+        indexList,
+        "",
+        llvmObj->block
+    );
+}
+llvm::Value* ArrayIndexOperation::createLlvm(LlvmObject* llvmObj) {
+    return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+}
 
 
 /*

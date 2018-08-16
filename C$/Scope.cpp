@@ -1561,9 +1561,7 @@ void FunctionScope::createLlvm(LlvmObject* llvmObj) {
         if (returnType->kind == Type::Kind::Void) {
             llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
         } else {
-            auto returnValue = new llvm::AllocaInst(returnType->createLlvm(llvmObj), 0, "returnValue", llvmObj->block);
-            auto loadedReturnValue = new llvm::LoadInst(returnValue, "", llvmObj->block);
-            llvm::ReturnInst::Create(llvmObj->context, loadedReturnValue, llvmObj->block);
+            llvm::ReturnInst::Create(llvmObj->context, llvm::UndefValue::get(returnType->createLlvm(llvmObj)), llvmObj->block);
         }
     }
     llvmObj->block = oldBlock;
