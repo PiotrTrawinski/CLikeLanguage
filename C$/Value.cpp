@@ -454,6 +454,20 @@ optional<Value*> FunctionValue::interpret(Scope* scope) {
     }
     return nullptr;
 }
+optional<Value*> FunctionValue::interpretNoBody(Scope* scope) {
+    if (type && !type->interpret(scope)) {
+        return nullopt;
+    }
+    isConstexpr = true;
+    for (auto& argument : arguments) {
+        if (argument->value) {
+            internalError("function argument declaration has value", argument->position);
+        }
+        argument->status = Declaration::Status::Completed;
+        body->declarationMap.addVariableDeclaration(argument);
+    }
+    return nullptr;
+}
 bool FunctionValue::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
         const auto& other = static_cast<const FunctionValue&>(value);
