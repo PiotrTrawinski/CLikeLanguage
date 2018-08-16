@@ -57,16 +57,25 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
         status = Declaration::Status::InEvaluation;
         if (value) {
             if (variable->type) {
-                if (!variable->type->interpret(scope)) {
-                    return false;
-                }
                 auto cast = CastOperation::Create(value->position, variable->type);
                 cast->arguments.push_back(value);
                 value = cast;
             }
-            auto valueInterpret = value->interpret(scope);
-            if (!valueInterpret) return false;
-            if (valueInterpret.value()) value = valueInterpret.value();
+            if (!variable->type && isFunctionDeclaration()) {
+                auto valueInterpret = ((FunctionValue*)value)->interpretNoBody(scope);
+                if (!valueInterpret) return false;
+                if (valueInterpret.value()) value = valueInterpret.value();
+                variable->type = value->type;
+                variable->isConstexpr = true;
+                status = Declaration::Status::Completed;
+                if (!((FunctionValue*)value)->body->interpret()) {
+                    return false;
+                }
+            } else {
+                auto valueInterpret = value->interpret(scope);
+                if (!valueInterpret) return false;
+                if (valueInterpret.value()) value = valueInterpret.value();
+            }
             if (byReference && value->type->kind != Type::Kind::Reference) {
                 auto refCast = CastOperation::Create(value->position, ReferenceType::Create(value->type));
                 refCast->arguments.push_back(value);
