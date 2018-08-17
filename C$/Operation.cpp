@@ -2077,15 +2077,19 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             if (scopePtr->owner == Scope::Owner::Function) {
                 auto functionValue = ((FunctionScope*)scopePtr)->function;
                 auto returnType = ((FunctionType*)functionValue->type)->returnType;
+
                 if (arguments.size() == 0) {
                     if (returnType->kind != Type::Kind::Void) {
                         return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
                             + " got nothing", position);
                     } 
-                }
-                else if (!cmpPtr(arguments[0]->type->getEffectiveType(), returnType)) {
-                    return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
-                        + " got value of type " + DeclarationMap::toString(arguments[0]->type), position);
+                } else {
+                    CastOperation* cast = CastOperation::Create(position, returnType);
+                    cast->arguments.push_back(arguments[0]);
+                    arguments[0] = cast;
+                    auto castInterpret = arguments[0]->interpret(scope);
+                    if (!castInterpret) return nullopt;
+                    if (castInterpret.value()) arguments[0] = castInterpret.value();
                 }
                 break;
             } else {
