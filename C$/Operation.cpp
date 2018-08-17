@@ -1496,8 +1496,15 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
         }
     } else if (type->kind == Type::Kind::MaybeError) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-    } else {
-        internalError("can only cast to integer and float types in llvm stage", position);
+    } else if (type->kind == Type::Kind::RawPointer) {
+        if (arguments[0]->type->kind == Type::Kind::RawPointer) {
+            return new llvm::BitCastInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+        } else {
+            internalError("only pointer can be casted to pointer in llvm stage", position);
+        }
+    }
+    else {
+        internalError("can only cast to integer, float, maybeError and raw pointer types in llvm stage", position);
     }
     return nullptr;
 }
