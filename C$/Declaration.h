@@ -23,7 +23,6 @@ struct Declaration : Statement {
     Status status = Status::None;
     Scope* scope = nullptr;
     llvm::Value* llvmVariable;
-    bool isFunctionArgument = false;
     
 private:
     static std::vector<std::unique_ptr<Declaration>> objects;

@@ -540,7 +540,8 @@ optional<Value*> Operation::interpret(Scope* scope) {
             return errorMessageOpt("left argument of an assignment must be an l-value", position);
         }
 
-        auto cast = CastOperation::Create(arguments[1]->position, arguments[0]->type);
+        CastOperation* cast = CastOperation::Create(arguments[1]->position, arguments[0]->type->getEffectiveType());
+        
         /*if (arguments[0]->type->kind == Type::Kind::Reference) {
             cast->argType = ((ReferenceType*)arguments[0]->type)->underlyingType;
             cast->type = cast->argType;
@@ -1134,7 +1135,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         /*auto variable = (Variable*)arguments[0];
         new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), variable->getReferenceLlvm(llvmObj), llvmObj->block);
         return variable->createLlvm(llvmObj);*/
-
+        
         new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), arguments[0]->getReferenceLlvm(llvmObj), llvmObj->block);
         return arguments[0]->createLlvm(llvmObj);
     }
@@ -1170,7 +1171,8 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
         return nullopt;
     }
     if (!type->interpret(scope) || !argType->interpret(scope)) {
-        return errorMessageOpt("cannot cast to unknown type " + DeclarationMap::toString(type), position);
+        if (!onlyTry) errorMessageBool("cannot cast to unknown type " + DeclarationMap::toString(type), position);
+        return nullopt;
     }
     if (arguments[0]->valueKind == Value::ValueKind::Operation) {
         containsErrorResolve = ((Operation*)arguments[0])->containsErrorResolve;
@@ -1183,10 +1185,11 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     } 
     else if (type->kind == Type::Kind::Reference) {
         if (!isLvalue(arguments[0])){
-            return errorMessageOpt("cannot cast non-lvalue to reference type", position);
+            if (!onlyTry) errorMessageBool("cannot cast non-lvalue to reference type", position);
+            return nullopt;
         }
         if (cmpPtr(effectiveType, type->getEffectiveType())) {
-            return nullptr;
+            return arguments[0];
         }
     }
     else if (cmpPtr(effectiveType, type)) {
@@ -1724,8 +1727,11 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         }
         if (functionType && functionType->argumentTypes.size() == arguments.size()) {
             bool allMatch = true;
-            for (int i = 0; i < functionType->argumentTypes.size(); ++i){
-                if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
+            for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
+                if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
+                    allMatch = false;
+                }
+                if (!cmpPtr(functionType->argumentTypes[i]->getEffectiveType(), arguments[i]->type->getEffectiveType())) {
                     allMatch = false;
                 }
             }
@@ -1738,8 +1744,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         }
     }
     if (perfectMatch) {
-        // function = perfectMatch->variable;
-        function = nullptr;
+        function = perfectMatch->value;
         idName = searchScope->declarationMap.getIdName(perfectMatch);
         type = ((FunctionType*)perfectMatch->variable->type)->returnType;
     } else {
@@ -1792,6 +1797,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
                 }
             }
         }
+        function = viableDeclarations[matchId]->value;
         type = ((FunctionType*)possibleDeclarations[matchId]->variable->type)->returnType;
         idName = searchScope->declarationMap.getIdName(viableDeclarations[matchId]);
     }
@@ -1817,7 +1823,6 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     auto functionInterpret = function->interpret(scope);
     if (!functionInterpret) return nullopt;
     if (functionInterpret.value()) function = functionInterpret.value();
-
     if (function->valueKind == Value::ValueKind::Variable && function->isConstexpr) {
         string functionName = ((Variable*)function)->name;
         FindFunctionStatus status;
@@ -1903,8 +1908,12 @@ bool FunctionCallOperation::operator==(const Statement& value) const {
 }
 llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
     vector<llvm::Value*> args;
-    for (auto arg : arguments) {
-        args.push_back(arg->createLlvm(llvmObj));
+    for (int i = 0; i < arguments.size(); ++i) {
+        if (((FunctionType*)function->type)->argumentTypes[i]->kind == Type::Kind::Reference) {
+            args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
+        } else {
+            args.push_back(arguments[i]->createLlvm(llvmObj));
+        }
     }
     return llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
 }
@@ -2168,7 +2177,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                             + " got nothing", position);
                     } 
                 }
-                else if (!cmpPtr(arguments[0]->type, returnType)) {
+                else if (!cmpPtr(arguments[0]->type->getEffectiveType(), returnType)) {
                     return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
                         + " got value of type " + DeclarationMap::toString(arguments[0]->type), position);
                 }

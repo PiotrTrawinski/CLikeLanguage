@@ -1550,9 +1550,8 @@ void FunctionScope::createLlvm(LlvmObject* llvmObj) {
     llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "Begin", llvmObj->function);
     auto* arg = llvmObj->function->args().begin();
     for (int i = 0; i < function->arguments.size(); ++i) {
-        function->arguments[i]->llvmVariable = arg;
-        function->arguments[i]->llvmVariable->setName(function->arguments[i]->variable->name);
-        function->arguments[i]->isFunctionArgument = true;
+        function->arguments[i]->llvmVariable = function->arguments[i]->variable->type->allocaLlvm(llvmObj);
+        new llvm::StoreInst(arg, function->arguments[i]->llvmVariable, llvmObj->block);
         arg += 1;
     }
     CodeScope::createLlvm(llvmObj);

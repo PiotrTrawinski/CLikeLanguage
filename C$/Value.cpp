@@ -127,7 +127,7 @@ optional<Value*> Variable::interpret(Scope* scope) {
         warningMessage("use of possibly unitialized variable " + name, position);
     }
 
-    if (isConstexpr) {
+    if (type->kind != Type::Kind::Function && isConstexpr) {
         return declaration->value;
     }
 
@@ -151,13 +151,14 @@ bool Variable::operator==(const Statement& value) const {
     return variable;
 }*/
 llvm::Value* Variable::getReferenceLlvm(LlvmObject* llvmObj) {
-    return declaration->llvmVariable;
-}
-llvm::Value* Variable::createLlvm(LlvmObject* llvmObj) {
-    if (declaration->isFunctionArgument) {
+    if (type->kind == Type::Kind::Reference) {
+        return new llvm::LoadInst(declaration->llvmVariable, "", llvmObj->block);
+    } else {
         return declaration->llvmVariable;
     }
-    return new llvm::LoadInst(declaration->llvmVariable, "", llvmObj->block);
+}
+llvm::Value* Variable::createLlvm(LlvmObject* llvmObj) {
+    return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
 }
 
 /*
@@ -472,18 +473,7 @@ FunctionValue* FunctionValue::Create(const CodePosition& position, Type* type, S
     return objects.back().get();
 }
 optional<Value*> FunctionValue::interpret(Scope* scope) {
-    if (type && !type->interpret(scope)) {
-        return nullopt;
-    }
-    isConstexpr = true;
-    for (auto& argument : arguments) {
-        if (argument->value) {
-            internalError("function argument declaration has value", argument->position);
-        }
-        argument->status = Declaration::Status::Completed;
-        body->declarationMap.addVariableDeclaration(argument);
-    }
-    if (!body->interpret()) {
+    if (!interpretNoBody(scope) || !body->interpret()) {
         return nullopt;
     }
     return nullptr;
@@ -499,6 +489,8 @@ optional<Value*> FunctionValue::interpretNoBody(Scope* scope) {
         }
         argument->status = Declaration::Status::Completed;
         body->declarationMap.addVariableDeclaration(argument);
+        body->declarationsInitState.insert({argument, true});
+        body->declarationsOrder.push_back(argument);
     }
     return nullptr;
 }
