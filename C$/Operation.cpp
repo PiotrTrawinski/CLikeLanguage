@@ -890,6 +890,15 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
             llvmObj->block
         );
     }
+    case Kind::GetValue: {
+        switch (arguments[0]->type->kind) {
+        case Type::Kind::RawPointer: {
+            return arguments[0]->createLlvm(llvmObj);
+        }
+        default:
+            return nullptr;
+        }
+    }
     default: return nullptr;
     }
 }
@@ -917,6 +926,9 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
                 ((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block
             );
             return new llvm::LoadInst(gep, "", llvmObj->block);
+        }
+        case Type::Kind::RawPointer: {
+            return new llvm::LoadInst(arguments[0]->createLlvm(llvmObj), "", llvmObj->block);
         }
         default:
             return nullptr;
