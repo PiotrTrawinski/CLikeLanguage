@@ -1336,133 +1336,14 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
     if (type->kind == Type::Kind::Integer) {
         auto integerType = (IntegerType*)type;
         if (arguments[0]->type->kind == Type::Kind::Integer) {
-            auto sizeCast = integerType->size;
-            auto sizeArg = ((IntegerType*)arguments[0]->type)->size;
-            auto llvmI8Type = llvm::Type::getInt8Ty(llvmObj->context);
-            auto llvmI16Type = llvm::Type::getInt16Ty(llvmObj->context);
-            auto llvmI32Type = llvm::Type::getInt32Ty(llvmObj->context);
-            auto llvmI64Type = llvm::Type::getInt64Ty(llvmObj->context);
-            switch (sizeCast) {
-            case IntegerType::Size::I8:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return arg;
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::SExtInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::SExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::I16:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return arg;
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::SExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::I32:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return arg;
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::I64:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::TruncInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return arg;
-                }
-            case IntegerType::Size::U8:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return arg;
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::ZExtInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::ZExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::U16:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return arg;
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::ZExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::U32:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return arg;
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::U64:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::TruncInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return arg;
-                }
+            auto sizeCast = integerType->sizeInBytes();
+            auto sizeArg = ((IntegerType*)arguments[0]->type)->sizeInBytes();
+            if (sizeCast == sizeArg) {
+                return arg;
+            } else if (sizeCast > sizeArg) {
+                return new llvm::SExtInst(arg, integerType->createLlvm(llvmObj), "", llvmObj->block);
+            } else {
+                return new llvm::TruncInst(arg, integerType->createLlvm(llvmObj), "", llvmObj->block);
             }
         }
         else if (arguments[0]->type->kind == Type::Kind::Float) {

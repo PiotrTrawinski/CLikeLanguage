@@ -461,6 +461,24 @@ bool IntegerType::isSigned() {
         return false;
     }
 }
+int IntegerType::sizeInBytes() {
+    switch (size) {
+    case IntegerType::Size::I8:
+    case IntegerType::Size::U8:
+        return 8;
+    case IntegerType::Size::I16:
+    case IntegerType::Size::U16:
+        return 16;
+    case IntegerType::Size::I32:
+    case IntegerType::Size::U32:
+        return 32;
+    case IntegerType::Size::I64:
+    case IntegerType::Size::U64:
+        return 64;
+    default: 
+        return 0;
+    }
+}
 bool IntegerType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
         const auto& other = static_cast<const IntegerType&>(type);
