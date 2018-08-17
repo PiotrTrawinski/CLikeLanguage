@@ -41,6 +41,9 @@ llvm::Type* Type::createLlvm(LlvmObject* llvmObj) {
     }
     return nullptr;
 }
+llvm::AllocaInst* Type::allocaLlvm(LlvmObject* llvmObj, const string& name) {
+    return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
+}
 
 Type* getSuitingIntegerType(IntegerType* i1, IntegerType* i2) {
     if (i1->isSigned() || i2->isSigned()) {
@@ -235,9 +238,16 @@ StaticArrayType* StaticArrayType::Create(Type* elementType, int64_t sizeAsInt) {
     return objects.back().get();
 }
 bool StaticArrayType::interpret(Scope* scope, bool needFullDeclaration) {
-    if (size && !size->interpret(scope)) {
-        return false;
+    if (size) {
+        auto sizeInterpret = size->interpret(scope);
+        if (!sizeInterpret) return false;
+        if (sizeInterpret.value()) size = sizeInterpret.value();
+        if (size->isConstexpr) {
+            sizeAsInt = ((IntegerValue*)size)->value;
+            size = nullptr;
+        }
     }
+    
     return elementType ? elementType->interpret(scope, needFullDeclaration) : true;
 }
 bool StaticArrayType::operator==(const Type& type) const {
@@ -258,9 +268,19 @@ bool StaticArrayType::operator==(const Type& type) const {
     }
 }*/
 llvm::Type* StaticArrayType::createLlvm(LlvmObject* llvmObj) {
-    return llvm::ArrayType::get(elementType->createLlvm(llvmObj), sizeAsInt);
+    if (sizeAsInt == -1) {
+        return llvm::PointerType::get(elementType->createLlvm(llvmObj), 0);
+    } else {
+        return llvm::ArrayType::get(elementType->createLlvm(llvmObj), sizeAsInt);
+    }
 }
-
+llvm::AllocaInst* StaticArrayType::allocaLlvm(LlvmObject* llvmObj, const string& name) {
+    if (sizeAsInt == -1) {
+        return new llvm::AllocaInst(elementType->createLlvm(llvmObj), 0, size->createLlvm(llvmObj), name, llvmObj->block);
+    } else {
+        return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
+    }
+}
 
 
 /*

@@ -36,6 +36,7 @@ struct Type {
     virtual Type* getEffectiveType();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
 
     static Type* getSuitingArithmeticType(Type* val1, Type* val2);
 
@@ -114,10 +115,12 @@ struct StaticArrayType : Type {
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
 
     Type* elementType = nullptr;
     Value* size = nullptr;
     int64_t sizeAsInt = -1;
+    llvm::Value* llvmSize = nullptr;
     
 private:
     static std::vector<std::unique_ptr<StaticArrayType>> objects;

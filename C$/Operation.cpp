@@ -1493,7 +1493,7 @@ llvm::Value* CastOperation::getReferenceLlvm(LlvmObject* llvmObj) {
             auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
             if (maybeErrorType->underlyingType->kind == Type::Kind::Void) {
                 // ?T = ?void
-                auto var = new llvm::AllocaInst(type->createLlvm(llvmObj), 0, "", llvmObj->block);
+                auto var = type->allocaLlvm(llvmObj);
                 vector<llvm::Value*> indexList;
                 indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
                 indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 1));
@@ -1516,7 +1516,7 @@ llvm::Value* CastOperation::getReferenceLlvm(LlvmObject* llvmObj) {
             }
         } else {
             // ?T = T
-            auto var = new llvm::AllocaInst(type->createLlvm(llvmObj), 0, "", llvmObj->block);
+            auto var = type->allocaLlvm(llvmObj);
             vector<llvm::Value*> indexList;
             indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
             indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
@@ -1633,7 +1633,11 @@ bool ArrayIndexOperation::operator==(const Statement& value) const {
 llvm::Value* ArrayIndexOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto arg = arguments[0]->getReferenceLlvm(llvmObj);
     vector<llvm::Value*> indexList;
-    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    if (arguments[0]->type->kind == Type::Kind::StaticArray) {
+        if (((StaticArrayType*)arguments[0]->type)->sizeAsInt != -1) {
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+        }
+    }
     indexList.push_back(index->createLlvm(llvmObj));
     return llvm::GetElementPtrInst::Create(
         ((llvm::PointerType*)arg->getType())->getElementType(),

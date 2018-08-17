@@ -122,7 +122,7 @@ void Declaration::createLlvm(LlvmObject* llvmObj) {
             ((FunctionValue*)value)->createLlvm(llvmObj, variable->name);
         }
     } else {
-        llvmVariable = new llvm::AllocaInst(variable->type->createLlvm(llvmObj), 0, variable->name, llvmObj->block);
+        llvmVariable = variable->type->allocaLlvm(llvmObj, variable->name);
         if (value) {
             auto assignOperation = Operation::Create(position, Operation::Kind::Assign);
             assignOperation->arguments.push_back(variable);
