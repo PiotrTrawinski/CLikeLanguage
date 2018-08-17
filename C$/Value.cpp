@@ -427,11 +427,13 @@ llvm::Value* StaticArrayValue::createLlvm(LlvmObject* llvmObj) {
         }
         return llvm::ConstantArray::get((llvm::ArrayType*)type->createLlvm(llvmObj), llvmValues);
     } else {
-        auto arrayValue = new llvm::AllocaInst(type->createLlvm(llvmObj), 0, "", llvmObj->block);
+        auto arrayValue = type->allocaLlvm(llvmObj);
         for (int i = 0; i < values.size(); ++i) {
             vector<llvm::Value*> indexList;
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), i));
+            if (((StaticArrayType*)type)->sizeAsInt != -1) {
+                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            }
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), i));
             auto elementPtr = llvm::GetElementPtrInst::Create(
                 ((llvm::PointerType*)arrayValue->getType())->getElementType(),
                 arrayValue,
