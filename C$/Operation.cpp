@@ -1726,7 +1726,7 @@ FunctionCallOperation* FunctionCallOperation::Create(const CodePosition& positio
 FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName) {
     const auto& declarations = searchScope->declarationMap.getDeclarations(functionName);
     vector<Declaration*> viableDeclarations;
-    Declaration* perfectMatch = nullptr;
+    vector<Declaration*> perfectMatches;
     for (const auto declaration : declarations) {
         auto functionType = (FunctionType*)declaration->variable->type;
         if (functionType && functionType->kind == Type::Kind::TemplateFunction) {
@@ -1743,17 +1743,27 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
                 }
             }
             if (allMatch) {
-                perfectMatch = declaration;
-                break;
+                perfectMatches.push_back(declaration);
             } else {
                 viableDeclarations.push_back(declaration);
             }
         }
     }
-    if (perfectMatch) {
-        function = perfectMatch->value;
-        idName = searchScope->declarationMap.getIdName(perfectMatch);
-        type = ((FunctionType*)perfectMatch->variable->type)->returnType;
+    if (perfectMatches.size() == 1) {
+        function = perfectMatches.back()->value;
+        idName = searchScope->declarationMap.getIdName(perfectMatches.back());
+        type = ((FunctionType*)perfectMatches.back()->variable->type)->returnType;
+    } else if (perfectMatches.size() > 1) {
+        string message = "ambogous function call. ";
+        message += "Possible functions at lines: ";
+        for (int i = 0; i < perfectMatches.size(); ++i) {
+            message += to_string(perfectMatches[i]->position.lineNumber);
+            if (i != perfectMatches.size() - 1) {
+                message += ", ";
+            }
+        }
+        errorMessageBool(message, position);
+        return FindFunctionStatus::Error;
     } else {
         vector<optional<vector<CastOperation*>>> neededCasts;
         for (Declaration* declaration : viableDeclarations) {
@@ -1789,7 +1799,15 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
             return FindFunctionStatus::Fail;
         } 
         if (possibleDeclarations.size() > 1) {
-            errorMessageBool("ambogous function call", position);
+            string message = "ambogous function call. ";
+            message += "Possible functions at lines: ";
+            for (int i = 0; i < possibleDeclarations.size(); ++i) {
+                message += to_string(possibleDeclarations[i]->position.lineNumber);
+                if (i != possibleDeclarations.size() - 1) {
+                    message += ", ";
+                }
+            }
+            errorMessageBool(message, position);
             return FindFunctionStatus::Error;
         }
 

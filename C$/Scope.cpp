@@ -1101,7 +1101,7 @@ Declaration* Scope::findDeclaration(Variable* variable, bool ignoreClassScopes) 
             return parentScope->findDeclaration(variable, ignoreClassScopes);
         }
     }
-    else if (declarations.size() == 1) {
+    else if (declarations.size() >= 1) {
         declarations[0]->scope = this;
         switch (declarations[0]->status) {
         case Declaration::Status::None:
@@ -1120,7 +1120,7 @@ Declaration* Scope::findDeclaration(Variable* variable, bool ignoreClassScopes) 
         case Declaration::Status::Completed:
             return declarations[0];
         }
-    } else {
+    } /*else {
         string msg = "ambigous reference to variable " + variable->name + ".\n";
         msg += "possible variables at lines: \n";
         for (int i = 0; i < declarations.size(); ++i) {
@@ -1130,7 +1130,7 @@ Declaration* Scope::findDeclaration(Variable* variable, bool ignoreClassScopes) 
             }
         }
         return errorMessageNull(msg, variable->position);
-    }
+    }*/
 }
 unordered_set<Declaration*> Scope::getUninitializedDeclarations() {
     return maybeUninitializedDeclarations;
