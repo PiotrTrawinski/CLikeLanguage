@@ -1336,133 +1336,14 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
     if (type->kind == Type::Kind::Integer) {
         auto integerType = (IntegerType*)type;
         if (arguments[0]->type->kind == Type::Kind::Integer) {
-            auto sizeCast = integerType->size;
-            auto sizeArg = ((IntegerType*)arguments[0]->type)->size;
-            auto llvmI8Type = llvm::Type::getInt8Ty(llvmObj->context);
-            auto llvmI16Type = llvm::Type::getInt16Ty(llvmObj->context);
-            auto llvmI32Type = llvm::Type::getInt32Ty(llvmObj->context);
-            auto llvmI64Type = llvm::Type::getInt64Ty(llvmObj->context);
-            switch (sizeCast) {
-            case IntegerType::Size::I8:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return arg;
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::SExtInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::SExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::I16:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return arg;
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::SExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::I32:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return arg;
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::SExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::I64:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::TruncInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return arg;
-                }
-            case IntegerType::Size::U8:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return arg;
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::ZExtInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::ZExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::U16:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return arg;
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::ZExtInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::U32:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return arg;
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return new llvm::ZExtInst(arg, llvmI64Type, "", llvmObj->block);
-                }
-            case IntegerType::Size::U64:
-                switch (sizeArg) {
-                case IntegerType::Size::I8:
-                case IntegerType::Size::U8:
-                    return new llvm::TruncInst(arg, llvmI8Type, "", llvmObj->block);
-                case IntegerType::Size::I16:
-                case IntegerType::Size::U16:
-                    return new llvm::TruncInst(arg, llvmI16Type, "", llvmObj->block);
-                case IntegerType::Size::I32:
-                case IntegerType::Size::U32:
-                    return new llvm::TruncInst(arg, llvmI32Type, "", llvmObj->block);
-                case IntegerType::Size::I64:
-                case IntegerType::Size::U64:
-                    return arg;
-                }
+            auto sizeCast = integerType->sizeInBytes();
+            auto sizeArg = ((IntegerType*)arguments[0]->type)->sizeInBytes();
+            if (sizeCast == sizeArg) {
+                return arg;
+            } else if (sizeCast > sizeArg) {
+                return new llvm::SExtInst(arg, integerType->createLlvm(llvmObj), "", llvmObj->block);
+            } else {
+                return new llvm::TruncInst(arg, integerType->createLlvm(llvmObj), "", llvmObj->block);
             }
         }
         else if (arguments[0]->type->kind == Type::Kind::Float) {
@@ -1496,8 +1377,15 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
         }
     } else if (type->kind == Type::Kind::MaybeError) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-    } else {
-        internalError("can only cast to integer and float types in llvm stage", position);
+    } else if (type->kind == Type::Kind::RawPointer) {
+        if (arguments[0]->type->kind == Type::Kind::RawPointer) {
+            return new llvm::BitCastInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+        } else {
+            internalError("only pointer can be casted to pointer in llvm stage", position);
+        }
+    }
+    else {
+        internalError("can only cast to integer, float, maybeError and raw pointer types in llvm stage", position);
     }
     return nullptr;
 }
@@ -1719,7 +1607,7 @@ FunctionCallOperation* FunctionCallOperation::Create(const CodePosition& positio
 FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName) {
     const auto& declarations = searchScope->declarationMap.getDeclarations(functionName);
     vector<Declaration*> viableDeclarations;
-    Declaration* perfectMatch = nullptr;
+    vector<Declaration*> perfectMatches;
     for (const auto declaration : declarations) {
         auto functionType = (FunctionType*)declaration->variable->type;
         if (functionType && functionType->kind == Type::Kind::TemplateFunction) {
@@ -1736,17 +1624,27 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
                 }
             }
             if (allMatch) {
-                perfectMatch = declaration;
-                break;
+                perfectMatches.push_back(declaration);
             } else {
                 viableDeclarations.push_back(declaration);
             }
         }
     }
-    if (perfectMatch) {
-        function = perfectMatch->value;
-        idName = searchScope->declarationMap.getIdName(perfectMatch);
-        type = ((FunctionType*)perfectMatch->variable->type)->returnType;
+    if (perfectMatches.size() == 1) {
+        function = perfectMatches.back()->value;
+        idName = searchScope->declarationMap.getIdName(perfectMatches.back());
+        type = ((FunctionType*)perfectMatches.back()->variable->type)->returnType;
+    } else if (perfectMatches.size() > 1) {
+        string message = "ambogous function call. ";
+        message += "Possible functions at lines: ";
+        for (int i = 0; i < perfectMatches.size(); ++i) {
+            message += to_string(perfectMatches[i]->position.lineNumber);
+            if (i != perfectMatches.size() - 1) {
+                message += ", ";
+            }
+        }
+        errorMessageBool(message, position);
+        return FindFunctionStatus::Error;
     } else {
         vector<optional<vector<CastOperation*>>> neededCasts;
         for (Declaration* declaration : viableDeclarations) {
@@ -1782,7 +1680,15 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
             return FindFunctionStatus::Fail;
         } 
         if (possibleDeclarations.size() > 1) {
-            errorMessageBool("ambogous function call", position);
+            string message = "ambogous function call. ";
+            message += "Possible functions at lines: ";
+            for (int i = 0; i < possibleDeclarations.size(); ++i) {
+                message += to_string(possibleDeclarations[i]->position.lineNumber);
+                if (i != possibleDeclarations.size() - 1) {
+                    message += ", ";
+                }
+            }
+            errorMessageBool(message, position);
             return FindFunctionStatus::Error;
         }
 
@@ -2171,15 +2077,19 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             if (scopePtr->owner == Scope::Owner::Function) {
                 auto functionValue = ((FunctionScope*)scopePtr)->function;
                 auto returnType = ((FunctionType*)functionValue->type)->returnType;
+
                 if (arguments.size() == 0) {
                     if (returnType->kind != Type::Kind::Void) {
                         return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
                             + " got nothing", position);
                     } 
-                }
-                else if (!cmpPtr(arguments[0]->type->getEffectiveType(), returnType)) {
-                    return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
-                        + " got value of type " + DeclarationMap::toString(arguments[0]->type), position);
+                } else {
+                    CastOperation* cast = CastOperation::Create(position, returnType);
+                    cast->arguments.push_back(arguments[0]);
+                    arguments[0] = cast;
+                    auto castInterpret = arguments[0]->interpret(scope);
+                    if (!castInterpret) return nullopt;
+                    if (castInterpret.value()) arguments[0] = castInterpret.value();
                 }
                 break;
             } else {

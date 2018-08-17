@@ -511,8 +511,18 @@ llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj, const string& functi
     if (llvmFunction) {
         return llvmFunction;
     }
+    string uniqueFunctionName = functionName;
+    int id = 1;
+    if (llvmObj->module->getFunction(uniqueFunctionName)) {
+        uniqueFunctionName = functionName + to_string(id);
+        id += 1;
+        while (llvmObj->module->getFunction(uniqueFunctionName)) {
+            uniqueFunctionName = functionName + to_string(id);
+            id += 1;
+        }
+    }
     llvmFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction(
-        functionName, 
+        uniqueFunctionName, 
         (llvm::FunctionType*)((llvm::PointerType*)type->createLlvm(llvmObj))->getElementType())
         );
 

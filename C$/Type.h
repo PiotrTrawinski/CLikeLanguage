@@ -192,6 +192,7 @@ struct IntegerType : Type {
     static IntegerType* Create(Size size);
     
     bool isSigned();
+    int sizeInBytes();
     virtual bool operator==(const Type& type) const;
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
