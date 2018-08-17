@@ -136,6 +136,9 @@ struct ForIterData {
     Value* firstValue = nullptr;
     Value* step = nullptr;
     Value* lastValue = nullptr;
+    Declaration* iterDeclaration = nullptr;
+    Value* stepAddOperation = nullptr;
+    Value* conditionOperation = nullptr;
 };
 struct ForEachData {
     bool operator==(const ForEachData& other) const;

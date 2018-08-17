@@ -1748,11 +1748,31 @@ bool ForScope::interpret() {
             forIterData.iterVariable->type, forIterData.lastValue->type
         );
 
-        auto iterDeclaration = Declaration::Create(position);
-        iterDeclaration->variable = forIterData.iterVariable;
-        iterDeclaration->value = forIterData.firstValue;
-        iterDeclaration->status = Declaration::Status::Completed;
-        declarationMap.addVariableDeclaration(iterDeclaration);
+        forIterData.iterDeclaration = Declaration::Create(position);
+        forIterData.iterDeclaration->scope = this;
+        forIterData.iterDeclaration->variable = forIterData.iterVariable;
+        forIterData.iterDeclaration->value = forIterData.firstValue;
+        forIterData.iterDeclaration->status = Declaration::Status::Completed;
+        declarationMap.addVariableDeclaration(forIterData.iterDeclaration);
+        declarationsInitState.insert({forIterData.iterDeclaration, true});
+        declarationsOrder.push_back(forIterData.iterDeclaration);
+
+        auto stepAddOperation = Operation::Create(position, Operation::Kind::AddAssign);
+        stepAddOperation->arguments.push_back(forIterData.iterVariable);
+        stepAddOperation->arguments.push_back(forIterData.step);
+        auto addInterpret = stepAddOperation->interpret(this);
+        if (!addInterpret) internalError("couldn't create for-scope step operation", position);
+        if (addInterpret.value()) forIterData.stepAddOperation = addInterpret.value();
+        else forIterData.stepAddOperation = stepAddOperation;
+
+        auto conditionOperation = Operation::Create(position, Operation::Kind::Lte);
+        conditionOperation->arguments.push_back(forIterData.iterVariable);
+        conditionOperation->arguments.push_back(forIterData.lastValue);
+        auto conditionInterpret = conditionOperation->interpret(this);
+        if (!conditionInterpret) internalError("couldn't create for-scope condition operation", position);
+        if (conditionInterpret.value()) forIterData.conditionOperation = conditionInterpret.value();
+        else forIterData.conditionOperation = conditionOperation;
+
     } else if (holds_alternative<ForEachData>(data)) {
         auto& forEachData = get<ForEachData>(data);
 
@@ -1771,11 +1791,15 @@ bool ForScope::interpret() {
         itDeclaration->variable = forEachData.it;
         itDeclaration->status = Declaration::Status::Completed;
         declarationMap.addVariableDeclaration(itDeclaration);
+        declarationsInitState.insert({itDeclaration, true});
+        declarationsOrder.push_back(itDeclaration);
 
         auto indexDeclaration = Declaration::Create(position);
         indexDeclaration->variable = forEachData.index;
         indexDeclaration->status = Declaration::Status::Completed;
         declarationMap.addVariableDeclaration(indexDeclaration);
+        declarationsInitState.insert({indexDeclaration, true});
+        declarationsOrder.push_back(indexDeclaration);
     }
     return interpretNoUnitializedDeclarationsSet();
 }
@@ -1797,7 +1821,39 @@ bool ForEachData::operator==(const ForEachData& other) const {
         && cmpPtr(this->index, other.index);
 }
 void ForScope::createLlvm(LlvmObject* llvmObj) {
+    if (holds_alternative<ForIterData>(data)) {
+        auto& forIterData = get<ForIterData>(data);
 
+        auto forStartBlock     = llvm::BasicBlock::Create(llvmObj->context, "forStart",     llvmObj->function);
+        auto forStepBlock      = llvm::BasicBlock::Create(llvmObj->context, "forStep",      llvmObj->function);
+        auto forConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "forCondition", llvmObj->function);
+        auto forBodyBlock      = llvm::BasicBlock::Create(llvmObj->context, "for",          llvmObj->function);
+        auto afterForBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterFor",     llvmObj->function);
+
+        // start block
+        llvm::BranchInst::Create(forStartBlock, llvmObj->block);
+        llvmObj->block = forStartBlock;
+        forIterData.iterDeclaration->createLlvm(llvmObj);
+        llvm::BranchInst::Create(forConditionBlock, forStartBlock);
+        
+        // body block
+        llvmObj->block = forBodyBlock;
+        CodeScope::createLlvm(llvmObj);
+
+        // after block
+        if (!hasReturnStatement) llvm::BranchInst::Create(forStepBlock, llvmObj->block);
+
+        // step block
+        llvmObj->block = forStepBlock;
+        forIterData.stepAddOperation->createLlvm(llvmObj);
+        llvm::BranchInst::Create(forConditionBlock, forStepBlock);
+
+        // condition block
+        llvmObj->block = forConditionBlock;
+        llvm::BranchInst::Create(forBodyBlock, afterForBlock, forIterData.conditionOperation->createLlvm(llvmObj), forConditionBlock);
+        
+        llvmObj->block = afterForBlock;
+    }
 }
 
 
