@@ -2088,7 +2088,7 @@ bool IfScope::getHasReturnStatement() {
     if (elseScope) {
         return hasReturnStatement && elseScope->getHasReturnStatement();
     } else {
-        return hasReturnStatement;
+        return hasReturnStatement && conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
     }
 }
 unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
@@ -2106,7 +2106,10 @@ unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
     }
 }
 void IfScope::createLlvm(LlvmObject* llvmObj) {
-    if (elseScope) {
+    if (hasReturnStatement && conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value) {
+        CodeScope::createLlvm(llvmObj);
+    }
+    else if (elseScope) {
         auto ifBlock = llvm::BasicBlock::Create(llvmObj->context, "if", llvmObj->function);
         auto oldBlock = llvmObj->block;
         llvmObj->block = ifBlock;
