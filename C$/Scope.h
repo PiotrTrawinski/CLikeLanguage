@@ -95,6 +95,16 @@ struct CodeScope : Scope {
 private:
     static std::vector<std::unique_ptr<CodeScope>> objects;
 };
+struct GlobalScope : CodeScope {
+    static GlobalScope Instance;
+
+    bool setCDeclaration(const CodePosition& codePosition, const std::string& name, Type* type);
+    virtual void createLlvm(LlvmObject* llvmObj);
+
+private:
+    GlobalScope();
+    std::vector<Declaration*> cDeclarations;
+};
 struct FunctionValue;
 struct FunctionScope : CodeScope {
     FunctionScope(const CodePosition& position, Scope* parentScope, FunctionValue* function);

@@ -42,7 +42,34 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
     case Token::Type::Float:
         return errorMessageBool("statement cannot start with a float value", token.codePosition);
     case Token::Type::Symbol:
-        if (token.value == "{") {
+        if (token.value == "#") {
+            if (i + 1 >= tokens.size()) {
+                return errorMessageBool("uncompleted special statement (#)", token.codePosition);
+            }
+            i += 1;
+            if (tokens[i].value == "declare") {
+                if (i + 2 >= tokens.size()) {
+                    return errorMessageBool("uncompleted #declare statement", token.codePosition);
+                }
+                if (tokens[i + 1].type != Token::Type::Label) {
+                    return errorMessageBool("expected #declare statement function name, got " 
+                        + tokens[i+1].value, tokens[i+1].codePosition
+                    );
+                }
+                auto position = tokens[i+1].codePosition;
+                auto functionName = tokens[i+1].value;
+                i += 2;
+                auto functionType = getType(tokens, i, {";"});
+                if (!functionType) return false;
+                if (!GlobalScope::Instance.setCDeclaration(position, functionName, functionType)) {
+                    return false;
+                }
+                return Scope::ReadStatementValue(Value::Create(token.codePosition, Value::ValueKind::Empty));
+            } else {
+                return errorMessageBool("unknown special statement (#)", token.codePosition);
+            }
+        }
+        else if (token.value == "{") {
             i += 1;
             auto codeScope = CodeScope::Create(token.codePosition, Scope::Owner::None, this);
             if (!codeScope->createCodeTree(tokens, i)) {
@@ -1180,7 +1207,11 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
                         return errorMessageBool("redefinition of class declaration", statementValue.statement->position);
                     }
                 }
-                statements.push_back(statementValue.statement);
+                if (statementValue.statement->kind != Statement::Kind::Value
+                    || ((Value*)statementValue.statement)->valueKind != Value::ValueKind::Empty) 
+                {
+                    statements.push_back(statementValue.statement);
+                }
             }
         } else {
             return false;
@@ -1415,6 +1446,42 @@ void CodeScope::createLlvm(LlvmObject* llvmObj) {
         }
     }
 }
+
+
+/*
+    GlobalScope
+*/
+GlobalScope::GlobalScope() : CodeScope(CodePosition(nullptr,0,0),Scope::Owner::None,nullptr,true) {}
+GlobalScope GlobalScope::Instance = GlobalScope();
+bool GlobalScope::setCDeclaration(const CodePosition& codePosition, const string& name, Type* type) {
+    if (type->kind != Type::Kind::Function) {
+        return errorMessageBool("declaration has to be of function type, got " + DeclarationMap::toString(type), codePosition);
+    }
+    Declaration* declaration = Declaration::Create(codePosition);
+    declaration->status = Declaration::Status::Completed;
+    declaration->scope = this;
+    declaration->value = FunctionValue::Create(codePosition, type, this);
+    declaration->variable = Variable::Create(codePosition, name);
+    declaration->variable->type = type;
+    declaration->variable->isConstexpr = true;
+    declaration->variable->isConst = true;
+    auto addToMapStatus = declarationMap.addFunctionDeclaration(declaration);
+    if (!addToMapStatus) {
+        return errorMessageBool("error including C function " + name, codePosition);
+    }
+    cDeclarations.push_back(declaration);
+    return true;
+}
+void GlobalScope::createLlvm(LlvmObject* llvmObj) {
+    for (auto declaration : cDeclarations) {
+        ((FunctionValue*)declaration->value)->llvmFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction(
+            declaration->variable->name, 
+            (llvm::FunctionType*)((llvm::PointerType*)declaration->variable->type->createLlvm(llvmObj))->getElementType()
+        ));
+    }
+    CodeScope::createLlvm(llvmObj);
+}
+
 
 /*
     ClassScope
