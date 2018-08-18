@@ -1,7 +1,7 @@
 #include <iostream>
 #include "parsing.h"
 #include "codeTreeCreating.h"
-#include "interpreting.h"
+//#include "interpreting.h"
 #include "llvmCreating.h"
 #include "Value.h"
 #include <chrono>
@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     }
 
     start = high_resolution_clock::now();
-    bool statusInterpreting = interpret(globalScope);
+    bool statusInterpreting = globalScope->interpret();
     auto interpretingTime = nanoToSec(duration_cast<nanoseconds>(high_resolution_clock::now() - start).count());
     if (!statusInterpreting) {
         cerr << "Compiling failed: there were errors during interpreting\n";
@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
     start = high_resolution_clock::now();
     auto result = llvmObj->executionEngine->runFunctionAsMain(mainFunction, {}, nullptr);
     auto runTime = nanoToSec(duration_cast<nanoseconds>(high_resolution_clock::now() - start).count());
+    cout << '\n';
     cout << "--------------------------------------\n";
     cout << "| Run completed\n";
     cout << "| - return value : " << result << '\n';

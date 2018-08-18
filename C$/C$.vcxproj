@@ -130,7 +130,6 @@
     <ClCompile Include="errorMessages.cpp" />
     <ClCompile Include="globalVariables.cpp" />
     <ClCompile Include="codeTreeCreating.cpp" />
-    <ClCompile Include="interpreting.cpp" />
     <ClCompile Include="Keywords.cpp" />
     <ClCompile Include="llvmCreating.cpp" />
     <ClCompile Include="main.cpp" />
@@ -152,7 +151,6 @@
     <ClInclude Include="FileInfo.h" />
     <ClInclude Include="globalVariables.h" />
     <ClInclude Include="codeTreeCreating.h" />
-    <ClInclude Include="interpreting.h" />
     <ClInclude Include="keywords.h" />
     <ClInclude Include="llvmCreating.h" />
     <ClInclude Include="llvmInclude.h" />

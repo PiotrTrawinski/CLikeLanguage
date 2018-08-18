@@ -2,12 +2,10 @@
 
 using namespace std;
 
-CodeScope* createCodeTree(vector<Token> tokens) {
-    auto globalScope = CodeScope::Create(CodePosition(nullptr, 0, 0), Scope::Owner::None, nullptr, true);
-
+GlobalScope* createCodeTree(vector<Token> tokens) {
     int i = 0;
-    if (globalScope->createCodeTree(tokens, i)) {
-        return globalScope;
+    if (GlobalScope::Instance.createCodeTree(tokens, i)) {
+        return &GlobalScope::Instance;
     } else {
         return nullptr;
     }
