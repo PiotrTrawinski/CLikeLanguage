@@ -1333,11 +1333,12 @@ bool CastOperation::operator==(const Statement& value) const {
 }*/
 llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
     auto arg = arguments[0]->createLlvm(llvmObj);
+    auto arg0Type = arguments[0]->type->getEffectiveType();
     if (type->kind == Type::Kind::Integer) {
         auto integerType = (IntegerType*)type;
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
+        if (arg0Type->kind == Type::Kind::Integer) {
             auto sizeCast = integerType->sizeInBytes();
-            auto sizeArg = ((IntegerType*)arguments[0]->type)->sizeInBytes();
+            auto sizeArg = ((IntegerType*)arg0Type)->sizeInBytes();
             if (sizeCast == sizeArg) {
                 return arg;
             } else if (sizeCast > sizeArg) {
@@ -1346,7 +1347,7 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
                 return new llvm::TruncInst(arg, integerType->createLlvm(llvmObj), "", llvmObj->block);
             }
         }
-        else if (arguments[0]->type->kind == Type::Kind::Float) {
+        else if (arg0Type->kind == Type::Kind::Float) {
             if (integerType->isSigned()) {
                 return new llvm::FPToSIInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
             } else {
@@ -1358,14 +1359,14 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
         }
     } else if (type->kind == Type::Kind::Float) {
         auto floatType = (FloatType*)type;
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
-            if (((IntegerType*)arguments[0]->type)->isSigned()) {
+        if (arg0Type->kind == Type::Kind::Integer) {
+            if (((IntegerType*)arg0Type)->isSigned()) {
                 return new llvm::SIToFPInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
             } else {
                 return new llvm::UIToFPInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
             }
         } 
-        else if (arguments[0]->type->kind == Type::Kind::Float) {
+        else if (arg0Type->kind == Type::Kind::Float) {
             if (floatType->size == FloatType::Size::F32) {
                 return new llvm::FPTruncInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
             } else {
@@ -1378,7 +1379,7 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
     } else if (type->kind == Type::Kind::MaybeError) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
     } else if (type->kind == Type::Kind::RawPointer) {
-        if (arguments[0]->type->kind == Type::Kind::RawPointer) {
+        if (arg0Type->kind == Type::Kind::RawPointer) {
             return new llvm::BitCastInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
         } else {
             internalError("only pointer can be casted to pointer in llvm stage", position);
