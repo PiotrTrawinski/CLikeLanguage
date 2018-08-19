@@ -1623,8 +1623,10 @@ void FunctionScope::createLlvm(LlvmObject* llvmObj) {
     llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "Begin", llvmObj->function);
     auto* arg = llvmObj->function->args().begin();
     for (int i = 0; i < function->arguments.size(); ++i) {
-        function->arguments[i]->llvmVariable = function->arguments[i]->variable->type->allocaLlvm(llvmObj);
-        new llvm::StoreInst(arg, function->arguments[i]->llvmVariable, llvmObj->block);
+        auto funArg = function->arguments[i];
+        funArg->llvmVariable = funArg->variable->type->allocaLlvm(llvmObj);
+        funArg->llvmVariable->setName(funArg->variable->name);
+        new llvm::StoreInst(arg, funArg->llvmVariable, llvmObj->block);
         arg += 1;
     }
     CodeScope::createLlvm(llvmObj);
