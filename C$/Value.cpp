@@ -358,15 +358,17 @@ StaticArrayValue* StaticArrayValue::Create(const CodePosition& position) {
     return objects.back().get();
 }
 optional<Value*> StaticArrayValue::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+
     vector<Type*> elementTypes;
     for (auto& element : values) {
         auto interpretValue = element->interpret(scope);
-        if (!interpretValue) {
-            return nullopt;
-        }
-        if (interpretValue.value()) {
-            element = interpretValue.value();
-        }
+        if (!interpretValue) return nullopt;
+        if (interpretValue.value()) element = interpretValue.value();
+
         bool found = false;
         for (auto& elementType : elementTypes) {
             if (*element->type->getEffectiveType() == *elementType) {
@@ -398,6 +400,14 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
 
                 return errorMessageOpt(message, position);
             }
+        }
+        for (auto& element : values) {
+            auto castToDeduced = CastOperation::Create(position, deducedType);
+            castToDeduced->arguments.push_back(element);
+            auto castInterpret = castToDeduced->interpret(scope);
+            if (!castInterpret) internalError("successfully deduced array type, but couldn't cast memebers to deduced type", position);
+            else if (castInterpret.value()) element = castInterpret.value();
+            else element = castToDeduced;
         }
         type = StaticArrayType::Create(deducedType, values.size());
     }
