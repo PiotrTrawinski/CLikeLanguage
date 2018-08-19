@@ -1129,12 +1129,9 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         return llvm::BinaryOperator::CreateOr(arg1, arg2, "", llvmObj->block);
     }
     case Kind::Assign: {
-        /*auto variable = (Variable*)arguments[0];
-        new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), variable->getReferenceLlvm(llvmObj), llvmObj->block);
-        return variable->createLlvm(llvmObj);*/
-        
-        new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), arguments[0]->getReferenceLlvm(llvmObj), llvmObj->block);
-        return arguments[0]->createLlvm(llvmObj);
+        auto arg0Reference = arguments[0]->getReferenceLlvm(llvmObj);
+        new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), arg0Reference, llvmObj->block);
+        return new llvm::LoadInst(arg0Reference, "", llvmObj->block);
     }
     default:
         internalError("unexpected operation when creating llvm", position);
