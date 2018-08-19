@@ -155,9 +155,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
             default:
                 break;
         }
-        if (type->kind == Type::Kind::Void) {
-            return errorMessageOpt("cannot getValue ($) of type void", position);
-        }
         break;
     }
     case Kind::Allocation:
@@ -1814,16 +1811,26 @@ bool FunctionCallOperation::operator==(const Statement& value) const {
     }
 }
 llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
+    if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Reference) {
+        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+    } else {
+        return getReferenceLlvm(llvmObj);
+    }
+}
+llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     vector<llvm::Value*> args;
+    auto functionType = (FunctionType*)function->type;
     for (int i = 0; i < arguments.size(); ++i) {
-        if (((FunctionType*)function->type)->argumentTypes[i]->kind == Type::Kind::Reference) {
+        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
             args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
         } else {
             args.push_back(arguments[i]->createLlvm(llvmObj));
         }
     }
+
     return llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
 }
+
 
 /*unique_ptr<Value> FunctionCallOperation::copy() {
     auto value = make_unique<FunctionCallOperation>(position);
@@ -2091,6 +2098,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                     auto castInterpret = arguments[0]->interpret(scope);
                     if (!castInterpret) return nullopt;
                     if (castInterpret.value()) arguments[0] = castInterpret.value();
+                    arguments[0]->type = returnType;
                 }
                 break;
             } else {
@@ -2122,7 +2130,11 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
             return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
         }
         else {
-            return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->createLlvm(llvmObj), llvmObj->block);
+            if (arguments[0]->type->kind == Type::Kind::Reference) {
+                return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->getReferenceLlvm(llvmObj), llvmObj->block);
+            } else {
+                return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->createLlvm(llvmObj), llvmObj->block);
+            }
         }
     }
     return nullptr;
