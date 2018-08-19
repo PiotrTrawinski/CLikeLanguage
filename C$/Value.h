@@ -125,6 +125,7 @@ struct StaticArrayValue : Value {
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     std::vector<Value*> values;
+    bool wasInterpreted = false;
     
 private:
     static std::vector<std::unique_ptr<StaticArrayValue>> objects;

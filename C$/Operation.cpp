@@ -1236,10 +1236,24 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     }
     else if (type->kind == Type::Kind::Integer) {
         if (effectiveType->kind == Type::Kind::Integer) {
+            if (arguments[0]->isConstexpr) {
+                if (arguments[0]->valueKind == Value::ValueKind::Char) {
+                    auto intValue = IntegerValue::Create(position, ((CharValue*)arguments[0])->value);
+                    intValue->type = type;
+                    return intValue;
+                }
+                arguments[0]->type = type;
+                return arguments[0];
+            }
             if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
         if (effectiveType->kind == Type::Kind::Float) {
+            if (arguments[0]->isConstexpr) {
+                auto intValue = IntegerValue::Create(position, ((FloatValue*)arguments[0])->value);
+                intValue->type = type;
+                return intValue;
+            }
             if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
@@ -1256,10 +1270,24 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     }
     else if (type->kind == Type::Kind::Float) {
         if (effectiveType->kind == Type::Kind::Integer) {
+            if (arguments[0]->isConstexpr) {
+                Value* floatValue;
+                if (arguments[0]->valueKind == Value::ValueKind::Integer) {
+                    floatValue = FloatValue::Create(position, ((IntegerValue*)arguments[0])->value);
+                } else {
+                    floatValue = FloatValue::Create(position, ((CharValue*)arguments[0])->value);
+                }
+                floatValue->type = type;
+                return floatValue;
+            }
             if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
         if (effectiveType->kind == Type::Kind::Float) {
+            if (arguments[0]->isConstexpr) {
+                arguments[0]->type = type;
+                return arguments[0];
+            }
             if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
