@@ -494,123 +494,129 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     }
                 }
                 else if (tokens[i].value == "<") {
-                    // template function value
-                    auto templateFunction = FunctionValue::Create(tokens[i].codePosition, nullptr, this);
-                    auto templateFunctionType = TemplateFunctionType::Create();
-                    i += 1;
-                    while (tokens[i].type == Token::Type::Label && tokens[i+1].value == ",") {
-                        templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
-                        i += 2;
-                    }
-                    if (tokens[i].type != Token::Type::Label) {
-                        return errorMessageOpt("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
-                    }
-                    if (tokens[i + 1].value != ">") {
-                        return errorMessageOpt("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
-                    }
-                    templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
-                    i += 2;
-                    if (tokens[i].value != "(") {
-                        return errorMessageOpt("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
-                    }
-                    i += 1;
-                    if (tokens[i].value != ")") {
-                        while (true) {
-                            if (tokens[i].type != Token::Type::Label) {
-                                return errorMessageOpt("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
-                            }
-                            if (tokens[i+1].value != ":") {
-                                return errorMessageOpt("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
-                            }
-                            int declarationStart = i;
-                            //templateFunction->argumentNames.push_back(tokens[i].value);
-                            i += 2;
-                            auto type = getType(tokens, i, {",", ")"});
-                            if (!type) { return nullopt; }
-                            templateFunctionType->argumentTypes.push_back(type);
-                            templateFunction->arguments.push_back(Declaration::Create(tokens[declarationStart].codePosition));
-                            templateFunction->arguments.back()->variable->name = tokens[declarationStart].value;
-                            templateFunction->arguments.back()->variable->type = type;
-                            if (tokens[i].value == ")") {
-                                break;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                    }
-                    i += 1;
-                    if (tokens[i].value + tokens[i + 1].value == "->") {
-                        i += 2;
-                        templateFunctionType->returnType = getType(tokens, i, {"{"});
-                        if (!templateFunctionType->returnType) { return nullopt; }
-                    } else {
-                        templateFunctionType->returnType = Type::Create(Type::Kind::Void);
-                    }
-                    i += 1;
-                    templateFunction->type = templateFunctionType;
-                    if (!templateFunction->body->createCodeTree(tokens, i)) {
-                        return nullopt;
-                    }
-                    out.push_back(templateFunction);
-                    lastWasLambda = 1;
-                    expectValue = false;
-                }
-                else if (tokens[i].value == "[") {
-                    int firstSquereBracketIndex = i;
-                    // static array ([x, y, z, ...]) or type cast ([T])
-                    int openSquereBrackets = 1;
+                    // template function value (<T1,T2,..>(x:T,..)->U{}) or type cast (<T>)
+                    // assume it's template function value and check if it makes sense
+                    bool isTemplateFunctionValue = true;
+
+                    int openTypeBrackets = 1;
                     int j = i+1;
-                    while (j < tokens.size() && openSquereBrackets != 0) {
-                        if (tokens[j].value == "[") {
-                            openSquereBrackets += 1;
-                        } else if (tokens[j].value == "]") {
-                            openSquereBrackets -= 1;
+                    while (j < tokens.size() && openTypeBrackets != 0) {
+                        if (tokens[j].value == "<") {
+                            openTypeBrackets += 1;
+                        } else if (tokens[j].value == ">") {
+                            openTypeBrackets -= 1;
                         }
                         j += 1;
                     }
-                    if (openSquereBrackets != 0) {
-                        return errorMessageOpt("missing closing ']'", tokens[i].codePosition);
+                    if (tokens[j].value == "(") {
+                        int openBrackets = 1;
+                        j += 1;
+                        while (j < tokens.size() && openBrackets != 0) {
+                            if (tokens[j].value == "(") {
+                                openBrackets += 1;
+                            } else if (tokens[j].value == ")") {
+                                openBrackets -= 1;
+                            }
+                            j += 1;
+                        }
+                        if (tokens[j].value != "{" && tokens[j].value + tokens[j + 1].value != "->") {
+                            isTemplateFunctionValue = false;
+                        }
+                    } else {
+                        isTemplateFunctionValue = false;
                     }
 
-                    if (tokens[j].type != Token::Type::Symbol || tokens[j].value == "(" || tokens[j].value == "!" || tokens[j].value == "@"
-                        || tokens[j].value == "~"|| tokens[j].value == "$"|| tokens[j].value == "[") {
-                        // type cast
+                    if (isTemplateFunctionValue) {
+                        auto templateFunction = FunctionValue::Create(tokens[i].codePosition, nullptr, this);
+                        auto templateFunctionType = TemplateFunctionType::Create();
                         i += 1;
-                        auto type = getType(tokens, i, {"]"});
+                        while (tokens[i].type == Token::Type::Label && tokens[i+1].value == ",") {
+                            templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
+                            i += 2;
+                        }
+                        if (tokens[i].type != Token::Type::Label) {
+                            return errorMessageOpt("expected template type name, got " + tokens[i].value, tokens[i].codePosition);
+                        }
+                        if (tokens[i + 1].value != ">") {
+                            return errorMessageOpt("expected '>', got " + tokens[i+1].value, tokens[i+1].codePosition);
+                        }
+                        templateFunctionType->templateTypes.push_back(TemplateType::Create(tokens[i].value));
+                        i += 2;
+                        if (tokens[i].value != "(") {
+                            return errorMessageOpt("expected start of templated function type '(', got" + tokens[i].value, tokens[i].codePosition);
+                        }
+                        i += 1;
+                        if (tokens[i].value != ")") {
+                            while (true) {
+                                if (tokens[i].type != Token::Type::Label) {
+                                    return errorMessageOpt("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
+                                }
+                                if (tokens[i+1].value != ":") {
+                                    return errorMessageOpt("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
+                                }
+                                int declarationStart = i;
+                                //templateFunction->argumentNames.push_back(tokens[i].value);
+                                i += 2;
+                                auto type = getType(tokens, i, {",", ")"});
+                                if (!type) { return nullopt; }
+                                templateFunctionType->argumentTypes.push_back(type);
+                                templateFunction->arguments.push_back(Declaration::Create(tokens[declarationStart].codePosition));
+                                templateFunction->arguments.back()->variable->name = tokens[declarationStart].value;
+                                templateFunction->arguments.back()->variable->type = type;
+                                if (tokens[i].value == ")") {
+                                    break;
+                                } else {
+                                    i += 1;
+                                }
+                            }
+                        }
+                        i += 1;
+                        if (tokens[i].value + tokens[i + 1].value == "->") {
+                            i += 2;
+                            templateFunctionType->returnType = getType(tokens, i, {"{"});
+                            if (!templateFunctionType->returnType) { return nullopt; }
+                        } else {
+                            templateFunctionType->returnType = Type::Create(Type::Kind::Void);
+                        }
+                        i += 1;
+                        templateFunction->type = templateFunctionType;
+                        if (!templateFunction->body->createCodeTree(tokens, i)) {
+                            return nullopt;
+                        }
+                        out.push_back(templateFunction);
+                        lastWasLambda = 1;
+                        expectValue = false;
+                    } else {
+                        // type cast
+                        int startOfCastIndex = i;
+                        i += 1;
+                        auto type = getType(tokens, i, {">"});
                         if (!type) {
                             return nullopt;
                         }
-                        /*i += 2;
-                        auto argument = getValue(tokens, i, {")"}, true);
-                        if (!argument) {
-                            return nullopt;
-                        }
-                        auto castOperation = CastOperation::Create(tokens[firstSquereBracketIndex].codePosition, type);
-                        castOperation->arguments.push_back(argument);
-                        appendOperator(stack, out, castOperation);
-                        expectValue = false;*/
                         i += 1;
-                        auto castOperation = CastOperation::Create(tokens[firstSquereBracketIndex].codePosition, type);
+                        auto castOperation = CastOperation::Create(tokens[startOfCastIndex].codePosition, type);
                         appendOperator(stack, out, castOperation);
                         expectValue = true;
-                    } else {
-                        // static array
-                        auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);
-                        do {
-                            i += 1;
-                            auto value = getValue(tokens, i, {",", "]"});
-                            if (!value) {
-                                return nullopt;
-                            }
-                            if (value->valueKind == Value::ValueKind::Empty) {
-                                return errorMessageOpt("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
-                            }
-                            staticArray->values.push_back(value);
-                        } while(tokens[i].value != "]");
-                        i += 1;
-                        out.push_back(staticArray);
-                        expectValue = false;
                     }
+                }
+                else if (tokens[i].value == "[") {
+                    // static array ([x, y, z, ...])
+                    auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);
+                    do {
+                        i += 1;
+                        auto value = getValue(tokens, i, {",", "]"});
+                        if (!value) {
+                            return nullopt;
+                        }
+                        if (value->valueKind == Value::ValueKind::Empty) {
+                            return errorMessageOpt("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
+                        }
+                        staticArray->values.push_back(value);
+                    } while(tokens[i].value != "]");
+                    i += 1;
+                    out.push_back(staticArray);
+                    expectValue = false;
                 } else if (tokens[i].value == "-") {
                     appendOperator(stack, out, Operation::Kind::Minus, tokens[i++].codePosition);
                     expectValue = true;
@@ -1029,6 +1035,8 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             switch (typeValue) {
             case TypeKeyword::Value::Int:
                 type = IntegerType::Create(IntegerType::Size::I64); break;
+            case TypeKeyword::Value::Byte:
+                type = IntegerType::Create(IntegerType::Size::U8); break;
             case TypeKeyword::Value::I8:
                 type = IntegerType::Create(IntegerType::Size::I8);  break;
             case TypeKeyword::Value::I16:
@@ -1617,8 +1625,10 @@ void FunctionScope::createLlvm(LlvmObject* llvmObj) {
     llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "Begin", llvmObj->function);
     auto* arg = llvmObj->function->args().begin();
     for (int i = 0; i < function->arguments.size(); ++i) {
-        function->arguments[i]->llvmVariable = function->arguments[i]->variable->type->allocaLlvm(llvmObj);
-        new llvm::StoreInst(arg, function->arguments[i]->llvmVariable, llvmObj->block);
+        auto funArg = function->arguments[i];
+        funArg->llvmVariable = funArg->variable->type->allocaLlvm(llvmObj);
+        funArg->llvmVariable->setName(funArg->variable->name);
+        new llvm::StoreInst(arg, funArg->llvmVariable, llvmObj->block);
         arg += 1;
     }
     CodeScope::createLlvm(llvmObj);

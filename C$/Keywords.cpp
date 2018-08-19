@@ -16,6 +16,7 @@ namespace {
         keywordLabels["continue"] = std::make_unique<FlowStatementKeyword>(FlowStatementKeyword::Value::Continue);
         keywordLabels["remove"]   = std::make_unique<FlowStatementKeyword>(FlowStatementKeyword::Value::Remove);
         keywordLabels["int"]      = std::make_unique<TypeKeyword>(TypeKeyword::Value::Int);
+        keywordLabels["byte"]     = std::make_unique<TypeKeyword>(TypeKeyword::Value::Byte);
         keywordLabels["i8"]       = std::make_unique<TypeKeyword>(TypeKeyword::Value::I8);
         keywordLabels["i16"]      = std::make_unique<TypeKeyword>(TypeKeyword::Value::I16);
         keywordLabels["i32"]      = std::make_unique<TypeKeyword>(TypeKeyword::Value::I32);

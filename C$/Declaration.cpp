@@ -83,25 +83,17 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
             }
             if (!variable->type) {
                 if (byReference) {
+                    auto refCast = CastOperation::Create(value->position, ReferenceType::Create(value->type));
+                    refCast->arguments.push_back(value);
+                    value = refCast;
+                    auto valueInterpret = value->interpret(scope);
+                    if (!valueInterpret) return false;
+                    if (valueInterpret.value()) value = valueInterpret.value();
                     variable->type = ReferenceType::Create(value->type->getEffectiveType());
                 } else {
                     variable->type = value->type->getEffectiveType();
                 }
             }
-            /*if (byReference && value->type->kind != Type::Kind::Reference) {
-                auto refCast = CastOperation::Create(value->position, ReferenceType::Create(value->type));
-                refCast->arguments.push_back(value);
-                auto refCastInterpret = refCast->interpret(scope);
-                if (!refCastInterpret) return false;
-                if (refCastInterpret.value()) value = refCastInterpret.value();
-                else value = refCastInterpret.value();
-                variable->type = value->type;
-            }
-            else if (!byReference && value->type->kind == Type::Kind::Reference) {
-                variable->type = ((ReferenceType*)value->type)->underlyingType;
-            } else {
-                variable->type = value->type;
-            }*/
             variable->isConstexpr = variable->isConst && value->isConstexpr;
         } else if (variable->type && variable->type->kind == Type::Kind::Reference) {
             return errorMessageBool("cannot declare reference type variable without value", position);
