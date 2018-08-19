@@ -1035,6 +1035,8 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             switch (typeValue) {
             case TypeKeyword::Value::Int:
                 type = IntegerType::Create(IntegerType::Size::I64); break;
+            case TypeKeyword::Value::Byte:
+                type = IntegerType::Create(IntegerType::Size::U8); break;
             case TypeKeyword::Value::I8:
                 type = IntegerType::Create(IntegerType::Size::I8);  break;
             case TypeKeyword::Value::I16:

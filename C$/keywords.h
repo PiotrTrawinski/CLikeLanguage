@@ -22,7 +22,7 @@ private:
 };
 struct TypeKeyword : Keyword {
     enum class Value {
-        Int, I8, I16, I32, I64, U8, U16, U32, U64,
+        Int, Byte, I8, I16, I32, I64, U8, U16, U32, U64,
         Float, F32, F64,
         Bool,
         String,
