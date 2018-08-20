@@ -118,11 +118,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
                 + " has no field named " + field->name, position
             );
         }
-        if (viableDeclarations.size() > 1) {
-            return errorMessageOpt("class " + DeclarationMap::toString(effectiveType1)
-                + " has more then 1 field named " + field->name, position
-            );
-        }
         Declaration* declaration = viableDeclarations.back();
         if (declaration->variable->isConstexpr && declaration->value->valueKind != Value::ValueKind::FunctionValue) {
             return declaration->value;
@@ -1772,24 +1767,12 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         && (((Operation*)function)->kind == Operation::Kind::Dot)
         && ((Variable*)((Operation*)function)->arguments[1])->isConstexpr) {
         auto dotOperation = (Operation*)function;
-        auto functionType = (FunctionType*)dotOperation->type;
-        Variable* var = (Variable*)dotOperation->arguments[1];
-        if (functionType->argumentTypes.size()-1 != arguments.size()) {
-            return errorMessageOpt("expected " + to_string(functionType->argumentTypes.size()-1) 
-                + " arguments, got "+ to_string(arguments.size()), position
-            );
-        }
-        for (int i = 0; i < functionType->argumentTypes.size()-1; ++i) {
-            if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
-                auto cast = CastOperation::Create(position, functionType->argumentTypes[i]);
-                cast->arguments.push_back(arguments[i]);
-                auto castInterpret = cast->interpret(scope);
-                if (!castInterpret) return nullopt;
-                if (castInterpret.value()) arguments[i] = castInterpret.value();
-                else arguments[i] = cast;
-            }
-        }
-        if (dotOperation->arguments[0]->type->kind == Type::Kind::Class) {
+        auto var = (Variable*)dotOperation->arguments[1];
+        auto arg0Type = dotOperation->arguments[0]->type;
+        ClassScope* classScope = nullptr;
+
+        if (arg0Type->kind == Type::Kind::Class) {
+            classScope = ((ClassType*)arg0Type)->declaration->body;
             auto thisArgument = Operation::Create(position, Operation::Kind::Address);
             thisArgument->arguments.push_back(dotOperation->arguments[0]);
             if (!thisArgument->interpret(scope)) {
@@ -1797,9 +1780,15 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
             }
             arguments.push_back(thisArgument);
         } else {
+            classScope = ((ClassType*)((RawPointerType*)arg0Type)->underlyingType)->declaration->body;
             arguments.push_back(dotOperation->arguments[0]);
         }
-        type = functionType->returnType;
+
+        switch (findFunction(scope, classScope, var->name)) {
+        case FindFunctionStatus::Error:   return nullopt;
+        case FindFunctionStatus::Fail:    return errorMessageOpt("no fitting class function to call", position);
+        case FindFunctionStatus::Success: break;
+        }
     }
     else if (function->type->kind == Type::Kind::Function) {
         auto functionType = (FunctionType*)function->type;
