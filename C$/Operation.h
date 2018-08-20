@@ -31,6 +31,8 @@ struct Operation : Value {
         Continue,
         Return,
         ErrorResolve,
+        Sizeof,
+        Typesize,
         LeftBracket // not really operator - only for convinience in reverse polish notation
     };
 
@@ -337,4 +339,16 @@ struct ErrorResolveOperation : Operation {
 
 private:
     static std::vector<std::unique_ptr<ErrorResolveOperation>> objects;
+};
+
+struct SizeofOperation : Operation {
+    SizeofOperation(const CodePosition& position);
+    static SizeofOperation* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual bool operator==(const Statement& value) const;
+
+    Type* argType = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<SizeofOperation>> objects;
 };

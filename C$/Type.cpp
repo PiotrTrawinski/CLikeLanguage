@@ -1,6 +1,8 @@
 #include "Type.h"
 #include "Value.h"
 #include "ClassDeclaration.h"
+#include "Declaration.h"
+#include "Operation.h"
 
 using namespace std;
 
@@ -28,6 +30,19 @@ bool Type::operator==(const Type& type) const {
 }
 Type* Type::getEffectiveType() {
     return this;
+}
+Value* Type::typesize(Scope* scope) {
+    return IntegerValue::Create(CodePosition(nullptr,0,0), sizeInBytes());
+}
+int Type::sizeInBytes() {
+    switch (kind) {
+    case Kind::Bool:
+        return 1;
+    case Kind::Void:
+        return 0;
+    default:
+        return 0;
+    }
 }
 /*unique_ptr<Type> Type::copy() {
     return make_unique<Type>(this->kind);
@@ -99,6 +114,9 @@ bool OwnerPointerType::operator==(const Type& type) const {
         return false;
     }
 }
+int OwnerPointerType::sizeInBytes() {
+    return 8;
+}
 /*unique_ptr<Type> OwnerPointerType::copy() {
     return make_unique<OwnerPointerType>(this->underlyingType->copy());
 }*/
@@ -128,6 +146,9 @@ bool RawPointerType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+int RawPointerType::sizeInBytes() {
+    return 8;
 }
 /*unique_ptr<Type> RawPointerType::copy() {
     return make_unique<RawPointerType>(this->underlyingType->copy());
@@ -163,7 +184,19 @@ bool MaybeErrorType::operator==(const Type& type) const {
         return false;
     }
 }
-
+Value* MaybeErrorType::typesize(Scope* scope) {
+    auto position = CodePosition(nullptr,0,0);
+    auto add = Operation::Create(position, Operation::Kind::Add);
+    add->arguments.push_back(IntegerValue::Create(position, 8));
+    add->arguments.push_back(underlyingType->typesize(scope));
+    auto addInterpret = add->interpret(scope);
+    if (!addInterpret) internalError("couldn't calculate sizeof maybe error type");
+    if (addInterpret.value()) return addInterpret.value();
+    else return add;
+}
+int MaybeErrorType::sizeInBytes() {
+    return underlyingType->sizeInBytes() + 8;
+}
 /*unique_ptr<Type> MaybeErrorType::copy() {
     return make_unique<MaybeErrorType>(this->underlyingType->copy());
 }*/
@@ -206,6 +239,9 @@ bool ReferenceType::operator==(const Type& type) const {
 }
 Type* ReferenceType::getEffectiveType() {
     return underlyingType->getEffectiveType();
+}
+int ReferenceType::sizeInBytes() {
+    return 8;
 }
 /*unique_ptr<Type> ReferenceType::copy() {
     return make_unique<ReferenceType>(this->underlyingType->copy());
@@ -260,6 +296,30 @@ bool StaticArrayType::operator==(const Type& type) const {
         return false;
     }
 }
+Value* StaticArrayType::typesize(Scope* scope) {
+    Operation* mul;
+    if (sizeAsInt == -1) {
+        mul = Operation::Create(size->position, Operation::Kind::Mul);
+        mul->arguments.push_back(size);
+    } else {
+        mul = Operation::Create(CodePosition(nullptr,0,0), Operation::Kind::Mul);
+        mul->arguments.push_back(IntegerValue::Create(CodePosition(nullptr,0,0), sizeAsInt));
+    }
+    mul->arguments.push_back(elementType->typesize(scope));
+    auto mulInterpret = mul->interpret(scope);
+    if (!mulInterpret) {
+        if (size) {
+            internalError("couldn't calculate sizeof static array type", size->position);
+        } else {
+            internalError("couldn't calculate sizeof static array type");
+        }
+    }
+    if (mulInterpret.value()) return mulInterpret.value();
+    else return mul;
+}
+int StaticArrayType::sizeInBytes() {
+    return sizeAsInt * elementType->sizeInBytes();
+}
 /*unique_ptr<Type> StaticArrayType::copy() {
     if (this->size) {
         return make_unique<StaticArrayType>(this->elementType->copy(), this->size->copy());
@@ -306,6 +366,9 @@ bool DynamicArrayType::operator==(const Type& type) const {
         return false;
     }
 }
+int DynamicArrayType::sizeInBytes() {
+    return 24;
+}
 /*unique_ptr<Type> DynamicArrayType::copy() {
     return make_unique<DynamicArrayType>(this->elementType->copy());
 }*/
@@ -337,6 +400,9 @@ bool ArrayViewType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+int ArrayViewType::sizeInBytes() {
+    return 16;
 }
 /*unique_ptr<Type> ArrayViewType::copy() {
     return make_unique<ArrayViewType>(this->elementType->copy());
@@ -379,6 +445,15 @@ bool ClassType::operator==(const Type& type) const {
         return false;
     }
 }
+int ClassType::sizeInBytes() {
+    int sum = 0;
+    for (auto memberDeclaration : declaration->body->declarations) {
+        if (!memberDeclaration->variable->isConstexpr) {
+            sum += memberDeclaration->variable->type->sizeInBytes();
+        }
+    }
+    return sum;
+}
 /*unique_ptr<Type> ClassType::copy() {
     auto type = make_unique<ClassType>(this->name);
     for (auto& templateType : templateTypes) {
@@ -417,6 +492,9 @@ bool FunctionType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+int FunctionType::sizeInBytes() {
+    return 8;
 }
 /*unique_ptr<Type> FunctionType::copy() {
     auto type = make_unique<FunctionType>();
@@ -463,18 +541,18 @@ bool IntegerType::isSigned() {
 }
 int IntegerType::sizeInBytes() {
     switch (size) {
-    case IntegerType::Size::I8:
-    case IntegerType::Size::U8:
+    case Size::I8:
+    case Size::U8:
+        return 1;
+    case Size::I16:
+    case Size::U16:
+        return 2;
+    case Size::I32:
+    case Size::U32:
+        return 4;
+    case Size::I64:
+    case Size::U64:
         return 8;
-    case IntegerType::Size::I16:
-    case IntegerType::Size::U16:
-        return 16;
-    case IntegerType::Size::I32:
-    case IntegerType::Size::U32:
-        return 32;
-    case IntegerType::Size::I64:
-    case IntegerType::Size::U64:
-        return 64;
     default: 
         return 0;
     }
@@ -526,6 +604,16 @@ bool FloatType::operator==(const Type& type) const {
         return this->size == other.size;
     } else {
         return false;
+    }
+}
+int FloatType::sizeInBytes() {
+    switch (size) {
+    case Size::F32:
+        return 4;
+    case Size::F64:
+        return 8;
+    default: 
+        return 0;
     }
 }
 /*unique_ptr<Type> FloatType::copy() {
