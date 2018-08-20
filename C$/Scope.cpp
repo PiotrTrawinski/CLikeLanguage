@@ -343,6 +343,35 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             else if (tokens[i].value == "dealloc") {
                 appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
                 expectValue = true;
+            } else if (tokens[i].value == "sizeof") {
+                auto operation = SizeofOperation::Create(tokens[i].codePosition);
+                i += 1;
+                if (tokens[i].value != "(") {
+                    return errorMessageOpt("expected open bracket '(' symbol of sizeof operation, got " 
+                        + tokens[i].value, tokens[i].codePosition
+                    );
+                }
+                i += 1;
+                operation->argType = getType(tokens, i, {")"});
+                i += 1;
+                if (!operation->argType) return nullopt;
+                out.push_back(operation);
+                expectValue = false;
+            } else if (tokens[i].value == "typesize") {
+                auto operation = Operation::Create(tokens[i].codePosition, Operation::Kind::Typesize);
+                i += 1;
+                if (tokens[i].value != "(") {
+                    return errorMessageOpt("expected open bracket '(' symbol of typesize operation, got " 
+                        + tokens[i].value, tokens[i].codePosition
+                    );
+                }
+                i += 1;
+                auto value = getValue(tokens, i, {")"}, true);
+                if (!value) return nullopt;
+                operation->arguments.push_back(value);
+
+                out.push_back(operation);
+                expectValue = false;
             } else {
                 bool isTemplateFunctionCall = false;
                 if (tokens[i + 1].value == "<") {

@@ -162,6 +162,8 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;
     case Kind::Deallocation:
         break;
+    case Kind::Typesize:
+        return arguments[0]->type->typesize(scope);
     case Kind::Minus: {
         if (effectiveType1->kind == Type::Kind::Integer) {
             type = IntegerType::Create(IntegerType::Size::I64);
@@ -2214,4 +2216,35 @@ bool ErrorResolveOperation::operator==(const Statement& value) const {
 }
 llvm::Value* ErrorResolveOperation::createLlvm(LlvmObject* llvmObj) {
     return nullptr;
+}
+
+
+SizeofOperation::SizeofOperation(const CodePosition& position) : 
+    Operation(position, Operation::Kind::Sizeof)
+{}
+vector<unique_ptr<SizeofOperation>> SizeofOperation::objects;
+SizeofOperation* SizeofOperation::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<SizeofOperation>(position));
+    return objects.back().get();
+}
+optional<Value*> SizeofOperation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+    type = IntegerType::Create(IntegerType::Size::I64);
+    if (!argType->interpret(scope)) {
+        return errorMessageOpt("non-type expression given to sizeof operation", position);
+    }
+    return argType->typesize(scope);
+}
+bool SizeofOperation::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const SizeofOperation&>(value);
+        return cmpPtr(this->argType, other.argType)
+            && Operation::operator==(other);
+    }
+    else {
+        return false;
+    }
 }
