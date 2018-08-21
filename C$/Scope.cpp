@@ -1569,7 +1569,7 @@ bool ClassScope::createCodeTree(const vector<Token>& tokens, int& i) {
 bool ClassScope::interpret() {
     bool wereErrors = false;
     for (auto& declaration : declarations) {
-        if (!declaration->value || declaration->value->valueKind != Value::ValueKind::FunctionValue) {
+        if (!declaration->variable->isConst || (declaration->value && declaration->value->valueKind != Value::ValueKind::FunctionValue)) {
             if (!declaration->interpret(this)) {
                 wereErrors = true;
             }
@@ -1578,15 +1578,51 @@ bool ClassScope::interpret() {
             maybeUninitializedDeclarations.insert(declaration);
         }
     }
+    
+    auto lambdaType = FunctionType::Create();
+    auto classPointerType = RawPointerType::Create(ClassType::Create(classDeclaration->name));
+    classPointerType->interpret(this, false);
+    lambdaType->argumentTypes.push_back(classPointerType);
+    lambdaType->returnType = Type::Create(Type::Kind::Void);
+    inlineConstructors = FunctionValue::Create(position, lambdaType, this);
+    inlineConstructors->arguments.push_back(Declaration::Create(position));
+    inlineConstructors->arguments.back()->variable->name = "this";
+    inlineConstructors->arguments.back()->variable->type = classPointerType;
     for (auto& declaration : declarations) {
-        if (declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
+        if (declaration->value && !declaration->variable->isConst) {
+            auto assignOperation = Operation::Create(declaration->position, Operation::Kind::Assign);
+            assignOperation->arguments.push_back(declaration->variable);
+            assignOperation->arguments.push_back(declaration->value);
+            inlineConstructors->body->statements.push_back(assignOperation);
+        }
+    }
+    if (!inlineConstructors->interpret(this)) {
+        internalError("failed interpreting of inline class member constructors", position);
+    }
+
+    for (auto& declaration : declarations) {
+        if (declaration->variable->isConst && declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
             if (declaration->variable->isConst) {
-                FunctionValue* lambda = (FunctionValue*)declaration->value;
-                FunctionType* lambdaType = (FunctionType*)declaration->value->type;
+                auto lambda = (FunctionValue*)declaration->value;
+                auto lambdaType = (FunctionType*)declaration->value->type;
+                if (declaration->variable->name == "constructor") {
+                    if (lambdaType->returnType->kind != Type::Kind::Void) {
+                        return errorMessageBool("cannot specify class constructor return type", declaration->variable->position);
+                    }
+                } 
                 lambdaType->argumentTypes.push_back(RawPointerType::Create(ClassType::Create(classDeclaration->name)));
                 lambda->arguments.push_back(Declaration::Create(lambda->position));
                 lambda->arguments.back()->variable->name = "this";
                 lambda->arguments.back()->variable->type = lambdaType->argumentTypes.back();
+                if (declaration->variable->name == "constructor") {
+                    auto functionCall = FunctionCallOperation::Create(lambda->position);
+                    functionCall->function = inlineConstructors;
+                    lambda->arguments.back()->variable->declaration = lambda->arguments.back();
+                    functionCall->arguments.push_back(lambda->arguments.back()->variable);
+                    functionCall->wasInterpreted = true;
+                    lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
+                    constructors.push_back(lambda);
+                } 
             }
             if (!declaration->interpret(this)) {
                 wereErrors = true;
@@ -1605,6 +1641,7 @@ bool ClassScope::getHasReturnStatement() {
     return false;
 }
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
+    inlineConstructors->createLlvm(llvmObj, classDeclaration->name + "InlineConstructors");
     for (auto& declaration : declarations) {
         if (declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
             declaration->createLlvm(llvmObj);

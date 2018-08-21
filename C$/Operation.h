@@ -33,6 +33,7 @@ struct Operation : Value {
         ErrorResolve,
         Sizeof,
         Typesize,
+        Constructor,
         LeftBracket // not really operator - only for convinience in reverse polish notation
     };
 
@@ -352,3 +353,20 @@ struct SizeofOperation : Operation {
 private:
     static std::vector<std::unique_ptr<SizeofOperation>> objects;
 };
+
+struct ConstructorOperation : Operation {
+    ConstructorOperation(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, std::vector<Value*> arguments);
+    static ConstructorOperation* Create(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, std::vector<Value*> arguments);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    
+    virtual bool operator==(const Statement& value) const;
+
+    FunctionValue* constructor = nullptr;
+    ClassDeclaration* classDeclaration = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<ConstructorOperation>> objects;
+};
+
