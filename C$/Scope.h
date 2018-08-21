@@ -133,6 +133,8 @@ struct ClassScope : Scope {
     virtual bool getHasReturnStatement();
 
     std::vector<Declaration*> declarations;
+    FunctionValue* inlineConstructors = nullptr;
+    std::vector<FunctionValue*> constructors;
     ClassDeclaration* classDeclaration = nullptr;
     
 private:

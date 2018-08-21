@@ -519,7 +519,24 @@ llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj) {
 }
 llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj, const string& functionName) {
     if (llvmFunction) {
+        if (!didSetLlvmName && !functionName.empty()) {
+            didSetLlvmName = true;
+            string uniqueFunctionName = functionName;
+            int id = 1;
+            if (llvmObj->module->getFunction(uniqueFunctionName)) {
+                uniqueFunctionName = functionName + to_string(id);
+                id += 1;
+                while (llvmObj->module->getFunction(uniqueFunctionName)) {
+                    uniqueFunctionName = functionName + to_string(id);
+                    id += 1;
+                }
+            }
+            llvmFunction->setName(uniqueFunctionName);
+        }
         return llvmFunction;
+    }
+    if (!functionName.empty()) {
+        didSetLlvmName = true;
     }
     string uniqueFunctionName = functionName;
     int id = 1;

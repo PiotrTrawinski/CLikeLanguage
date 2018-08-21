@@ -144,6 +144,7 @@ struct FunctionValue : Value {
     
     FunctionScope* body = nullptr;
     llvm::Function* llvmFunction = nullptr;
+    bool didSetLlvmName = false;
 
 private:
     static std::vector<std::unique_ptr<FunctionValue>> objects;
