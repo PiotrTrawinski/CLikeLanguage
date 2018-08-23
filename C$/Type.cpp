@@ -121,7 +121,11 @@ int OwnerPointerType::sizeInBytes() {
     return make_unique<OwnerPointerType>(this->underlyingType->copy());
 }*/
 llvm::Type* OwnerPointerType::createLlvm(LlvmObject* llvmObj) {
-    return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
+    if (underlyingType->kind == Type::Kind::Void) {
+        return llvm::PointerType::get(llvm::Type::getInt8Ty(llvmObj->context), 0);
+    } else {
+        return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
+    }
 }
 
 /*
