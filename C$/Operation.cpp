@@ -4,6 +4,129 @@
 
 using namespace std;
 
+std::pair<FunctionValue*, ClassDeclaration*> findClassConstructor(const CodePosition& position, Scope* scope, const string& name, vector<Value*>& arguments) {
+    ClassDeclaration* classDeclaration = nullptr;
+    Scope* searchScope = scope; 
+
+    while (searchScope && !classDeclaration) {
+        classDeclaration = searchScope->classDeclarationMap.getDeclaration(name);
+        searchScope = searchScope->parentScope;
+    }
+    if (classDeclaration) {
+        if (!classDeclaration->interpret()) {
+            return {nullptr, classDeclaration};
+        }
+        if (classDeclaration->body->constructors.empty()) {
+            if (arguments.size() == 0) {
+                return {classDeclaration->body->inlineConstructors, classDeclaration};
+            } else {
+                errorMessageBool("only default (0 argument) constructor exists, got "
+                    + to_string(arguments.size()) + " arguments", position
+                );
+                return {nullptr, classDeclaration};
+            }
+        } else {
+            vector<FunctionValue*> viableDeclarations;
+            vector<FunctionValue*> perfectMatches;
+            for (const auto function : classDeclaration->body->constructors) {
+                auto functionType = (FunctionType*)function->type;
+                if (functionType && functionType->argumentTypes.size()-1 == arguments.size()) {
+                    bool allMatch = true;
+                    for (int i = 0; i < arguments.size(); ++i) {
+                        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !Value::isLvalue(arguments[i])) {
+                            allMatch = false;
+                        }
+                        if (!cmpPtr(functionType->argumentTypes[i]->getEffectiveType(), arguments[i]->type->getEffectiveType())) {
+                            allMatch = false;
+                        }
+                    }
+                    if (allMatch) {
+                        perfectMatches.push_back(function);
+                    } else {
+                        viableDeclarations.push_back(function);
+                    }
+                }
+            }
+            if (perfectMatches.size() == 1) {
+                return {perfectMatches.back(), classDeclaration};
+            } else if (perfectMatches.size() > 1) {
+                string message = "ambogous constructor call. ";
+                message += "Possible constructors at lines: ";
+                for (int i = 0; i < perfectMatches.size(); ++i) {
+                    message += to_string(perfectMatches[i]->position.lineNumber);
+                    if (i != perfectMatches.size() - 1) {
+                        message += ", ";
+                    }
+                }
+                errorMessageBool(message, position);
+                return {nullptr, classDeclaration};
+            } else {
+                vector<optional<vector<CastOperation*>>> neededCasts;
+                for (auto function : viableDeclarations) {
+                    neededCasts.push_back(vector<CastOperation*>());
+                    auto argumentTypes = ((FunctionType*)function->type)->argumentTypes;
+                    for (int i = 0; i < argumentTypes.size(); ++i) {
+                        if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
+                            auto cast = CastOperation::Create(arguments[i]->position, argumentTypes[i]);
+                            cast->arguments.push_back(arguments[i]);
+                            auto castInterpret = cast->interpret(scope, true);
+                            if (castInterpret) {
+                                neededCasts.back().value().push_back(cast);
+                            } else {
+                                neededCasts.back() = nullopt;
+                                break;
+                            }
+                        } else {
+                            neededCasts.back().value().push_back(nullptr);
+                        }
+                    }
+                }
+
+                int matchId = -1;
+                vector<FunctionValue*> possibleFunctions;
+                for (int i = 0; i < neededCasts.size(); ++i) {
+                    if (neededCasts[i]) {
+                        matchId = i;
+                        possibleFunctions.push_back(viableDeclarations[i]);
+                    }
+                }
+
+                if (matchId == -1) {
+                    errorMessageBool("no fitting constructor to call", position);
+                    return {nullptr, classDeclaration};
+                } 
+                if (possibleFunctions.size() > 1) {
+                    string message = "ambogous constructor call. ";
+                    message += "Possible constructor at lines: ";
+                    for (int i = 0; i < possibleFunctions.size(); ++i) {
+                        message += to_string(possibleFunctions[i]->position.lineNumber);
+                        if (i != possibleFunctions.size() - 1) {
+                            message += ", ";
+                        }
+                    }
+                    errorMessageBool(message, position);
+                    return {nullptr, classDeclaration};
+                }
+
+                for (int i = 0; i < arguments.size(); ++i) {
+                    CastOperation* cast = neededCasts[matchId].value()[i];
+                    if (cast) {
+                        auto castInterpret = cast->interpret(scope);
+                        if (castInterpret.value()) {
+                            arguments[i] = castInterpret.value();
+                        } else {
+                            arguments[i] = cast;
+                        }
+                    }
+                }
+                return {viableDeclarations[matchId], classDeclaration};
+            }
+        }
+    } else {
+        return {nullptr, nullptr};
+    }
+}
+
 /*
     Operation
 */
@@ -152,9 +275,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
         }
         break;
     }
-    case Kind::Allocation:
-        type = typeCopy;
-        break;
     case Kind::Deallocation:
         break;
     case Kind::Typesize:
@@ -870,7 +990,7 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
         }
 
         llvm::Value* arg0;
-        if (effectiveType0->kind == Type::Kind::RawPointer) {
+        if (effectiveType0->kind == Type::Kind::RawPointer || effectiveType0->kind == Type::Kind::OwnerPointer) {
             arg0 = arguments[0]->createLlvm(llvmObj);
         } else {
             arg0 = arguments[0]->getReferenceLlvm(llvmObj);
@@ -890,6 +1010,9 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
     case Kind::GetValue: {
         switch (arguments[0]->type->kind) {
         case Type::Kind::RawPointer: {
+            return arguments[0]->createLlvm(llvmObj);
+        }
+        case Type::Kind::OwnerPointer: {
             return arguments[0]->createLlvm(llvmObj);
         }
         default:
@@ -925,6 +1048,9 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
             return new llvm::LoadInst(gep, "", llvmObj->block);
         }
         case Type::Kind::RawPointer: {
+            return new llvm::LoadInst(arguments[0]->createLlvm(llvmObj), "", llvmObj->block);
+        }
+        case Type::Kind::OwnerPointer: {
             return new llvm::LoadInst(arguments[0]->createLlvm(llvmObj), "", llvmObj->block);
         }
         default:
@@ -1751,117 +1877,12 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
 
     // first check if is it class constructor
     if (function->valueKind == Value::ValueKind::Variable) {
-        ClassDeclaration* classDeclaration = nullptr;
-        Scope* searchScope = scope; 
-        while (searchScope && !classDeclaration) {
-            classDeclaration = searchScope->classDeclarationMap.getDeclaration(((Variable*)function)->name);
-            searchScope = searchScope->parentScope;
-        }
+        auto [constructor, classDeclaration] = findClassConstructor(position, scope, ((Variable*)function)->name, arguments);
         if (classDeclaration) {
-            if (!classDeclaration->interpret()) {
-                return nullopt;
-            }
-            if (classDeclaration->body->constructors.empty()) {
-                if (arguments.size() == 0) {
-                    return ConstructorOperation::Create(position, classDeclaration->body->inlineConstructors, classDeclaration, arguments);
-                } else {
-                    return errorMessageOpt("only default (0 argument) constructor exists, got "
-                        + to_string(arguments.size()) + " arguments", position
-                    );
-                }
+            if (constructor) {
+                return ConstructorOperation::Create(position, constructor, classDeclaration, arguments);
             } else {
-                vector<FunctionValue*> viableDeclarations;
-                vector<FunctionValue*> perfectMatches;
-                for (const auto function : classDeclaration->body->constructors) {
-                    auto functionType = (FunctionType*)function->type;
-                    if (functionType && functionType->argumentTypes.size()-1 == arguments.size()) {
-                        bool allMatch = true;
-                        for (int i = 0; i < arguments.size(); ++i) {
-                            if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
-                                allMatch = false;
-                            }
-                            if (!cmpPtr(functionType->argumentTypes[i]->getEffectiveType(), arguments[i]->type->getEffectiveType())) {
-                                allMatch = false;
-                            }
-                        }
-                        if (allMatch) {
-                            perfectMatches.push_back(function);
-                        } else {
-                            viableDeclarations.push_back(function);
-                        }
-                    }
-                }
-                if (perfectMatches.size() == 1) {
-                    return ConstructorOperation::Create(position, perfectMatches.back(), classDeclaration, arguments);
-                } else if (perfectMatches.size() > 1) {
-                    string message = "ambogous constructor call. ";
-                    message += "Possible constructors at lines: ";
-                    for (int i = 0; i < perfectMatches.size(); ++i) {
-                        message += to_string(perfectMatches[i]->position.lineNumber);
-                        if (i != perfectMatches.size() - 1) {
-                            message += ", ";
-                        }
-                    }
-                    return errorMessageOpt(message, position);
-                } else {
-                    vector<optional<vector<CastOperation*>>> neededCasts;
-                    for (auto function : viableDeclarations) {
-                        neededCasts.push_back(vector<CastOperation*>());
-                        auto argumentTypes = ((FunctionType*)function->type)->argumentTypes;
-                        for (int i = 0; i < argumentTypes.size(); ++i) {
-                            if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
-                                auto cast = CastOperation::Create(arguments[i]->position, argumentTypes[i]);
-                                cast->arguments.push_back(arguments[i]);
-                                auto castInterpret = cast->interpret(scope, true);
-                                if (castInterpret) {
-                                    neededCasts.back().value().push_back(cast);
-                                } else {
-                                    neededCasts.back() = nullopt;
-                                    break;
-                                }
-                            } else {
-                                neededCasts.back().value().push_back(nullptr);
-                            }
-                        }
-                    }
-
-                    int matchId = -1;
-                    vector<FunctionValue*> possibleFunctions;
-                    for (int i = 0; i < neededCasts.size(); ++i) {
-                        if (neededCasts[i]) {
-                            matchId = i;
-                            possibleFunctions.push_back(viableDeclarations[i]);
-                        }
-                    }
-
-                    if (matchId == -1) {
-                        return errorMessageOpt("no fitting constructor to call", position);
-                    } 
-                    if (possibleFunctions.size() > 1) {
-                        string message = "ambogous constructor call. ";
-                        message += "Possible constructor at lines: ";
-                        for (int i = 0; i < possibleFunctions.size(); ++i) {
-                            message += to_string(possibleFunctions[i]->position.lineNumber);
-                            if (i != possibleFunctions.size() - 1) {
-                                message += ", ";
-                            }
-                        }
-                        return errorMessageOpt(message, position);
-                    }
-
-                    for (int i = 0; i < arguments.size(); ++i) {
-                        CastOperation* cast = neededCasts[matchId].value()[i];
-                        if (cast) {
-                            auto castInterpret = cast->interpret(scope);
-                            if (castInterpret.value()) {
-                                arguments[i] = castInterpret.value();
-                            } else {
-                                arguments[i] = cast;
-                            }
-                        }
-                    }
-                    return ConstructorOperation::Create(position, viableDeclarations[matchId], classDeclaration, arguments);
-                }
+                return nullopt;
             }
         }
     }
@@ -2408,4 +2429,67 @@ llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
 }
 llvm::Value* ConstructorOperation::createLlvm(LlvmObject* llvmObj) {
     return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+}
+
+
+AllocationOperation::AllocationOperation(const CodePosition& position) : 
+    Operation(position, Operation::Kind::Allocation)
+{}
+vector<unique_ptr<AllocationOperation>> AllocationOperation::objects;
+AllocationOperation* AllocationOperation::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<AllocationOperation>(position));
+    return objects.back().get();
+}
+optional<Value*> AllocationOperation::interpret(Scope* scope) {
+    auto underlyingType = ((OwnerPointerType*)type)->underlyingType;
+    typesize = underlyingType->typesize(scope);
+
+    if (underlyingType->kind == Type::Kind::Class) {
+        auto [constructor, classDeclaration] = findClassConstructor(position, scope, ((ClassType*)underlyingType)->name, arguments);
+        this->constructor = constructor;
+        this->classDeclaration = classDeclaration;
+        if (!constructor) {
+            return nullopt;
+        }
+    }
+    
+    return nullptr;
+}
+bool AllocationOperation::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const AllocationOperation&>(value);
+        return this->typesize == other.typesize
+            && Operation::operator==(other);
+    }
+    else {
+        return false;
+    }
+}
+llvm::Value* AllocationOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    return nullptr;
+}
+llvm::Value* AllocationOperation::createLlvm(LlvmObject* llvmObj) {
+    auto allocatedValue = new llvm::BitCastInst(
+        llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
+        type->createLlvm(llvmObj), 
+        "", 
+        llvmObj->block
+    );
+
+    if (constructor) {
+        vector<llvm::Value*> args;
+        auto functionType = (FunctionType*)constructor->type;
+        for (int i = 0; i < arguments.size(); ++i) {
+            if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
+                args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
+            } else {
+                args.push_back(arguments[i]->createLlvm(llvmObj));
+            }
+        }
+        args.push_back(allocatedValue);
+
+        llvm::CallInst::Create(constructor->createLlvm(llvmObj), args, "", llvmObj->block);
+    }
+
+    return allocatedValue;
 }

@@ -370,3 +370,19 @@ private:
     static std::vector<std::unique_ptr<ConstructorOperation>> objects;
 };
 
+struct AllocationOperation : Operation {
+    AllocationOperation(const CodePosition& position);
+    static AllocationOperation* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+
+    virtual bool operator==(const Statement& value) const;
+
+    Value* typesize = nullptr;
+    FunctionValue* constructor = nullptr;
+    ClassDeclaration* classDeclaration = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<AllocationOperation>> objects;
+};

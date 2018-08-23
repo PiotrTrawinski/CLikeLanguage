@@ -330,12 +330,21 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             }
             else if (tokens[i].value == "alloc") {
                 i += 1;
-                auto operation = Operation::Create(tokens[i].codePosition, Operation::Kind::Allocation);
-                operation->type = getType(tokens, i, {";"});
+                auto operation = AllocationOperation::Create(tokens[i].codePosition);
+                operation->type = getType(tokens, i, {";", "("});
                 if (!operation->type) {
                     return nullopt;
                 }
                 operation->type = OwnerPointerType::Create(operation->type);
+                if (tokens[i].value == "(") {
+                    i += 1;
+                    while (tokens[i].value != ")") {
+                        auto value = getValue(tokens, i, {",", ")"});
+                        if (!value) return nullopt;     
+                        operation->arguments.push_back(value);
+                    }
+                    i += 1;
+                }       
                 out.push_back(operation);
                 expectValue = false;
                 //appendOperator(stack, out, Operation::Kind::Allocation, tokens[i++].codePosition);
@@ -1609,7 +1618,7 @@ bool ClassScope::interpret() {
                     if (lambdaType->returnType->kind != Type::Kind::Void) {
                         return errorMessageBool("cannot specify class constructor return type", declaration->variable->position);
                     }
-                } 
+                }
                 lambdaType->argumentTypes.push_back(RawPointerType::Create(ClassType::Create(classDeclaration->name)));
                 lambda->arguments.push_back(Declaration::Create(lambda->position));
                 lambda->arguments.back()->variable->name = "this";

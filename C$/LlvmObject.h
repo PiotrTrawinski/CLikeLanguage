@@ -7,4 +7,6 @@ struct LlvmObject {
     llvm::Module* module = nullptr;
     llvm::Function* function = nullptr;
     llvm::BasicBlock* block = nullptr;
+    llvm::Function* mallocFunction = nullptr;
+    llvm::Function* freeFunction = nullptr;
 };

@@ -10,6 +10,21 @@ unique_ptr<LlvmObject> createLlvm(CodeScope* globalScope) {
     auto module = ::make_unique<llvm::Module>("module", llvmObj->context);
     llvmObj->module = module.get();
 
+    llvmObj->mallocFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction("malloc", 
+        llvm::FunctionType::get(
+            llvm::PointerType::get(llvm::Type::getInt8Ty(llvmObj->context), 0), 
+            {llvm::Type::getInt64Ty(llvmObj->context)}, 
+            false
+        )
+    ));
+    llvmObj->freeFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction("free", 
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(llvmObj->context),
+            {llvm::PointerType::get(llvm::Type::getInt8Ty(llvmObj->context), 0)},
+            false
+        )
+    ));
+
     globalScope->createLlvm(llvmObj.get());
 
     string errStr;
