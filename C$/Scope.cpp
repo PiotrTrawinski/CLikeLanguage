@@ -1448,6 +1448,16 @@ Declaration* CodeScope::findAndInterpretDeclaration(const string& name) {
     }
     return nullptr;
 }
+void CodeScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
+    for (auto statement : statements) {
+        if (statement->kind == Statement::Kind::Declaration) {
+            ((Declaration*)statement)->createAllocaLlvmIfNeeded(llvmObj);
+        }
+        else if (statement->kind == Statement::Kind::Scope) {
+            ((Scope*)statement)->allocaAllDeclarationsLlvm(llvmObj);
+        }
+    }
+}
 void CodeScope::createLlvm(LlvmObject* llvmObj) {
     for (int i = 0; i < statements.size(); ++i) {
         switch (statements[i]->kind) {
@@ -1649,6 +1659,7 @@ unordered_set<Declaration*> ClassScope::getUninitializedDeclarations() {
 bool ClassScope::getHasReturnStatement() {
     return false;
 }
+void ClassScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {}
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
     inlineConstructors->createLlvm(llvmObj, classDeclaration->name + "InlineConstructors");
     for (auto& declaration : declarations) {
@@ -1698,11 +1709,13 @@ bool FunctionScope::interpret() {
 void FunctionScope::createLlvm(LlvmObject* llvmObj) {
     auto oldBlock = llvmObj->block;
     llvmObj->block = llvm::BasicBlock::Create(llvmObj->context, "Begin", llvmObj->function);
-    auto* arg = llvmObj->function->args().begin();
-    for (int i = 0; i < function->arguments.size(); ++i) {
-        auto funArg = function->arguments[i];
+    for (auto funArg : function->arguments) {
         funArg->llvmVariable = funArg->variable->type->allocaLlvm(llvmObj);
         funArg->llvmVariable->setName(funArg->variable->name);
+    }
+    CodeScope::allocaAllDeclarationsLlvm(llvmObj);
+    auto* arg = llvmObj->function->args().begin();
+    for (auto funArg : function->arguments) {
         new llvm::StoreInst(arg, funArg->llvmVariable, llvmObj->block);
         arg += 1;
     }
@@ -1971,6 +1984,12 @@ bool ForEachData::operator==(const ForEachData& other) const {
     return cmpPtr(this->arrayValue, other.arrayValue)
         && cmpPtr(this->it, other.it)
         && cmpPtr(this->index, other.index);
+}
+void ForScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
+    if (holds_alternative<ForIterData>(data)) {
+        auto& forIterData = get<ForIterData>(data);
+        forIterData.iterDeclaration->createAllocaLlvmIfNeeded(llvmObj);
+    }
 }
 void ForScope::createLlvm(LlvmObject* llvmObj) {
     if (holds_alternative<ForIterData>(data)) {

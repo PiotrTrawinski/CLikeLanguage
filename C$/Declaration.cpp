@@ -118,7 +118,11 @@ bool Declaration::operator==(const Statement& declaration) const {
         return false;
     }
 }
-
+void Declaration::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
+    if (!value || !variable->isConstexpr || value->valueKind != Value::ValueKind::FunctionValue) {
+        llvmVariable = variable->type->allocaLlvm(llvmObj, variable->name);
+    }
+}
 void Declaration::createLlvm(LlvmObject* llvmObj) {
     if (value && variable->isConstexpr && value->valueKind == Value::ValueKind::FunctionValue) {
         if (variable->name == "main") {
@@ -127,7 +131,6 @@ void Declaration::createLlvm(LlvmObject* llvmObj) {
             ((FunctionValue*)value)->createLlvm(llvmObj, variable->name);
         }
     } else {
-        llvmVariable = variable->type->allocaLlvm(llvmObj, variable->name);
         if (value) {
             if (variable->type->kind == Type::Kind::Reference) {
                 new llvm::StoreInst(value->getReferenceLlvm(llvmObj), llvmVariable, llvmObj->block);

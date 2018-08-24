@@ -15,6 +15,7 @@ struct Declaration : Statement {
     static Declaration* Create(const CodePosition& position);
     bool interpret(Scope* scope, bool outOfOrder=false);
     virtual bool operator==(const Statement& declaration) const;
+    void createAllocaLlvmIfNeeded(LlvmObject* llvmObj);
     void createLlvm(LlvmObject* llvmObj);
 
     Variable* variable = nullptr;
