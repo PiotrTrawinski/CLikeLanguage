@@ -59,6 +59,7 @@ struct Scope : Statement {
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
     virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
+    virtual void allocaAllDeclarationsLlvm(LlvmObject* llvmObj)=0;
 
     Scope* parentScope; // nullptr if and only if global scope
     FunctionValue* mainFunction = nullptr; // other then nullptr if and only if global scope
@@ -87,6 +88,7 @@ struct CodeScope : Scope {
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
+    virtual void allocaAllDeclarationsLlvm(LlvmObject* llvmObj);
     virtual void createLlvm(LlvmObject* llvmObj);
 
     bool isGlobalScope;
@@ -128,6 +130,7 @@ struct ClassScope : Scope {
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
+    virtual void allocaAllDeclarationsLlvm(LlvmObject* llvmObj);
     virtual void createLlvm(LlvmObject* llvmObj);
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
@@ -167,6 +170,7 @@ struct ForScope : CodeScope {
     virtual bool operator==(const Statement& scope) const;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
+    virtual void allocaAllDeclarationsLlvm(LlvmObject* llvmObj);
     virtual void createLlvm(LlvmObject* llvmObj);
 
     std::variant<ForIterData, ForEachData> data;
