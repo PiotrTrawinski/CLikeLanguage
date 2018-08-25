@@ -2,6 +2,21 @@
 
 using namespace std;
 
+char getCharacter(string_view lineStr, int& i) {
+    if (lineStr[i] == '\\') {
+        i += 2;
+        switch (lineStr[i-1]) {
+        case 'n': return '\n';
+        case 'r': return '\r';
+        case 't': return '\t';
+        case 'b': return '\b';
+        case 'f': return '\f';
+        case '0': return '\0';
+        default:  return lineStr[i-1];
+        }
+    }
+    return lineStr[i++];
+}
 
 optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode) {
     vector<Token> tokens;
@@ -24,26 +39,31 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                 tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo);
             }
             else if (c == '\"') {
-                // for now there is no support of escape characters (like \" \n \t)
                 string stringLiteral = "";
                 charId++; // skip opening " symbol
                 while (charId < lineStr.size() && lineStr[charId] != '\"') {
-                    stringLiteral += lineStr[charId];
-                    charId++;
+                    stringLiteral += getCharacter(lineStr, charId);
                 }
                 charId++; // skip closing " symbol
                 tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo);
             }
+            else if (c == '`') {
+                string rawStringLiteral = "";
+                charId++; // skip opening ` symbol
+                while (charId < lineStr.size() && lineStr[charId] != '`') {
+                    rawStringLiteral += getCharacter(lineStr, charId);
+                }
+                charId++; // skip closing ` symbol
+                tokens.emplace_back(Token::Type::RawStringLiteral, rawStringLiteral, lineNumber, charNumber, fileInfo);
+            }
             else if (c == '\'') {
-                // for now there is no support of escape characters (like \" \n \t)
                 charId++; // skip opening ' symbol
                 if (charId >= lineStr.size()) {
                     cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
                     cerr << "didn't complete the definition of char literal defined at char " << charNumber << '\n';
                     return nullopt;
                 }
-                string character = string(1, lineStr[charId]);
-                charId++; // skip char enclosed in ' symbols
+                string character = string(1, getCharacter(lineStr, charId));
                 if (charId >= lineStr.size()) {
                     cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
                     cerr << "missing closing ' symbol for char literal defined at char " << charNumber << '\n';
