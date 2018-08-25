@@ -1687,6 +1687,24 @@ bool ClassScope::interpret() {
                     lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
                     constructors.push_back(lambda);
                 } 
+                if (declaration->variable->name == "destructor") {
+                    declaration->variable->name = classDeclaration->name + "Destructor";
+                    if (lambdaType->returnType->kind != Type::Kind::Void) {
+                        return errorMessageBool("cannot specify class destructor return type", declaration->variable->position);
+                    }
+                    if (lambdaType->argumentTypes.size() > 1) {
+                        return errorMessageBool("class destructor cannot have any arguments\n", declaration->variable->position);
+                    }
+                    if (inlineDestructors) {
+                        auto functionCall = FunctionCallOperation::Create(lambda->position);
+                        functionCall->function = inlineDestructors;
+                        lambda->arguments.back()->variable->declaration = lambda->arguments.back();
+                        functionCall->arguments.push_back(lambda->arguments.back()->variable);
+                        functionCall->wasInterpreted = true;
+                        lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
+                    }
+                    destructor = lambda;
+                }
             }
             if (!declaration->interpret(this)) {
                 wereErrors = true;
