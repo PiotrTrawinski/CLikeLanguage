@@ -1411,15 +1411,17 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
     }
 
     if (!hasReturnStatement) {
-        for (auto declaration : declarationsOrder) {
-            if (declarationsInitState.at(declaration)
-                && maybeUninitializedDeclarations.find(declaration) != maybeUninitializedDeclarations.end()
-            ){
-                if (declaration->variable->type->kind == Type::Kind::Class
-                    || declaration->variable->type->kind == Type::Kind::OwnerPointer
-                ){
-                    warningMessage("end of scope destruction of maybe uninitialized variable " + declaration->variable->name, position);
+        for (int i = declarationsOrder.size()-1; i >= 0; --i) {
+            auto& declaration = declarationsOrder[i];
+            auto& variable = declaration->variable;
+            if (variable->type->needsDestruction() && declarationsInitState.at(declaration)) {
+                if (maybeUninitializedDeclarations.find(declaration) != maybeUninitializedDeclarations.end()){
+                    warningMessage("end of scope destruction of maybe uninitialized variable " + variable->name, position);
                 }
+                auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
+                destroyOp->arguments.push_back(variable);
+                if (!destroyOp->interpret(this)) return false;
+                statements.push_back(destroyOp);
             }
         }
     }
