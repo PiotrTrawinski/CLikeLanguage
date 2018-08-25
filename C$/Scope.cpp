@@ -352,7 +352,12 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             else if (tokens[i].value == "dealloc") {
                 appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
                 expectValue = true;
-            } else if (tokens[i].value == "sizeof") {
+            }
+            else if (tokens[i].value == "destroy") {
+                appendOperator(stack, out, Operation::Kind::Destroy, tokens[i++].codePosition);
+                expectValue = true;
+            }
+            else if (tokens[i].value == "sizeof") {
                 auto operation = SizeofOperation::Create(tokens[i].codePosition);
                 i += 1;
                 if (tokens[i].value != "(") {
@@ -1341,6 +1346,10 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             break;
         }
         }
+        if (!valuesToDestroyBuffer.empty()) {
+            valuesToDestroyAfterStatement[statement] = valuesToDestroyBuffer;
+            valuesToDestroyBuffer.clear();
+        }
 
         if (onErrorScopeToInterpret) {
             onErrorScopeToInterpret->hasReturnStatement = hasReturnStatement;
@@ -1404,9 +1413,11 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
     if (!hasReturnStatement) {
         for (auto declaration : declarationsOrder) {
             if (declarationsInitState.at(declaration)
-                && maybeUninitializedDeclarations.find(declaration) != maybeUninitializedDeclarations.end()) {
+                && maybeUninitializedDeclarations.find(declaration) != maybeUninitializedDeclarations.end()
+            ){
                 if (declaration->variable->type->kind == Type::Kind::Class
-                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) {
+                    || declaration->variable->type->kind == Type::Kind::OwnerPointer
+                ){
                     warningMessage("end of scope destruction of maybe uninitialized variable " + declaration->variable->name, position);
                 }
             }
@@ -1499,6 +1510,14 @@ void CodeScope::createLlvm(LlvmObject* llvmObj) {
             value->createLlvm(llvmObj);
             break;
         }
+        }
+        auto iter = valuesToDestroyAfterStatement.find(statement);
+        if (iter != valuesToDestroyAfterStatement.end()) {
+            for (auto value : iter->second) {
+                if (!value->wasCaptured) {
+                    value->createDestructorLlvm(llvmObj);
+                }
+            }
         }
     }
 }
@@ -1598,6 +1617,9 @@ bool ClassScope::interpret() {
         }
     }
     
+    /*
+        inline constructors
+    */
     auto lambdaType = FunctionType::Create();
     auto classPointerType = RawPointerType::Create(ClassType::Create(classDeclaration->name));
     classPointerType->interpret(this, false);
@@ -1619,21 +1641,44 @@ bool ClassScope::interpret() {
         internalError("failed interpreting of inline class member constructors", position);
     }
 
+    /*
+        inline destructors
+    */
+    inlineDestructors = FunctionValue::Create(position, lambdaType, this);
+    inlineDestructors->arguments.push_back(Declaration::Create(position));
+    inlineDestructors->arguments.back()->variable->name = "this";
+    inlineDestructors->arguments.back()->variable->type = classPointerType;
+    for (int i = declarations.size() - 1; i >= 0; --i) {
+        auto& declaration = declarations[i];
+        if (!declaration->variable->isConst && declaration->variable->type->needsDestruction()) {
+            auto destroyOperation = Operation::Create(declaration->position, Operation::Kind::Destroy);
+            destroyOperation->arguments.push_back(declaration->variable);
+            inlineDestructors->body->statements.push_back(destroyOperation);
+        }
+    }
+    if (inlineDestructors->body->statements.empty()) {
+        inlineDestructors = nullptr;
+    } else {
+        if (!inlineDestructors->interpret(this)) {
+            internalError("failed interpreting of inline class member destructors", position);
+        }
+    }
+    
+
     for (auto& declaration : declarations) {
         if (declaration->variable->isConst && declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
             if (declaration->variable->isConst) {
                 auto lambda = (FunctionValue*)declaration->value;
                 auto lambdaType = (FunctionType*)declaration->value->type;
-                if (declaration->variable->name == "constructor") {
-                    if (lambdaType->returnType->kind != Type::Kind::Void) {
-                        return errorMessageBool("cannot specify class constructor return type", declaration->variable->position);
-                    }
-                }
                 lambdaType->argumentTypes.push_back(RawPointerType::Create(ClassType::Create(classDeclaration->name)));
                 lambda->arguments.push_back(Declaration::Create(lambda->position));
                 lambda->arguments.back()->variable->name = "this";
                 lambda->arguments.back()->variable->type = lambdaType->argumentTypes.back();
                 if (declaration->variable->name == "constructor") {
+                    declaration->variable->name = classDeclaration->name + "Constructor";
+                    if (lambdaType->returnType->kind != Type::Kind::Void) {
+                        return errorMessageBool("cannot specify class constructor return type", declaration->variable->position);
+                    }
                     auto functionCall = FunctionCallOperation::Create(lambda->position);
                     functionCall->function = inlineConstructors;
                     lambda->arguments.back()->variable->declaration = lambda->arguments.back();
@@ -1662,6 +1707,9 @@ bool ClassScope::getHasReturnStatement() {
 void ClassScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {}
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
     inlineConstructors->createLlvm(llvmObj, classDeclaration->name + "InlineConstructors");
+    if (inlineDestructors) {
+        inlineDestructors->createLlvm(llvmObj, classDeclaration->name + "InlineDestructors");
+    }
     for (auto& declaration : declarations) {
         if (declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
             declaration->createLlvm(llvmObj);

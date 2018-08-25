@@ -47,7 +47,9 @@ llvm::Value* Value::createLlvm(LlvmObject* llvmObj) {
 llvm::Value* Value::getReferenceLlvm(LlvmObject* llvmObj) {
     return nullptr;
 }
-
+void Value::createDestructorLlvm(LlvmObject* llvmObj) {
+    internalError("cannot create destructor for this value ", position);
+}
 
 /*
     Variable
@@ -96,7 +98,6 @@ optional<Value*> Variable::interpret(Scope* scope) {
     if (wasInterpreted) {
         return nullptr;
     }
-    wasInterpreted = true;
     if (!interpretTypeAndDeclaration(scope)) {
         return nullopt;
     }
@@ -119,6 +120,7 @@ optional<Value*> Variable::interpret(Scope* scope) {
         internalError("couldn't find function scope, but class member variable used", position);
     }
 
+    wasInterpreted = true;
     isConstexpr = declaration->variable->isConstexpr;
     type = declaration->variable->type;
     isConst = declaration->variable->isConst;

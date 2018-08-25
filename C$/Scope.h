@@ -71,6 +71,7 @@ struct Scope : Statement {
     std::unordered_set<Declaration*> maybeUninitializedDeclarations;
     std::unordered_map<Declaration*, bool> declarationsInitState;
     std::vector<Declaration*> declarationsOrder;
+    std::vector<Value*> valuesToDestroyBuffer;
     bool hasReturnStatement = false;
 
     Scope* onErrorScopeToInterpret = nullptr;
@@ -93,6 +94,8 @@ struct CodeScope : Scope {
 
     bool isGlobalScope;
     std::vector<Statement*> statements;
+
+    std::unordered_map<Statement*, std::vector<Value*>> valuesToDestroyAfterStatement;
     
 private:
     static std::vector<std::unique_ptr<CodeScope>> objects;
@@ -138,6 +141,8 @@ struct ClassScope : Scope {
     std::vector<Declaration*> declarations;
     FunctionValue* inlineConstructors = nullptr;
     std::vector<FunctionValue*> constructors;
+    FunctionValue* inlineDestructors = nullptr;
+    FunctionValue* destructor = nullptr;
     ClassDeclaration* classDeclaration = nullptr;
     
 private:

@@ -34,6 +34,7 @@ struct Operation : Value {
         Sizeof,
         Typesize,
         Constructor,
+        Destroy,
         LeftBracket // not really operator - only for convinience in reverse polish notation
     };
 
@@ -289,6 +290,7 @@ struct FunctionCallOperation : Operation {
     //virtual std::unique_ptr<Value> copy();
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj);
 
     Value* function = nullptr;
     std::string idName = "";
@@ -360,6 +362,7 @@ struct ConstructorOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj);
     
     virtual bool operator==(const Statement& value) const;
 
@@ -376,6 +379,7 @@ struct AllocationOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj);
 
     virtual bool operator==(const Statement& value) const;
 

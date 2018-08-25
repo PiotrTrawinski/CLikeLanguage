@@ -44,6 +44,9 @@ int Type::sizeInBytes() {
         return 0;
     }
 }
+bool Type::needsDestruction() {
+    return false;
+}
 /*unique_ptr<Type> Type::copy() {
     return make_unique<Type>(this->kind);
 }*/
@@ -59,6 +62,7 @@ llvm::Type* Type::createLlvm(LlvmObject* llvmObj) {
 llvm::AllocaInst* Type::allocaLlvm(LlvmObject* llvmObj, const string& name) {
     return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
 }
+void Type::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {}
 
 Type* getSuitingIntegerType(IntegerType* i1, IntegerType* i2) {
     if (i1->isSigned() || i2->isSigned()) {
@@ -117,6 +121,9 @@ bool OwnerPointerType::operator==(const Type& type) const {
 int OwnerPointerType::sizeInBytes() {
     return 8;
 }
+bool OwnerPointerType::needsDestruction() {
+    return true;
+}
 /*unique_ptr<Type> OwnerPointerType::copy() {
     return make_unique<OwnerPointerType>(this->underlyingType->copy());
 }*/
@@ -127,6 +134,21 @@ llvm::Type* OwnerPointerType::createLlvm(LlvmObject* llvmObj) {
         return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
     }
 }
+void OwnerPointerType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    if (underlyingType->kind == Type::Kind::Class) {
+        underlyingType->createDestructorLlvm(llvmObj, llvmValue);
+    } else {
+        underlyingType->createDestructorLlvm(llvmObj, new llvm::LoadInst(llvmValue, "", llvmObj->block));
+    }
+    
+    llvm::CallInst::Create(
+        llvmObj->freeFunction, 
+        new llvm::BitCastInst(llvmValue, llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block), 
+        "", 
+        llvmObj->block
+    );
+}
+
 
 /*
     RawPointerType
@@ -200,6 +222,9 @@ Value* MaybeErrorType::typesize(Scope* scope) {
 }
 int MaybeErrorType::sizeInBytes() {
     return underlyingType->sizeInBytes() + 8;
+}
+bool MaybeErrorType::needsDestruction() {
+    return underlyingType->needsDestruction();
 }
 /*unique_ptr<Type> MaybeErrorType::copy() {
     return make_unique<MaybeErrorType>(this->underlyingType->copy());
@@ -324,6 +349,9 @@ Value* StaticArrayType::typesize(Scope* scope) {
 int StaticArrayType::sizeInBytes() {
     return sizeAsInt * elementType->sizeInBytes();
 }
+bool StaticArrayType::needsDestruction() {
+    return elementType->needsDestruction();
+}
 /*unique_ptr<Type> StaticArrayType::copy() {
     if (this->size) {
         return make_unique<StaticArrayType>(this->elementType->copy(), this->size->copy());
@@ -372,6 +400,9 @@ bool DynamicArrayType::operator==(const Type& type) const {
 }
 int DynamicArrayType::sizeInBytes() {
     return 24;
+}
+bool DynamicArrayType::needsDestruction() {
+    return true;
 }
 /*unique_ptr<Type> DynamicArrayType::copy() {
     return make_unique<DynamicArrayType>(this->elementType->copy());
@@ -458,6 +489,14 @@ int ClassType::sizeInBytes() {
     }
     return sum;
 }
+bool ClassType::needsDestruction() {
+    for (auto memberDeclaration : declaration->body->declarations) {
+        if (memberDeclaration->variable->type->needsDestruction()) {
+            return true;
+        }
+    }
+    return false;
+}
 /*unique_ptr<Type> ClassType::copy() {
     auto type = make_unique<ClassType>(this->name);
     for (auto& templateType : templateTypes) {
@@ -468,7 +507,13 @@ int ClassType::sizeInBytes() {
 llvm::Type* ClassType::createLlvm(LlvmObject* llvmObj) {
     return declaration->getLlvmType(llvmObj);
 }
-
+void ClassType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    if (declaration->body->destructor) {
+        llvm::CallInst::Create(declaration->body->destructor->createLlvm(llvmObj), llvmValue, "", llvmObj->block);
+    } else if (declaration->body->inlineDestructors) {
+        llvm::CallInst::Create(declaration->body->inlineDestructors->createLlvm(llvmObj), llvmValue, "", llvmObj->block);
+    }
+}
 
 
 /*

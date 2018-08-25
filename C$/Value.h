@@ -26,10 +26,13 @@ struct Value : Statement {
     //virtual std::unique_ptr<Value> copy();
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj);
 
     ValueKind valueKind;
     Type* type = nullptr;
     bool isConstexpr = false;
+    bool wasCaptured = false;
+    llvm::Value* llvmValue = nullptr;
 
 private:
     static std::vector<std::unique_ptr<Value>> objects;
