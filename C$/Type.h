@@ -36,9 +36,11 @@ struct Type {
     virtual Type* getEffectiveType();
     virtual Value* typesize(Scope* scope);
     virtual int sizeInBytes();
+    virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
+    virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue);
 
     static Type* getSuitingArithmeticType(Type* val1, Type* val2);
 
@@ -56,8 +58,10 @@ struct OwnerPointerType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual int sizeInBytes();
+    virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue);
 
     Type* underlyingType = nullptr;
 
@@ -87,6 +91,7 @@ struct MaybeErrorType : Type {
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual Value* typesize(Scope* scope);
     virtual int sizeInBytes();
+    virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
@@ -122,6 +127,7 @@ struct StaticArrayType : Type {
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual Value* typesize(Scope* scope);
     virtual int sizeInBytes();
+    virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
@@ -141,6 +147,7 @@ struct DynamicArrayType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual int sizeInBytes();
+    virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
@@ -172,8 +179,10 @@ struct ClassType : Type {
     virtual bool operator==(const Type& type) const;
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual int sizeInBytes();
+    virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue);
 
     std::string name;
     ClassDeclaration* declaration;

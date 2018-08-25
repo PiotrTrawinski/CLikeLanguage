@@ -277,6 +277,13 @@ optional<Value*> Operation::interpret(Scope* scope) {
     }
     case Kind::Deallocation:
         break;
+    case Kind::Destroy:{
+        if (!isLvalue(arguments[0])) {
+            return errorMessageOpt("cannot destroy non-lvalue", position);
+        }
+        type = Type::Create(Type::Kind::Void);
+        break;
+    }
     case Kind::Typesize:
         return arguments[0]->type->typesize(scope);
     case Kind::Minus: {
@@ -632,6 +639,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (!arg1Interpret) return nullopt;
         if (arg1Interpret.value()) arguments[1] = arg1Interpret.value();
         if (!arguments[1]->type->interpret(scope)) return nullopt;
+        arguments[1]->wasCaptured = true;
 
         if (arguments[1]->valueKind == Value::ValueKind::Operation) {
             containsErrorResolve = ((Operation*)arguments[1])->containsErrorResolve;
@@ -669,6 +677,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (!castInterpret) return nullopt;
         if (castInterpret.value()) arguments[1] = castInterpret.value();
         type = arguments[0]->type;
+
         break;
     }
     case Kind::AddAssign:
@@ -723,6 +732,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
 string Operation::kindToString(Kind kind) {
     switch (kind) {
+    case Kind::Destroy: return "destroy";
     case Kind::Dot: return ". (dot)";
     case Kind::FunctionCall: return "function call";
     case Kind::ArrayIndex: return "[x] (array index)";
@@ -783,6 +793,7 @@ int Operation::priority(Kind kind) {
     case Kind::GetValue:
     case Kind::Allocation:
     case Kind::Deallocation:
+    case Kind::Destroy:
     case Kind::Cast:
     case Kind::BitNeg:
     case Kind::LogicalNot:
@@ -879,6 +890,7 @@ int Operation::numberOfArguments(Kind kind) {
     case Kind::Address:
     case Kind::GetValue:
     case Kind::Deallocation:
+    case Kind::Destroy:
     case Kind::BitNeg:
     case Kind::LogicalNot:
     case Kind::Minus:
@@ -1057,6 +1069,16 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
             return nullptr;
         }
         break;
+    }
+    case Kind::Destroy: {
+        llvm::Value* value;
+        if (arguments[0]->type->kind == Type::Kind::Class) {
+            value = arguments[0]->getReferenceLlvm(llvmObj);
+        } else {
+            value = arguments[0]->createLlvm(llvmObj);
+        }
+        arguments[0]->type->createDestructorLlvm(llvmObj, value);
+        return nullptr;
     }
     case Kind::Minus: {
         auto arg = arguments[0]->createLlvm(llvmObj);
@@ -1880,7 +1902,9 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         auto [constructor, classDeclaration] = findClassConstructor(position, scope, ((Variable*)function)->name, arguments);
         if (classDeclaration) {
             if (constructor) {
-                return ConstructorOperation::Create(position, constructor, classDeclaration, arguments);
+                auto op = ConstructorOperation::Create(position, constructor, classDeclaration, arguments);
+                op->interpret(scope);
+                return op;
             } else {
                 return nullopt;
             }
@@ -1954,6 +1978,9 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         return errorMessageOpt("function call on non function value", position);
     }
 
+    if (type->needsDestruction()) {
+        scope->valuesToDestroyBuffer.push_back(this);
+    }
     return nullptr;
 }
 bool FunctionCallOperation::operator==(const Statement& value) const {
@@ -1984,10 +2011,12 @@ llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
             args.push_back(arguments[i]->createLlvm(llvmObj));
         }
     }
-
-    return llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
+    llvmValue = llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
+    return llvmValue;
 }
-
+void FunctionCallOperation::createDestructorLlvm(LlvmObject* llvmObj) {
+    type->createDestructorLlvm(llvmObj, llvmValue);
+}
 
 /*unique_ptr<Value> FunctionCallOperation::copy() {
     auto value = make_unique<FunctionCallOperation>(position);
@@ -2265,6 +2294,12 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         if (!scopePtr) {
             internalError("return statement found outside function", position);
         }
+        if (!arguments.empty() && arguments[0]->type->needsDestruction()) {
+            if (scope->valuesToDestroyBuffer.empty()) {
+                internalError("return statement captures destructable value, but no value in the scope buffer", position);
+            }
+            scope->valuesToDestroyBuffer.pop_back();
+        }
         break;
     }
     }
@@ -2397,6 +2432,9 @@ ConstructorOperation* ConstructorOperation::Create(const CodePosition& position,
     return objects.back().get();
 }
 optional<Value*> ConstructorOperation::interpret(Scope* scope) {
+    if (type->needsDestruction()) {
+        scope->valuesToDestroyBuffer.push_back(this);
+    }
     return nullptr;
 }
 bool ConstructorOperation::operator==(const Statement& value) const {
@@ -2410,7 +2448,7 @@ bool ConstructorOperation::operator==(const Statement& value) const {
     }
 }
 llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
-    auto tempThis = type->allocaLlvm(llvmObj);
+    llvmValue = type->allocaLlvm(llvmObj);
 
     vector<llvm::Value*> args;
     auto functionType = (FunctionType*)constructor->type;
@@ -2421,14 +2459,17 @@ llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
             args.push_back(arguments[i]->createLlvm(llvmObj));
         }
     }
-    args.push_back(tempThis);
+    args.push_back(llvmValue);
 
     llvm::CallInst::Create(constructor->createLlvm(llvmObj), args, "", llvmObj->block);
 
-    return tempThis;
+    return llvmValue;
 }
 llvm::Value* ConstructorOperation::createLlvm(LlvmObject* llvmObj) {
     return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+}
+void ConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
+    type->createDestructorLlvm(llvmObj, llvmValue);
 }
 
 
@@ -2441,6 +2482,9 @@ AllocationOperation* AllocationOperation::Create(const CodePosition& position) {
     return objects.back().get();
 }
 optional<Value*> AllocationOperation::interpret(Scope* scope) {
+    if (!type->interpret(scope, false)) {
+        return nullopt;
+    }
     auto underlyingType = ((OwnerPointerType*)type)->underlyingType;
     typesize = underlyingType->typesize(scope);
 
@@ -2453,6 +2497,9 @@ optional<Value*> AllocationOperation::interpret(Scope* scope) {
         }
     }
     
+    if (type->needsDestruction()) {
+        scope->valuesToDestroyBuffer.push_back(this);
+    }
     return nullptr;
 }
 bool AllocationOperation::operator==(const Statement& value) const {
@@ -2469,7 +2516,7 @@ llvm::Value* AllocationOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     return nullptr;
 }
 llvm::Value* AllocationOperation::createLlvm(LlvmObject* llvmObj) {
-    auto allocatedValue = new llvm::BitCastInst(
+    llvmValue = new llvm::BitCastInst(
         llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
         type->createLlvm(llvmObj), 
         "", 
@@ -2486,10 +2533,13 @@ llvm::Value* AllocationOperation::createLlvm(LlvmObject* llvmObj) {
                 args.push_back(arguments[i]->createLlvm(llvmObj));
             }
         }
-        args.push_back(allocatedValue);
+        args.push_back(llvmValue);
 
         llvm::CallInst::Create(constructor->createLlvm(llvmObj), args, "", llvmObj->block);
     }
 
-    return allocatedValue;
+    return llvmValue;
+}
+void AllocationOperation::createDestructorLlvm(LlvmObject* llvmObj) {
+    type->createDestructorLlvm(llvmObj, llvmValue);
 }
