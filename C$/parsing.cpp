@@ -34,6 +34,17 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                 charId++; // skip closing " symbol
                 tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo);
             }
+            else if (c == '`') {
+                // for now there is no support of escape characters (like \" \n \t)
+                string rawStringLiteral = "";
+                charId++; // skip opening ` symbol
+                while (charId < lineStr.size() && lineStr[charId] != '`') {
+                    rawStringLiteral += lineStr[charId];
+                    charId++;
+                }
+                charId++; // skip closing ` symbol
+                tokens.emplace_back(Token::Type::RawStringLiteral, rawStringLiteral, lineNumber, charNumber, fileInfo);
+            }
             else if (c == '\'') {
                 // for now there is no support of escape characters (like \" \n \t)
                 charId++; // skip opening ' symbol

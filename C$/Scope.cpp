@@ -37,6 +37,8 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
         return errorMessageBool("statement cannot start with a char value", token.codePosition);
     case Token::Type::StringLiteral:
         return errorMessageBool("statement cannot start with a string literal", token.codePosition);
+    case Token::Type::RawStringLiteral:
+        return errorMessageBool("statement cannot start with a raw string literal", token.codePosition);
     case Token::Type::Integer:
         return errorMessageBool("statement cannot start with an integer value", token.codePosition);
     case Token::Type::Float:
@@ -275,6 +277,20 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             i += 1;
             expectValue = false;
             break;
+        case Token::Type::RawStringLiteral: {
+            if (!expectValue) {
+                endOfExpression = true;
+                break;
+            }
+            auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);
+            for (char c : tokens[i].value) {
+                staticArray->values.push_back(CharValue::Create(tokens[i].codePosition, c));
+            }
+            out.push_back(staticArray);
+            i += 1;
+            expectValue = false;
+            break;
+        }
         case Token::Type::Label:{
             if (!expectValue) {
                 if (tokens[i].value == "onError" || tokens[i].value == "onSuccess") {
