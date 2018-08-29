@@ -3,6 +3,7 @@
 #include "Value.h"
 #include "LlvmObject.h"
 #include <algorithm>
+#include <functional>
 
 struct Operation : Value {
     enum class Kind {
@@ -34,6 +35,7 @@ struct Operation : Value {
         Sizeof,
         Typesize,
         Constructor,
+        BuildInConstructor,
         Destroy,
         LeftBracket // not really operator - only for convinience in reverse polish notation
     };
@@ -371,6 +373,21 @@ struct ConstructorOperation : Operation {
 
 private:
     static std::vector<std::unique_ptr<ConstructorOperation>> objects;
+};
+
+struct BuildInConstructorOperation : Operation {
+    BuildInConstructorOperation(const CodePosition& position, Type* type);
+    static BuildInConstructorOperation* Create(const CodePosition& position, Type* type);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj);
+    virtual bool operator==(const Statement& value) const;
+
+    FunctionValue* classConstructor = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<BuildInConstructorOperation>> objects;
 };
 
 struct AllocationOperation : Operation {

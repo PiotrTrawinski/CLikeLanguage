@@ -660,22 +660,57 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     }
                 }
                 else if (tokens[i].value == "[") {
-                    // static array ([x, y, z, ...])
-                    auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);
-                    do {
-                        i += 1;
-                        auto value = getValue(tokens, i, {",", "]"});
-                        if (!value) {
-                            return nullopt;
+                    // static array ([x, y, z, ...]) or dynamic array constructor ([]T) or static array constructor ([N]T)
+                    if (tokens[i + 1].value == "]") {
+                        // dynamic array constructor ([]T or []T(...))
+                    } else {
+                        // static array ([x, y, z, ...]) or static array constructor ([N]T)
+                        int openBrackets = 1;
+                        int j = i + 1;
+                        while (j < tokens.size() && openBrackets != 0) {
+                            if (tokens[j].value == "[") openBrackets += 1;
+                            if (tokens[j].value == "]") openBrackets -= 1;
+                            j += 1;
                         }
-                        if (value->valueKind == Value::ValueKind::Empty) {
-                            return errorMessageOpt("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
+                        if (tokens[j].type == Token::Type::Label || tokens[j].value == "*" || tokens[j].value == "("
+                            || tokens[j].value == "[" || tokens[j].value == "?" || tokens[j].value == "!")
+                        {
+                            // static array constructor ([N]T or [N]T(...))
+                            auto& oldPosition = tokens[i].codePosition;
+                            auto type = getType(tokens, i, {";", "("});
+                            if (!type) return nullopt;
+                            auto operation = BuildInConstructorOperation::Create(oldPosition, type);
+
+                            if (tokens[i].value == "(") {
+                                i += 1;
+                                while (tokens[i].value != ")") {
+                                    auto value = getValue(tokens, i, {",", ")"});
+                                    if (!value) return nullopt;     
+                                    operation->arguments.push_back(value);
+                                }
+                                i += 1;
+                            }       
+                            out.push_back(operation);
+                            expectValue = false;
+                        } else {
+                            // static array ([x, y, z, ...])
+                            auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);
+                            do {
+                                i += 1;
+                                auto value = getValue(tokens, i, {",", "]"});
+                                if (!value) {
+                                    return nullopt;
+                                }
+                                if (value->valueKind == Value::ValueKind::Empty) {
+                                    return errorMessageOpt("expected array value, got '" + tokens[i].value + "'", tokens[i].codePosition);
+                                }
+                                staticArray->values.push_back(value);
+                            } while(tokens[i].value != "]");
+                            i += 1;
+                            out.push_back(staticArray);
+                            expectValue = false;
                         }
-                        staticArray->values.push_back(value);
-                    } while(tokens[i].value != "]");
-                    i += 1;
-                    out.push_back(staticArray);
-                    expectValue = false;
+                    }
                 } else if (tokens[i].value == "-") {
                     appendOperator(stack, out, Operation::Kind::Minus, tokens[i++].codePosition);
                     expectValue = true;
