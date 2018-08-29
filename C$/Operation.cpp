@@ -2473,6 +2473,187 @@ void ConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
 }
 
 
+BuildInConstructorOperation::BuildInConstructorOperation(const CodePosition& position, Type* type) : 
+    Operation(position, Operation::Kind::BuildInConstructor)
+{
+    this->type = type;
+}
+vector<unique_ptr<BuildInConstructorOperation>> BuildInConstructorOperation::objects;
+BuildInConstructorOperation* BuildInConstructorOperation::Create(const CodePosition& position, Type* type) {
+    objects.emplace_back(make_unique<BuildInConstructorOperation>(position, type));
+    return objects.back().get();
+}
+optional<Value*> BuildInConstructorOperation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
+
+    switch (type->kind) {
+    case Type::Kind::StaticArray: {
+        auto staticArrayType = (StaticArrayType*)type;
+        switch (arguments.size()) {
+        case 0: {
+            if (staticArrayType->elementType->kind == Type::Kind::Class) {
+                auto classType = (ClassType*)staticArrayType->elementType;
+                if (classType->declaration->body->constructors.size() > 0) {
+                    for (auto constructor : classType->declaration->body->constructors) {
+                        if (constructor->arguments.size() == 1) {
+                            classConstructor = constructor;
+                        }
+                    }
+                    if (!classConstructor) {
+                        return errorMessageOpt("class type " + classType->name + " has no 0 argument constructor", position);
+                    }
+                } else {
+                    classConstructor = classType->declaration->body->inlineConstructors;
+                }
+            }
+            break;
+        }
+        case 1: {
+            if (!cmpPtr(arguments[0]->type, staticArrayType->elementType)) {
+                auto cast = CastOperation::Create(arguments[0]->position, staticArrayType->elementType);
+                cast->arguments.push_back(arguments[0]);
+                auto castInterpret = cast->interpret(scope);
+                if (!castInterpret) return nullopt;
+                if (castInterpret.value()) arguments[0] = castInterpret.value();
+                else arguments[0] = cast;
+            } 
+            break;
+        }
+        default: 
+            return errorMessageOpt("static array constructor can take 0 or 1 arguments, got "
+                + to_string(arguments.size()), position
+            );
+        }
+        break;
+    }
+    default:
+        internalError("unexpected Build-in constructor operation", position);
+    }
+    if (type->needsDestruction()) {
+        scope->valuesToDestroyBuffer.push_back(this);
+    }
+    return nullptr;
+}
+bool BuildInConstructorOperation::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const BuildInConstructorOperation&>(value);
+        return Operation::operator==(other);
+    }
+    else {
+        return false;
+    }
+}
+void loopAssign(LlvmObject* llvmObj, llvm::Value* sizeValue, function<void(llvm::Value*)> bodyFunction) {
+    auto i64Type = llvm::Type::getInt64Ty(llvmObj->context);
+
+    auto loopStartBlock     = llvm::BasicBlock::Create(llvmObj->context, "loopStart",     llvmObj->function);
+    auto loopConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "loopCondition", llvmObj->function);
+    auto loopBodyBlock      = llvm::BasicBlock::Create(llvmObj->context, "loop",          llvmObj->function);
+    auto afterLoopBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterLoop",     llvmObj->function);
+
+    // start block
+    llvm::BranchInst::Create(loopStartBlock, llvmObj->block);
+    llvmObj->block = loopStartBlock;
+    auto index = new llvm::AllocaInst(i64Type, 0, "", llvmObj->block);
+    new llvm::StoreInst(llvm::ConstantInt::get(i64Type, -1), index, llvmObj->block);
+    llvm::BranchInst::Create(loopConditionBlock, loopStartBlock);
+
+    // body block
+    llvmObj->block = loopBodyBlock;
+    bodyFunction(index);
+
+    // after block
+    llvm::BranchInst::Create(loopConditionBlock, llvmObj->block);
+
+    // condition block
+    llvmObj->block = loopConditionBlock;
+    auto indexAfterIncrement = llvm::BinaryOperator::CreateAdd(
+        new llvm::LoadInst(index, "", llvmObj->block), 
+        llvm::ConstantInt::get(i64Type, 1), "", llvmObj->block
+    );
+    new llvm::StoreInst(indexAfterIncrement, index, llvmObj->block);
+    llvm::BranchInst::Create(
+        loopBodyBlock, 
+        afterLoopBlock, 
+        new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, indexAfterIncrement, sizeValue, ""), 
+        loopConditionBlock
+    );
+
+    llvmObj->block = afterLoopBlock;
+}
+llvm::Value* BuildInConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    llvmValue = type->allocaLlvm(llvmObj, "");
+
+    switch (type->kind) {
+    case Type::Kind::StaticArray: {
+        auto staticArrayType = (StaticArrayType*)type;
+        llvm::Value* sizeValue;
+        if (staticArrayType->sizeAsInt == -1) {
+            sizeValue = staticArrayType->size->createLlvm(llvmObj);
+        } else {
+            sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), staticArrayType->sizeAsInt);
+        }
+        switch (arguments.size()) {
+        case 0: {
+            if (classConstructor) {
+                loopAssign(llvmObj, sizeValue, [&](llvm::Value* index) {
+                    vector<llvm::Value*> indexList;
+                    if (staticArrayType->sizeAsInt != -1) {
+                        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+                    }
+                    indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
+                    auto gep = llvm::GetElementPtrInst::Create(
+                        ((llvm::PointerType*)llvmValue->getType())->getElementType(), llvmValue, indexList, "", llvmObj->block
+                    );
+                    llvm::CallInst::Create(classConstructor->createLlvm(llvmObj), gep, "", llvmObj->block);
+                });
+            }
+            break;
+        }
+        case 1: {
+            auto constructValue = arguments[0]->createLlvm(llvmObj);
+
+            loopAssign(llvmObj, sizeValue, [&](llvm::Value* index) {
+                vector<llvm::Value*> indexList;
+                if (staticArrayType->sizeAsInt != -1) {
+                    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+                }
+                indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
+                auto gep = llvm::GetElementPtrInst::Create(
+                    ((llvm::PointerType*)llvmValue->getType())->getElementType(), llvmValue, indexList, "", llvmObj->block
+                );
+                new llvm::StoreInst(constructValue, gep, llvmObj->block);
+            });
+
+            break;
+        }
+        default: 
+            internalError("static array buildin-constructor with arguments.size > 1 during llvm creating", position);
+        }
+        break;
+    }
+    default:
+        internalError("unexpected Build-in constructor operation during llvm creating", position);
+    }
+
+    return llvmValue;
+}
+llvm::Value* BuildInConstructorOperation::createLlvm(LlvmObject* llvmObj) {
+    return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+}
+void BuildInConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
+    type->createDestructorLlvm(llvmObj, llvmValue);
+}
+
+
+
 AllocationOperation::AllocationOperation(const CodePosition& position) : 
     Operation(position, Operation::Kind::Allocation)
 {}
