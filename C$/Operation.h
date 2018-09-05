@@ -296,6 +296,8 @@ struct FunctionCallOperation : Operation {
 
     Value* function = nullptr;
     std::string idName = "";
+
+    llvm::Value* llvmClassStackTemp = nullptr;
     
 private:
     enum FindFunctionStatus {
@@ -375,6 +377,7 @@ private:
     static std::vector<std::unique_ptr<ConstructorOperation>> objects;
 };
 
+void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, std::function<void(llvm::Value*)> bodyFunction);
 struct BuildInConstructorOperation : Operation {
     BuildInConstructorOperation(const CodePosition& position, Type* type);
     static BuildInConstructorOperation* Create(const CodePosition& position, Type* type);
@@ -406,4 +409,18 @@ struct AllocationOperation : Operation {
 
 private:
     static std::vector<std::unique_ptr<AllocationOperation>> objects;
+};
+
+struct AssignOperation : Operation {
+    AssignOperation(const CodePosition& position);
+    static AssignOperation* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual bool operator==(const Statement& value) const;
+
+    bool isConstruction = false;
+
+private:
+    static std::vector<std::unique_ptr<AssignOperation>> objects;
 };

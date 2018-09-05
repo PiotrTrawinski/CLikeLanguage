@@ -140,6 +140,8 @@ struct ClassScope : Scope {
 
     std::vector<Declaration*> declarations;
     FunctionValue* inlineConstructors = nullptr;
+    FunctionValue* copyConstructor = nullptr;
+    FunctionValue* operatorEq = nullptr;
     std::vector<FunctionValue*> constructors;
     FunctionValue* inlineDestructors = nullptr;
     FunctionValue* destructor = nullptr;

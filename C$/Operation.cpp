@@ -8,18 +8,26 @@ std::pair<FunctionValue*, ClassDeclaration*> findClassConstructor(const CodePosi
     ClassDeclaration* classDeclaration = nullptr;
     Scope* searchScope = scope; 
 
-    while (searchScope && !classDeclaration) {
-        classDeclaration = searchScope->classDeclarationMap.getDeclaration(name);
+    classDeclaration = searchScope->classDeclarationMap.getDeclaration(name);
+    while (searchScope->parentScope && !classDeclaration) {
         searchScope = searchScope->parentScope;
+        classDeclaration = searchScope->classDeclarationMap.getDeclaration(name);
     }
     if (classDeclaration) {
         if (!classDeclaration->interpret()) {
             return {nullptr, classDeclaration};
         }
+        auto classType = ClassType::Create(classDeclaration->name);
+        classType->interpret(searchScope, false);
+
         if (classDeclaration->body->constructors.empty()) {
             if (arguments.size() == 0) {
                 return {classDeclaration->body->inlineConstructors, classDeclaration};
-            } else {
+            } 
+            else if (arguments.size() == 1 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)classType)) {
+                return {classDeclaration->body->copyConstructor, classDeclaration};
+            }
+            else {
                 errorMessageBool("only default (0 argument) constructor exists, got "
                     + to_string(arguments.size()) + " arguments", position
                 );
@@ -92,8 +100,12 @@ std::pair<FunctionValue*, ClassDeclaration*> findClassConstructor(const CodePosi
                 }
 
                 if (matchId == -1) {
-                    errorMessageBool("no fitting constructor to call", position);
-                    return {nullptr, classDeclaration};
+                    if (arguments.size() == 1 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)classType)) {
+                        return {classDeclaration->body->copyConstructor, classDeclaration};
+                    } else {
+                        errorMessageBool("no fitting constructor to call", position);
+                        return {nullptr, classDeclaration};
+                    }
                 } 
                 if (possibleFunctions.size() > 1) {
                     string message = "ambogous constructor call. ";
@@ -140,7 +152,7 @@ Operation* Operation::Create(const CodePosition& position, Kind kind) {
     return objects.back().get();
 }
 optional<Value*> Operation::expandAssignOperation(Kind kind, Scope* scope) {
-    auto assign = Operation::Create(position, Operation::Kind::Assign);
+    auto assign = AssignOperation::Create(position);
     auto operation = Operation::Create(position, kind);
     operation->arguments = {arguments[0], arguments[1]};
     assign->arguments = {arguments[0], operation};
@@ -173,14 +185,14 @@ optional<Value*> Operation::interpret(Scope* scope) {
         return nullptr;
     }
     
-    if (kind != Kind::Assign && kind != Kind::Dot && !interpretAllArguments(scope)) {
+    if (kind != Kind::Dot && !interpretAllArguments(scope)) {
         return nullopt;
     }
 
     Type* effectiveType1 = nullptr;
     Type* effectiveType2 = nullptr;
 
-    if (kind != Kind::Assign && kind != Kind::Dot) {
+    if (kind != Kind::Dot) {
         if (arguments.size() >= 1) {
             effectiveType1 = arguments[0]->type->getEffectiveType();
         }
@@ -625,59 +637,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
             return val1 | val2;
         }, scope);
         if (value) return value;
-        break;
-    }
-    case Kind::Assign:{
-        if (arguments[0]->valueKind == Value::ValueKind::Variable) {
-            auto variable = (Variable*)arguments[0];
-            if (!variable->interpretTypeAndDeclaration(scope)) {
-                return nullopt;
-            }
-        }
-
-        auto arg1Interpret = arguments[1]->interpret(scope);
-        if (!arg1Interpret) return nullopt;
-        if (arg1Interpret.value()) arguments[1] = arg1Interpret.value();
-        if (!arguments[1]->type->interpret(scope)) return nullopt;
-        arguments[1]->wasCaptured = true;
-
-        if (arguments[1]->valueKind == Value::ValueKind::Operation) {
-            containsErrorResolve = ((Operation*)arguments[1])->containsErrorResolve;
-        }
-
-        if (!containsErrorResolve && arguments[0]->valueKind == Value::ValueKind::Variable) {
-            auto variable = (Variable*)arguments[0];
-            if (variable->declaration->scope->owner != Scope::Owner::Class) {
-                scope->maybeUninitializedDeclarations.erase(variable->declaration);
-                scope->declarationsInitState.at(variable->declaration) = true;
-            }
-        }
-
-        auto arg0Interpret = arguments[0]->interpret(scope);
-        if (!arg0Interpret) return nullopt;
-        if (arg0Interpret.value()) arguments[0] = arg0Interpret.value();
-        if (!arguments[0]->type->interpret(scope)) return nullopt;
-
-
-
-        if (!isLvalue(arguments[0])) {
-            return errorMessageOpt("left argument of an assignment must be an l-value", position);
-        }
-
-        CastOperation* cast = CastOperation::Create(arguments[1]->position, arguments[0]->type->getEffectiveType());
-        
-        /*if (arguments[0]->type->kind == Type::Kind::Reference) {
-            cast->argType = ((ReferenceType*)arguments[0]->type)->underlyingType;
-            cast->type = cast->argType;
-        }*/
-        cast->arguments.push_back(arguments[1]);
-        arguments[1] = cast;
-
-        auto castInterpret = arguments[1]->interpret(scope);
-        if (!castInterpret) return nullopt;
-        if (castInterpret.value()) arguments[1] = castInterpret.value();
-        type = arguments[0]->type;
-
         break;
     }
     case Kind::AddAssign:
@@ -1275,11 +1234,6 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         auto arg2 = arguments[1]->createLlvm(llvmObj);
         return llvm::BinaryOperator::CreateOr(arg1, arg2, "", llvmObj->block);
     }
-    case Kind::Assign: {
-        auto arg0Reference = arguments[0]->getReferenceLlvm(llvmObj);
-        new llvm::StoreInst(arguments[1]->createLlvm(llvmObj), arg0Reference, llvmObj->block);
-        return new llvm::LoadInst(arg0Reference, "", llvmObj->block);
-    }
     default:
         internalError("unexpected operation when creating llvm", position);
     }
@@ -1449,10 +1403,17 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
             return nullptr;
         }
     }
-    else if (type->kind == Type::Kind::RawPointer && effectiveType->kind == Type::Kind::RawPointer) {
-        if (!onlyTry) wasInterpreted = true;
-        return nullptr;
-    } else if (type->kind == Type::Kind::MaybeError) {
+    else if (type->kind == Type::Kind::RawPointer) {
+        if (effectiveType->kind == Type::Kind::RawPointer) {
+            if (!onlyTry) wasInterpreted = true;
+            return nullptr;
+        }
+        else if (effectiveType->kind == Type::Kind::Integer) {
+            if (!onlyTry) wasInterpreted = true;
+            return nullptr;
+        }
+    }
+    else if (type->kind == Type::Kind::MaybeError) {
         if (effectiveType->kind == Type::Kind::MaybeError) {
             auto maybeErrorType = (MaybeErrorType*)effectiveType;
             if (maybeErrorType->underlyingType->kind == Type::Kind::Void
@@ -1467,6 +1428,12 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
             if (!castInterpret) return nullopt;
             else if (castInterpret.value()) arguments[0] = castInterpret.value();
             else arguments[0] = cast;
+            if (!onlyTry) wasInterpreted = true;
+            return nullptr;
+        }
+    }
+    else if (type->kind == Type::Kind::OwnerPointer) {
+        if (effectiveType->kind == Type::Kind::RawPointer) {
             if (!onlyTry) wasInterpreted = true;
             return nullptr;
         }
@@ -1550,9 +1517,17 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
     } else if (type->kind == Type::Kind::RawPointer) {
         if (arg0Type->kind == Type::Kind::RawPointer) {
             return new llvm::BitCastInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-        } else {
+        } 
+        else if (arg0Type->kind == Type::Kind::Integer) {
+            return new llvm::IntToPtrInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+        }
+        else {
             internalError("only pointer can be casted to pointer in llvm stage", position);
         }
+    } else if (type->kind == Type::Kind::OwnerPointer) {
+        if (arg0Type->kind == Type::Kind::RawPointer) {
+            return new llvm::BitCastInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
+        } 
     }
     else {
         internalError("can only cast to integer, float, maybeError and raw pointer types in llvm stage", position);
@@ -1997,6 +1972,8 @@ bool FunctionCallOperation::operator==(const Statement& value) const {
 llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
     if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Reference) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+    } else if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Class) {
+        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
     } else {
         return getReferenceLlvm(llvmObj);
     }
@@ -2011,11 +1988,26 @@ llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
             args.push_back(arguments[i]->createLlvm(llvmObj));
         }
     }
+
+    if (functionType->returnType->kind == Type::Kind::Class) {
+        llvmClassStackTemp = functionType->returnType->allocaLlvm(llvmObj);
+        new llvm::StoreInst(
+            llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block), 
+            llvmClassStackTemp, 
+            llvmObj->block
+        );
+        return llvmClassStackTemp;
+    }
+
     llvmValue = llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
     return llvmValue;
 }
 void FunctionCallOperation::createDestructorLlvm(LlvmObject* llvmObj) {
-    type->createDestructorLlvm(llvmObj, llvmValue);
+    if (llvmClassStackTemp) {
+        type->createDestructorLlvm(llvmObj, llvmClassStackTemp);
+    } else {
+        type->createDestructorLlvm(llvmObj, llvmValue);
+    }
 }
 
 /*unique_ptr<Value> FunctionCallOperation::copy() {
@@ -2550,7 +2542,7 @@ bool BuildInConstructorOperation::operator==(const Statement& value) const {
         return false;
     }
 }
-void loopAssign(LlvmObject* llvmObj, llvm::Value* sizeValue, function<void(llvm::Value*)> bodyFunction) {
+void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, function<void(llvm::Value*)> bodyFunction) {
     auto i64Type = llvm::Type::getInt64Ty(llvmObj->context);
 
     auto loopStartBlock     = llvm::BasicBlock::Create(llvmObj->context, "loopStart",     llvmObj->function);
@@ -2603,7 +2595,7 @@ llvm::Value* BuildInConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) 
         switch (arguments.size()) {
         case 0: {
             if (classConstructor) {
-                loopAssign(llvmObj, sizeValue, [&](llvm::Value* index) {
+                createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
                     vector<llvm::Value*> indexList;
                     if (staticArrayType->sizeAsInt != -1) {
                         indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
@@ -2620,7 +2612,7 @@ llvm::Value* BuildInConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) 
         case 1: {
             auto constructValue = arguments[0]->createLlvm(llvmObj);
 
-            loopAssign(llvmObj, sizeValue, [&](llvm::Value* index) {
+            createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
                 vector<llvm::Value*> indexList;
                 if (staticArrayType->sizeAsInt != -1) {
                     indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
@@ -2723,4 +2715,117 @@ llvm::Value* AllocationOperation::createLlvm(LlvmObject* llvmObj) {
 }
 void AllocationOperation::createDestructorLlvm(LlvmObject* llvmObj) {
     type->createDestructorLlvm(llvmObj, llvmValue);
+}
+
+
+AssignOperation::AssignOperation(const CodePosition& position) : 
+    Operation(position, Operation::Kind::Assign)
+{}
+vector<unique_ptr<AssignOperation>> AssignOperation::objects;
+AssignOperation* AssignOperation::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<AssignOperation>(position));
+    return objects.back().get();
+}
+optional<Value*> AssignOperation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+
+    if (arguments[0]->valueKind == Value::ValueKind::Variable) {
+        auto variable = (Variable*)arguments[0];
+        if (!variable->interpretTypeAndDeclaration(scope)) {
+            return nullopt;
+        }
+    }
+
+    auto arg1Interpret = arguments[1]->interpret(scope);
+    if (!arg1Interpret) return nullopt;
+    if (arg1Interpret.value()) arguments[1] = arg1Interpret.value();
+    if (!arguments[1]->type->interpret(scope)) return nullopt;
+    arguments[1]->wasCaptured = true;
+
+    if (arguments[1]->valueKind == Value::ValueKind::Operation) {
+        containsErrorResolve = ((Operation*)arguments[1])->containsErrorResolve;
+    }
+
+    if (!containsErrorResolve && arguments[0]->valueKind == Value::ValueKind::Variable) {
+        auto variable = (Variable*)arguments[0];
+        if (variable->declaration->scope->owner != Scope::Owner::Class) {
+            if (!scope->declarationsInitState.at(variable->declaration)) {
+                isConstruction = true;
+                scope->declarationsInitState.at(variable->declaration) = true;
+            }
+            scope->maybeUninitializedDeclarations.erase(variable->declaration);
+        }
+    }
+
+    auto arg0Interpret = arguments[0]->interpret(scope);
+    if (!arg0Interpret) return nullopt;
+    if (arg0Interpret.value()) arguments[0] = arg0Interpret.value();
+    if (!arguments[0]->type->interpret(scope)) return nullopt;
+
+    if (!isLvalue(arguments[0])) {
+        return errorMessageOpt("left argument of an assignment must be an l-value", position);
+    }
+
+    CastOperation* cast = CastOperation::Create(arguments[1]->position, arguments[0]->type->getEffectiveType());
+
+    cast->arguments.push_back(arguments[1]);
+    arguments[1] = cast;
+
+    auto castInterpret = arguments[1]->interpret(scope);
+    if (!castInterpret) return nullopt;
+    if (castInterpret.value()) arguments[1] = castInterpret.value();
+    type = arguments[0]->type;
+
+    return nullptr;
+}
+bool AssignOperation::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const AssignOperation&>(value);
+        return this->isConstruction == other.isConstruction
+            && Operation::operator==(other);
+    }
+    else {
+        return false;
+    }
+}
+llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    auto arg0Reference = arguments[0]->getReferenceLlvm(llvmObj);
+
+    if (isConstruction) {
+        if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
+            if (isLvalue(arguments[1])) {
+                arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
+            } else {
+                arguments[0]->type->createLlvmMoveConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
+            }
+        } else {
+            if (isLvalue(arguments[1])) {
+                arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
+            } else {
+                arguments[0]->type->createLlvmMoveConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
+            }
+        }
+    } else {
+        if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
+            if (isLvalue(arguments[1])) {
+                arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
+            } else {
+                arguments[0]->type->createLlvmMoveAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
+            }
+        } else {
+            if (isLvalue(arguments[1])) {
+                arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
+            } else {
+                arguments[0]->type->createLlvmMoveAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
+            }
+        }
+    }
+
+    return arg0Reference;
+}
+llvm::Value* AssignOperation::createLlvm(LlvmObject* llvmObj) {
+    return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
 }

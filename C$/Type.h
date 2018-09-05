@@ -40,6 +40,11 @@ struct Type {
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
+    //virtual void createLlvmConstructor(LlvmObject* llvmObj, std::vector<Value*> args);
+    virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmMoveAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue);
 
     static Type* getSuitingArithmeticType(Type* val1, Type* val2);
@@ -61,6 +66,8 @@ struct OwnerPointerType : Type {
     virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue);
 
     Type* underlyingType = nullptr;
@@ -131,6 +138,10 @@ struct StaticArrayType : Type {
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
+    virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue);
 
     Type* elementType = nullptr;
     Value* size = nullptr;
@@ -182,6 +193,9 @@ struct ClassType : Type {
     virtual bool needsDestruction();
     //virtual std::unique_ptr<Type> copy();
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue);
 
     std::string name;

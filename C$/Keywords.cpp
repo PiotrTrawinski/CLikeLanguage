@@ -33,6 +33,7 @@ namespace {
         keywordLabels["void"]     = std::make_unique<TypeKeyword>(TypeKeyword::Value::Void);
         keywordLabels["true"]     = std::make_unique<SpecialValueKeyword>(SpecialValueKeyword::Value::True);
         keywordLabels["false"]    = std::make_unique<SpecialValueKeyword>(SpecialValueKeyword::Value::False);
+        keywordLabels["null"]     = std::make_unique<SpecialValueKeyword>(SpecialValueKeyword::Value::Null);
         return keywordLabels;
     }
 }
