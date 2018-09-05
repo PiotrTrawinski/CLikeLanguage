@@ -135,10 +135,11 @@ void Declaration::createLlvm(LlvmObject* llvmObj) {
             if (variable->type->kind == Type::Kind::Reference) {
                 new llvm::StoreInst(value->getReferenceLlvm(llvmObj), llvmVariable, llvmObj->block);
             } else {
-                auto assignOperation = Operation::Create(position, Operation::Kind::Assign);
+                auto assignOperation = AssignOperation::Create(position);
                 assignOperation->arguments.push_back(variable);
                 assignOperation->arguments.push_back(value);
                 assignOperation->interpret(scope);
+                assignOperation->isConstruction = true;
                 assignOperation->createLlvm(llvmObj);
             }
         }

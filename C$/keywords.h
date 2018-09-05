@@ -62,7 +62,7 @@ struct FlowStatementKeyword : Keyword {
 };
 struct SpecialValueKeyword : Keyword {
     enum class Value {
-        True, False
+        True, False, Null
     };
 
     SpecialValueKeyword(Value value) :

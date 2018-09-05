@@ -69,7 +69,7 @@ string DeclarationMap::toString(Type* type) {
     case Type::Kind::RawPointer:
         return "*" + toString(((RawPointerType*)(type))->underlyingType);
     case Type::Kind::OwnerPointer:
-        return "!" + toString(((OwnerPointerType*)(type))->underlyingType);
+        return "^" + toString(((OwnerPointerType*)(type))->underlyingType);
     case Type::Kind::Reference:
         return "&" + toString(((ReferenceType*)(type))->underlyingType);
     case Type::Kind::MaybeError:

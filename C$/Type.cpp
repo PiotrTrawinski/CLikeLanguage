@@ -62,6 +62,19 @@ llvm::Type* Type::createLlvm(LlvmObject* llvmObj) {
 llvm::AllocaInst* Type::allocaLlvm(LlvmObject* llvmObj, const string& name) {
     return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
 }
+void Type::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(rightLlvmValue, leftLlvmRef, llvmObj->block);
+}
+void Type::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(rightLlvmValue, leftLlvmRef, llvmObj->block);
+}
+void Type::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(rightLlvmValue, leftLlvmRef, llvmObj->block);
+}
+void Type::createLlvmMoveAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    createDestructorLlvm(llvmObj, leftLlvmRef);
+    createLlvmMoveConstructor(llvmObj, leftLlvmRef, rightLlvmValue);
+}
 void Type::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {}
 
 Type* getSuitingIntegerType(IntegerType* i1, IntegerType* i2) {
@@ -133,6 +146,24 @@ llvm::Type* OwnerPointerType::createLlvm(LlvmObject* llvmObj) {
     } else {
         return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
     }
+}
+void OwnerPointerType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    auto llvmTypesize = IntegerValue::Create(CodePosition(nullptr,0,0), underlyingType->sizeInBytes());
+    auto newAllocatedValue = new llvm::BitCastInst(
+        llvm::CallInst::Create(llvmObj->mallocFunction, llvmTypesize->createLlvm(llvmObj), "", llvmObj->block), 
+        this->createLlvm(llvmObj), 
+        "", 
+        llvmObj->block
+    );
+    if (underlyingType->kind == Type::Kind::Class) {
+        underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, rightLlvmValue);
+    } else {
+        underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
+    }
+    new llvm::StoreInst(newAllocatedValue, leftLlvmRef, llvmObj->block);
+}
+void OwnerPointerType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), new llvm::LoadInst(leftLlvmRef, "", llvmObj->block), llvmObj->block);
 }
 void OwnerPointerType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
     if (underlyingType->kind == Type::Kind::Class) {
@@ -373,6 +404,38 @@ llvm::AllocaInst* StaticArrayType::allocaLlvm(LlvmObject* llvmObj, const string&
         return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
     }
 }
+void StaticArrayType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    llvm::Value* sizeValue;
+    if (sizeAsInt == -1) sizeValue = size->createLlvm(llvmObj);
+    else                 sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
+
+    createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
+        vector<llvm::Value*> indexList;
+        if (sizeAsInt != -1) {
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+        }
+        indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
+        auto leftGepRef = llvm::GetElementPtrInst::Create(
+            ((llvm::PointerType*)leftLlvmRef->getType())->getElementType(), leftLlvmRef, indexList, "", llvmObj->block
+        );
+        auto rightGepRef = llvm::GetElementPtrInst::Create(
+            ((llvm::PointerType*)rightLlvmValue->getType())->getElementType(), rightLlvmValue, indexList, "", llvmObj->block
+        );
+        elementType->createLlvmCopyConstructor(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
+    });
+}
+void StaticArrayType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
+}
+void StaticArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    // run copyAssignment on all elements in loop
+}
+void StaticArrayType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    if (elementType->needsDestruction()) {
+        // run destructor on all elements in loop
+    }
+}
+
 
 
 /*
@@ -506,6 +569,15 @@ bool ClassType::needsDestruction() {
 }*/
 llvm::Type* ClassType::createLlvm(LlvmObject* llvmObj) {
     return declaration->getLlvmType(llvmObj);
+}
+void ClassType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    llvm::CallInst::Create(declaration->body->copyConstructor->createLlvm(llvmObj), {rightLlvmValue, leftLlvmRef}, "", llvmObj->block);
+}
+void ClassType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
+}
+void ClassType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    llvm::CallInst::Create(declaration->body->operatorEq->createLlvm(llvmObj), {rightLlvmValue, leftLlvmRef}, "", llvmObj->block);
 }
 void ClassType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
     if (declaration->body->destructor) {

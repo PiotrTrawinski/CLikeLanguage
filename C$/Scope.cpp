@@ -344,6 +344,14 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 expectValue = false;
                 break;
             }
+            else if (tokens[i].value == "null") {
+                auto voidPtrCast = CastOperation::Create(tokens[i].codePosition, RawPointerType::Create(Type::Create(Type::Kind::Void)));
+                appendOperator(stack, out, voidPtrCast);
+                out.push_back(IntegerValue::Create(tokens[i].codePosition, 0));
+                i += 1;
+                expectValue = false;
+                break;
+            }
             else if (tokens[i].value == "alloc") {
                 i += 1;
                 auto operation = AllocationOperation::Create(tokens[i].codePosition);
@@ -673,7 +681,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                             j += 1;
                         }
                         if (tokens[j].type == Token::Type::Label || tokens[j].value == "*" || tokens[j].value == "("
-                            || tokens[j].value == "[" || tokens[j].value == "?" || tokens[j].value == "!")
+                            || tokens[j].value == "[" || tokens[j].value == "?" || tokens[j].value == "^")
                         {
                             // static array constructor ([N]T or [N]T(...))
                             auto& oldPosition = tokens[i].codePosition;
@@ -914,7 +922,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     appendOperator(stack, out, Operation::Kind::Gt, tokens[i++].codePosition);
                     expectValue = true;
                 } else if (tokens[i].value == "=") {
-                    appendOperator(stack, out, Operation::Kind::Assign, tokens[i++].codePosition);
+                    appendOperator(stack, out, AssignOperation::Create(tokens[i++].codePosition));
                     expectValue = true;
                 } else {
                     endOfExpression = true;
@@ -1021,7 +1029,7 @@ optional<vector<Type*>> Scope::getFunctionArgumentTypes(const vector<Token>& tok
 }
 Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool writeError) {
     Type* type = nullptr;
-    if (tokens[i].value == "!") {
+    if (tokens[i].value == "^") {
         i += 1;
         auto underlyingType = getType(tokens, i, delimiters, writeError);
         if (underlyingType) {
@@ -1668,6 +1676,7 @@ bool ClassScope::interpret() {
         if (!declaration->value) {
             maybeUninitializedDeclarations.insert(declaration);
         }
+        declarationsInitState.insert({declaration, declaration->value});
     }
     
     /*
@@ -1684,7 +1693,7 @@ bool ClassScope::interpret() {
     inlineConstructors->arguments.back()->variable->type = classPointerType;
     for (auto& declaration : declarations) {
         if (declaration->value && !declaration->variable->isConst) {
-            auto assignOperation = Operation::Create(declaration->position, Operation::Kind::Assign);
+            auto assignOperation = AssignOperation::Create(declaration->position);
             assignOperation->arguments.push_back(declaration->variable);
             assignOperation->arguments.push_back(declaration->value);
             inlineConstructors->body->statements.push_back(assignOperation);
@@ -1692,6 +1701,9 @@ bool ClassScope::interpret() {
     }
     if (!inlineConstructors->interpret(this)) {
         internalError("failed interpreting of inline class member constructors", position);
+    }
+    for (auto& statement : inlineConstructors->body->statements) {
+        ((AssignOperation*)statement)->isConstruction = true;
     }
 
     /*
@@ -1716,7 +1728,71 @@ bool ClassScope::interpret() {
             internalError("failed interpreting of inline class member destructors", position);
         }
     }
-    
+
+
+    /*
+        copy constructor
+    */
+    auto copyConstructorType = FunctionType::Create();
+    auto classReferenceType = ReferenceType::Create(classPointerType->underlyingType);
+    copyConstructorType->argumentTypes.push_back(classReferenceType);
+    copyConstructorType->argumentTypes.push_back(classPointerType);
+    copyConstructorType->returnType = Type::Create(Type::Kind::Void);
+    copyConstructor = FunctionValue::Create(position, copyConstructorType, this);
+    copyConstructor->arguments.push_back(Declaration::Create(position));
+    copyConstructor->arguments.back()->variable->name = "other";
+    copyConstructor->arguments.back()->variable->type = classReferenceType;
+    copyConstructor->arguments.push_back(Declaration::Create(position));
+    copyConstructor->arguments.back()->variable->name = "this";
+    copyConstructor->arguments.back()->variable->type = classPointerType;
+
+    for (auto& declaration : declarations) {
+        if (!declaration->variable->isConst) {
+            auto otherVar = Operation::Create(declaration->position, Operation::Kind::Dot);
+            otherVar->arguments.push_back(Variable::Create(declaration->position, "other"));
+            otherVar->arguments.push_back(Variable::Create(declaration->position, declaration->variable->name));
+
+            auto assignOperation = AssignOperation::Create(declaration->position);
+            assignOperation->arguments.push_back(declaration->variable);
+            assignOperation->arguments.push_back(otherVar);
+            copyConstructor->body->statements.push_back(assignOperation);
+        }
+    }
+    if (!copyConstructor->interpret(this)) {
+        internalError("failed interpreting of default copy constructor", position);
+    }
+    for (auto& statement : copyConstructor->body->statements) {
+        ((AssignOperation*)statement)->isConstruction = true;
+    }
+
+
+    /*
+        copy operator=
+    */
+    operatorEq = FunctionValue::Create(position, copyConstructorType, this);
+    operatorEq->arguments.push_back(Declaration::Create(position));
+    operatorEq->arguments.back()->variable->name = "other";
+    operatorEq->arguments.back()->variable->type = classReferenceType;
+    operatorEq->arguments.push_back(Declaration::Create(position));
+    operatorEq->arguments.back()->variable->name = "this";
+    operatorEq->arguments.back()->variable->type = classPointerType;
+
+    for (auto& declaration : declarations) {
+        if (!declaration->variable->isConst) {
+            auto otherVar = Operation::Create(declaration->position, Operation::Kind::Dot);
+            otherVar->arguments.push_back(Variable::Create(declaration->position, "other"));
+            otherVar->arguments.push_back(Variable::Create(declaration->position, declaration->variable->name));
+
+            auto assignOperation = AssignOperation::Create(declaration->position);
+            assignOperation->arguments.push_back(declaration->variable);
+            assignOperation->arguments.push_back(otherVar);
+            operatorEq->body->statements.push_back(assignOperation);
+        }
+    }
+    if (!operatorEq->interpret(this)) {
+        internalError("failed interpreting of default operator=", position);
+    }
+
 
     for (auto& declaration : declarations) {
         if (declaration->variable->isConst && declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
@@ -1764,6 +1840,7 @@ bool ClassScope::interpret() {
             }
         }
     }
+
     return !wereErrors;
 }
 Declaration* ClassScope::findAndInterpretDeclaration(const string& name) {
@@ -1778,6 +1855,8 @@ bool ClassScope::getHasReturnStatement() {
 void ClassScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {}
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
     inlineConstructors->createLlvm(llvmObj, classDeclaration->name + "InlineConstructors");
+    copyConstructor->createLlvm(llvmObj, classDeclaration->name + "DefaultCopyConstructor");
+    operatorEq->createLlvm(llvmObj, classDeclaration->name + "DefaultCopyAssignment");
     if (inlineDestructors) {
         inlineDestructors->createLlvm(llvmObj, classDeclaration->name + "InlineDestructors");
     }
@@ -2284,9 +2363,9 @@ bool IfScope::interpret() {
         return false;
     }
     if (elseScope) {
-        elseScope->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
+        elseScope->parentMaybeUninitializedDeclarations = parentScope->maybeUninitializedDeclarations;
         elseScope->hasReturnStatement = conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
-        elseScope->declarationsInitState = declarationsInitState;
+        elseScope->declarationsInitState = parentScope->declarationsInitState;
         if (!elseScope->interpret()) {
             elseScopeErrors = true;
         }
