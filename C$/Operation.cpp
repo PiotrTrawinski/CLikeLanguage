@@ -977,6 +977,16 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
         case Type::Kind::OwnerPointer: {
             return arguments[0]->createLlvm(llvmObj);
         }
+        case Type::Kind::MaybeError: {
+            auto arg = arguments[0]->getReferenceLlvm(llvmObj);
+            vector<llvm::Value*> indexList;
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
+            auto gep = llvm::GetElementPtrInst::Create(
+                ((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block
+            );
+            return gep;
+        }
         default:
             return nullptr;
         }
@@ -1000,14 +1010,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::GetValue: {
         switch (arguments[0]->type->kind) {
         case Type::Kind::MaybeError: {
-            auto arg = arguments[0]->getReferenceLlvm(llvmObj);
-            vector<llvm::Value*> indexList;
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
-            auto gep = llvm::GetElementPtrInst::Create(
-                ((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block
-            );
-            return new llvm::LoadInst(gep, "", llvmObj->block);
+            return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
         }
         case Type::Kind::RawPointer: {
             return new llvm::LoadInst(arguments[0]->createLlvm(llvmObj), "", llvmObj->block);
@@ -2504,7 +2507,7 @@ optional<Value*> ConstructorOperation::interpret(Scope* scope) {
 }
 optional<Value*> ConstructorOperation::interpret(Scope* scope, bool onlyTry, bool parentIsAssignment) {
     if (wasInterpreted) return nullptr;
-    wasInterpreted = true;
+    if (!onlyTry) wasInterpreted = true;
     if (!type->interpret(scope)) return nullopt;
     if (!interpretAllArguments(scope)) return nullopt;
 
@@ -2675,7 +2678,7 @@ llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     }
     else if (isConstruction) {
         if (isLvalue(arguments[1])) {
-            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
                 arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
@@ -2689,7 +2692,7 @@ llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
         }
     } else {
         if (isLvalue(arguments[1])) {
-            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
                 arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));

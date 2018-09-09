@@ -419,6 +419,14 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
 
                 out.push_back(operation);
                 expectValue = false;
+            } else if (tokens[i].value == "error") {
+                auto type = MaybeErrorType::Create(Type::Create(Type::Kind::Void));
+                if (!type) return nullopt;
+                auto constructorOp = ConstructorOperation::Create(tokens[i].codePosition, type, {}, false, true);
+                i += 1;
+                if (!addArguments(constructorOp, tokens, i)) return nullopt;
+                out.push_back(constructorOp);
+                expectValue = false;
             } else {
                 bool isTemplateFunctionCall = false;
                 if (tokens[i + 1].value == "<") {
@@ -720,6 +728,10 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     expectValue = false;
                 } else if (tokens[i].value == "*") {
                     // raw pointer constructor
+                    addConstructorOperation(out, tokens, i);
+                    expectValue = false;
+                } else if (tokens[i].value == "?") {
+                    // maybe error constructor
                     addConstructorOperation(out, tokens, i);
                     expectValue = false;
                 } else if (tokens[i].value == "-") {

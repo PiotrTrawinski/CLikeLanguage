@@ -119,6 +119,14 @@ struct MaybeErrorType : Type {
     virtual bool needsDestruction();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    llvm::Value* llvmGepError(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    llvm::Value* llvmGepValue(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef);
 
     Type* underlyingType = nullptr;
     llvm::Type* llvmType = nullptr;
