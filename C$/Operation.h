@@ -232,13 +232,13 @@ struct CastOperation : Operation {
     CastOperation(const CodePosition& position, Type* argType);
     static CastOperation* Create(const CodePosition& position, Type* argType);
     virtual std::optional<Value*> interpret(Scope* scope);
-    std::optional<Value*> interpret(Scope* scope, bool onlyTry);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
 
     Type* argType;
+    bool argIsLValue = false;
     
 private:
     static std::vector<std::unique_ptr<CastOperation>> objects;

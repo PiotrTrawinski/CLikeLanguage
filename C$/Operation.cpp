@@ -1244,17 +1244,16 @@ CastOperation* CastOperation::Create(const CodePosition& position, Type* argType
     return objects.back().get();
 }
 optional<Value*> CastOperation::interpret(Scope* scope) {
-    return interpret(scope, false);
-}
-optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
     if (wasInterpreted) {
         return nullptr;
     }
+    wasInterpreted = true;
+
     if (!interpretAllArguments(scope)) {
         return nullopt;
     }
     if (!type->interpret(scope) || !argType->interpret(scope)) {
-        if (!onlyTry) errorMessageBool("cannot cast to unknown type " + DeclarationMap::toString(type), position);
+        errorMessageBool("cannot cast to unknown type " + DeclarationMap::toString(type), position);
         return nullopt;
     }
     if (arguments[0]->valueKind == Value::ValueKind::Operation) {
@@ -1263,178 +1262,39 @@ optional<Value*> CastOperation::interpret(Scope* scope, bool onlyTry) {
 
     auto effectiveType = arguments[0]->type->getEffectiveType();
 
-    if (cmpPtr(arguments[0]->type, type)) {
+    if (cmpPtr(type, effectiveType)) {
         return arguments[0];
     } 
-    else if (type->kind == Type::Kind::Reference) {
-        if (!isLvalue(arguments[0])){
-            if (!onlyTry) errorMessageBool("cannot cast non-lvalue to reference type", position);
-            return nullopt;
-        }
-        if (cmpPtr(effectiveType, type->getEffectiveType())) {
-            return arguments[0];
-        }
-    }
-    else if (cmpPtr(effectiveType, type)) {
-        return arguments[0];
-    }
-    else if (type->kind == Type::Kind::Bool) {
-        if (arguments[0]->isConstexpr) {
-            if (arguments[0]->valueKind == Value::ValueKind::Char) {
-                return BoolValue::Create(position, ((CharValue*)arguments[0])->value != 0);
-            }
-            if (arguments[0]->valueKind == Value::ValueKind::Integer) {
-                return BoolValue::Create(position, ((IntegerValue*)arguments[0])->value != 0);
-            }
-            if (arguments[0]->valueKind == Value::ValueKind::Float) {
-                return BoolValue::Create(position, ((FloatValue*)arguments[0])->value != 0);
-            }
-            if (arguments[0]->valueKind == Value::ValueKind::String) {
-                return BoolValue::Create(position, ((StringValue*)arguments[0])->value.size() != 0);
-            }
-            if (arguments[0]->valueKind == Value::ValueKind::StaticArray) {
-                return BoolValue::Create(position, ((StaticArrayValue*)arguments[0])->values.size() != 0);
-            }
-        }
-        if (effectiveType->kind != Type::Kind::Class) {
-            if (!onlyTry) wasInterpreted = true;
-            if (arguments[0]->type->kind == Type::Kind::Integer) {
-                auto op = Operation::Create(position, Operation::Kind::Neq);
-                op->arguments.push_back(arguments[0]);
-                auto integerValue = IntegerValue::Create(position, 0);
-                integerValue->type = IntegerType::Create(((IntegerType*)arguments[0]->type)->size);
-                op->arguments.push_back(integerValue);
-                auto opInterpret = op->interpret(scope);
-                if (!opInterpret) return nullopt;
-                if (opInterpret.value()) return opInterpret.value();
-                else return op;
-            } 
-            if (arguments[0]->type->kind == Type::Kind::Float) {
-                auto op = Operation::Create(position, Operation::Kind::Neq);
-                op->arguments.push_back(arguments[0]);
-                auto integerValue = FloatValue::Create(position, 0);
-                integerValue->type = FloatType::Create(((FloatType*)arguments[0]->type)->size);
-                op->arguments.push_back(integerValue);
-                auto opInterpret = op->interpret(scope);
-                if (!opInterpret) return nullopt;
-                if (opInterpret.value()) return opInterpret.value();
-                else return op;
-            } 
+    else if (type->sizeInBytes() == effectiveType->sizeInBytes()) {
+        auto k1 = type->kind;
+        auto k2 = effectiveType->kind;
+        if (isLvalue(arguments[0])) {
+            argIsLValue = true;
             return nullptr;
-        }
-    }
-    else if (type->kind == Type::Kind::Integer) {
-        if (effectiveType->kind == Type::Kind::Integer) {
-            if (arguments[0]->isConstexpr) {
-                if (arguments[0]->valueKind == Value::ValueKind::Char) {
-                    auto intValue = IntegerValue::Create(position, ((CharValue*)arguments[0])->value);
-                    intValue->type = type;
-                    return intValue;
-                }
-                arguments[0]->type = type;
-                return arguments[0];
-            }
-            if (!onlyTry) wasInterpreted = true;
+        } else if ((k1 == Type::Kind::RawPointer || k1 == Type::Kind::OwnerPointer 
+            || k1 == Type::Kind::Bool || k1 == Type::Kind::Integer || k1 == Type::Kind::Float) 
+            && 
+            (k2 == Type::Kind::RawPointer || k2 == Type::Kind::OwnerPointer 
+            || k2 == Type::Kind::Bool || k2 == Type::Kind::Integer || k2 == Type::Kind::Float)) 
+        {
             return nullptr;
-        }
-        if (effectiveType->kind == Type::Kind::Float) {
-            if (arguments[0]->isConstexpr) {
-                auto intValue = IntegerValue::Create(position, ((FloatValue*)arguments[0])->value);
-                intValue->type = type;
-                return intValue;
-            }
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-        if (effectiveType->kind == Type::Kind::Bool) {
-            if (arguments[0]->isConstexpr) {
-                int value = ((BoolValue*)arguments[0])->value ? 1 : 0;
-                auto intValue = IntegerValue::Create(position, value);
-                intValue->type = type;
-                return intValue;
-            }
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-    }
-    else if (type->kind == Type::Kind::Float) {
-        if (effectiveType->kind == Type::Kind::Integer) {
-            if (arguments[0]->isConstexpr) {
-                Value* floatValue;
-                if (arguments[0]->valueKind == Value::ValueKind::Integer) {
-                    floatValue = FloatValue::Create(position, ((IntegerValue*)arguments[0])->value);
-                } else {
-                    floatValue = FloatValue::Create(position, ((CharValue*)arguments[0])->value);
-                }
-                floatValue->type = type;
-                return floatValue;
-            }
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-        if (effectiveType->kind == Type::Kind::Float) {
-            if (arguments[0]->isConstexpr) {
-                arguments[0]->type = type;
-                return arguments[0];
-            }
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-        if (effectiveType->kind == Type::Kind::Bool) {
-            if (arguments[0]->isConstexpr) {
-                double value = ((BoolValue*)arguments[0])->value ? 1 : 0;
-                auto floatValue = FloatValue::Create(position, value);
-                floatValue->type = type;
-                return floatValue;
-            }
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-    }
-    else if (type->kind == Type::Kind::RawPointer) {
-        if (effectiveType->kind == Type::Kind::RawPointer) {
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-        else if (effectiveType->kind == Type::Kind::Integer) {
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-    }
-    else if (type->kind == Type::Kind::MaybeError) {
-        if (effectiveType->kind == Type::Kind::MaybeError) {
-            auto maybeErrorType = (MaybeErrorType*)effectiveType;
-            if (maybeErrorType->underlyingType->kind == Type::Kind::Void
-                || ((MaybeErrorType*)type)->underlyingType->kind == Type::Kind::Void) {
-                if (!onlyTry) wasInterpreted = true;
-                return nullptr;
-            }
         } else {
-            auto cast = CastOperation::Create(position, ((MaybeErrorType*)type)->underlyingType);
-            cast->arguments.push_back(arguments[0]);
-            auto castInterpret = cast->interpret(scope);
-            if (!castInterpret) return nullopt;
-            else if (castInterpret.value()) arguments[0] = castInterpret.value();
-            else arguments[0] = cast;
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
+            return errorMessageOpt("cannot cast " + 
+                DeclarationMap::toString(arguments[0]->type) + 
+                " to " + DeclarationMap::toString(type) + 
+                " (this cast requires l-value argument)", position
+            );
         }
-    }
-    else if (type->kind == Type::Kind::OwnerPointer) {
-        if (effectiveType->kind == Type::Kind::RawPointer) {
-            if (!onlyTry) wasInterpreted = true;
-            return nullptr;
-        }
-    }
-
-    if (!onlyTry) {
+    } else {
         return errorMessageOpt("cannot cast " + 
             DeclarationMap::toString(arguments[0]->type) + 
-            " to " + DeclarationMap::toString(type), position
+            " to " + DeclarationMap::toString(type) + 
+            " (sizeof(" + DeclarationMap::toString(arguments[0]->type) + ") !=" +
+            " sizeof(" + DeclarationMap::toString(type) + "))", position
         );
     }
     
-    return nullopt;
+    
 }
 bool CastOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
@@ -1456,115 +1316,44 @@ bool CastOperation::operator==(const Statement& value) const {
     return value;
 }*/
 llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
-    auto arg = arguments[0]->createLlvm(llvmObj);
-    auto arg0Type = arguments[0]->type->getEffectiveType();
-    if (type->kind == Type::Kind::Integer) {
-        auto integerType = (IntegerType*)type;
-        if (arg0Type->kind == Type::Kind::Integer) {
-            auto sizeCast = integerType->sizeInBytes();
-            auto sizeArg = ((IntegerType*)arg0Type)->sizeInBytes();
-            if (sizeCast == sizeArg) {
-                return arg;
-            } else if (sizeCast > sizeArg) {
-                return new llvm::SExtInst(arg, integerType->createLlvm(llvmObj), "", llvmObj->block);
-            } else {
-                return new llvm::TruncInst(arg, integerType->createLlvm(llvmObj), "", llvmObj->block);
-            }
-        }
-        else if (arg0Type->kind == Type::Kind::Float) {
-            if (integerType->isSigned()) {
-                return new llvm::FPToSIInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-            } else {
-                return new llvm::FPToUIInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-            }
-        }
-        else {
-            internalError("only integer and float types can be casted to integer in llvm stage", position);
-        }
-    } else if (type->kind == Type::Kind::Float) {
-        auto floatType = (FloatType*)type;
-        if (arg0Type->kind == Type::Kind::Integer) {
-            if (((IntegerType*)arg0Type)->isSigned()) {
-                return new llvm::SIToFPInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-            } else {
-                return new llvm::UIToFPInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-            }
-        } 
-        else if (arg0Type->kind == Type::Kind::Float) {
-            if (floatType->size == FloatType::Size::F32) {
-                return new llvm::FPTruncInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-            } else {
-                return new llvm::FPExtInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-            }
-        }
-        else {
-            internalError("only integer and float types can be casted to float in llvm stage", position);
-        }
-    } else if (type->kind == Type::Kind::MaybeError) {
+    if (argIsLValue) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-    } else if (type->kind == Type::Kind::RawPointer) {
-        if (arg0Type->kind == Type::Kind::RawPointer) {
-            return new llvm::BitCastInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-        } 
-        else if (arg0Type->kind == Type::Kind::Integer) {
-            return new llvm::IntToPtrInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-        }
-        else {
-            internalError("only pointer can be casted to pointer in llvm stage", position);
-        }
-    } else if (type->kind == Type::Kind::OwnerPointer) {
-        if (arg0Type->kind == Type::Kind::RawPointer) {
-            return new llvm::BitCastInst(arg, type->createLlvm(llvmObj), "", llvmObj->block);
-        } 
     }
-    else {
-        internalError("can only cast to integer, float, maybeError and raw pointer types in llvm stage", position);
-    }
-    return nullptr;
-}
-llvm::Value* CastOperation::getReferenceLlvm(LlvmObject* llvmObj) {
-    //auto arg = arguments[0]->createLlvm(llvmObj);
-    if (type->kind == Type::Kind::MaybeError) {
-        if (arguments[0]->type->kind == Type::Kind::MaybeError) {
-            auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
-            if (maybeErrorType->underlyingType->kind == Type::Kind::Void) {
-                // ?T = ?void
-                auto var = type->allocaLlvm(llvmObj);
-                vector<llvm::Value*> indexList;
-                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 1));
-                auto gep = llvm::GetElementPtrInst::Create(
-                    ((llvm::PointerType*)var->getType())->getElementType(), var, indexList, "", llvmObj->block
-                );
-                new llvm::StoreInst(arguments[0]->createLlvm(llvmObj), gep, llvmObj->block);
-                return var;
-            }
-            else if (((MaybeErrorType*)type)->underlyingType->kind == Type::Kind::Void) {
-                // ?void = ?T
-                auto argRef = arguments[0]->getReferenceLlvm(llvmObj);
-                vector<llvm::Value*> indexList;
-                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 1));
-                auto gep = llvm::GetElementPtrInst::Create(
-                    ((llvm::PointerType*)argRef->getType())->getElementType(), argRef, indexList, "", llvmObj->block
-                );
-                return gep;
-            }
+    auto effType = arguments[0]->type->getEffectiveType();
+    auto k1 = type->kind;
+    auto k2 = effType->kind;
+    if (k1 == Type::Kind::RawPointer || k1 == Type::Kind::OwnerPointer) {
+        if (k2 == Type::Kind::RawPointer || k2 == Type::Kind::OwnerPointer) {
+            return new llvm::BitCastInst(arguments[0]->createLlvm(llvmObj), type->createLlvm(llvmObj), "", llvmObj->block);
+        } else if (k2 == Type::Kind::Bool || k2 == Type::Kind::Integer) {
+            return new llvm::IntToPtrInst(arguments[0]->createLlvm(llvmObj), type->createLlvm(llvmObj), "", llvmObj->block);
+        } else if (k2 == Type::Kind::Float) {
+            llvm::Value* floatToInt = new llvm::BitCastInst(arguments[0]->createLlvm(llvmObj), IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj), "", llvmObj->block);
+            return new llvm::IntToPtrInst(floatToInt, type->createLlvm(llvmObj), "", llvmObj->block);
         } else {
-            // ?T = T
-            auto var = type->allocaLlvm(llvmObj);
-            vector<llvm::Value*> indexList;
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
-            auto gep = llvm::GetElementPtrInst::Create(
-                ((llvm::PointerType*)var->getType())->getElementType(), var, indexList, "", llvmObj->block
-            );
-            new llvm::StoreInst(arguments[0]->createLlvm(llvmObj), gep, llvmObj->block);
-            return var;
+            internalError("unexpected type during cast llvm creating", arguments[0]->position);
+            return nullptr;
+        }
+    } else if (k1 == Type::Kind::Bool || k1 == Type::Kind::Integer || k1 == Type::Kind::Float) {
+        if (k2 == Type::Kind::RawPointer || k2 == Type::Kind::OwnerPointer) {
+            if (k1 == Type::Kind::Integer) {
+                return new llvm::PtrToIntInst(arguments[0]->createLlvm(llvmObj), type->createLlvm(llvmObj), "", llvmObj->block);
+            } else if (k1 == Type::Kind::Float) {
+                auto ptrToInt = new llvm::PtrToIntInst(arguments[0]->createLlvm(llvmObj), IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj), "", llvmObj->block);
+                return new llvm::BitCastInst(ptrToInt, type->createLlvm(llvmObj), "", llvmObj->block);
+            }
+        } else if (k2 == Type::Kind::Bool || k2 == Type::Kind::Integer || k2 == Type::Kind::Float) {
+            return new llvm::BitCastInst(arguments[0]->createLlvm(llvmObj), type->createLlvm(llvmObj), "", llvmObj->block);
+        } else {
+            internalError("unexpected type during cast llvm creating", arguments[0]->position);
+            return nullptr;
         }
     } else {
-        internalError("could not get reference to object after casting", position);
+        internalError("unexpected type during cast llvm creating", arguments[0]->position);
     }
+}
+llvm::Value* CastOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    return new llvm::BitCastInst(arguments[0]->getReferenceLlvm(llvmObj), RawPointerType::Create(type)->createLlvm(llvmObj), "", llvmObj->block);
 }
 
 
