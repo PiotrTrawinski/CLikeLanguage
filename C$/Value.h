@@ -8,6 +8,7 @@
 struct Value : Statement {
     enum class ValueKind {
         Empty,
+        Null,
         Integer,
         Float,
         Char,
@@ -151,4 +152,12 @@ struct FunctionValue : Value {
 
 private:
     static std::vector<std::unique_ptr<FunctionValue>> objects;
+};
+struct NullValue : Value {
+    NullValue(const CodePosition& position, Type* type);
+    static NullValue* Create(const CodePosition& position, Type* type);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    llvm::Value* createLlvm(LlvmObject* llvmObj);
+private:
+    static std::vector<std::unique_ptr<NullValue>> objects;
 };

@@ -57,14 +57,11 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
         status = Declaration::Status::InEvaluation;
         if (value) {
             if (variable->type) {
-                CastOperation* cast;
                 if (byReference) {
-                    cast = CastOperation::Create(value->position, ReferenceType::Create(variable->type));
+                    value = ConstructorOperation::Create(value->position, ReferenceType::Create(variable->type), {value});
                 } else {
-                    cast = CastOperation::Create(value->position, variable->type);
+                    value = ConstructorOperation::Create(value->position, variable->type, {value});
                 }
-                cast->arguments.push_back(value);
-                value = cast;
             }
             if (!variable->type && isFunctionDeclaration()) {
                 auto valueInterpret = ((FunctionValue*)value)->interpretNoBody(scope);
@@ -77,15 +74,18 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
                     return false;
                 }
             } else {
-                auto valueInterpret = value->interpret(scope);
+                optional<Value*> valueInterpret = nullopt;
+                if (value->valueKind == Value::ValueKind::Operation && ((Operation*)value)->kind == Operation::Kind::Constructor) {
+                    valueInterpret = ((ConstructorOperation*)value)->interpret(scope, false, true);
+                } else {
+                    valueInterpret = value->interpret(scope);
+                }
                 if (!valueInterpret) return false;
                 if (valueInterpret.value()) value = valueInterpret.value();
             }
             if (!variable->type) {
                 if (byReference) {
-                    auto refCast = CastOperation::Create(value->position, ReferenceType::Create(value->type));
-                    refCast->arguments.push_back(value);
-                    value = refCast;
+                    value = ConstructorOperation::Create(value->position, ReferenceType::Create(value->type), {value});
                     auto valueInterpret = value->interpret(scope);
                     if (!valueInterpret) return false;
                     if (valueInterpret.value()) value = valueInterpret.value();

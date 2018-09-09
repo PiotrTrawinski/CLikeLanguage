@@ -46,6 +46,8 @@ struct Scope : Statement {
 
     Scope(const CodePosition& position, Owner ownmaybeUninitializedDeclarationser, Scope* parentScope);
     ReadStatementValue readStatement(const std::vector<Token>& tokens, int& i);
+    bool addArguments(Operation* operation, const std::vector<Token>& tokens, int& i);
+    bool  addConstructorOperation(std::vector<Value*>& out, const std::vector<Token>& tokens, int& i, bool isHeapAllocation=false);
     std::optional<std::vector<Value*>> getReversePolishNotation(const std::vector<Token>& tokens, int& i);
     Type* getType(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool writeError=true);
     Value* getValue(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool skipOnGoodDelimiter=false);
@@ -104,6 +106,7 @@ struct GlobalScope : CodeScope {
     static GlobalScope Instance;
 
     bool setCDeclaration(const CodePosition& codePosition, const std::string& name, Type* type);
+    virtual bool interpret();
     virtual void createLlvm(LlvmObject* llvmObj);
 
 private:
@@ -138,6 +141,7 @@ struct ClassScope : Scope {
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
 
+    bool wasInterpreted = false;
     std::vector<Declaration*> declarations;
     FunctionValue* inlineConstructors = nullptr;
     FunctionValue* copyConstructor = nullptr;

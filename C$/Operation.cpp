@@ -69,31 +69,30 @@ std::pair<FunctionValue*, ClassDeclaration*> findClassConstructor(const CodePosi
                 errorMessageBool(message, position);
                 return {nullptr, classDeclaration};
             } else {
-                vector<optional<vector<CastOperation*>>> neededCasts;
+                vector<optional<vector<ConstructorOperation*>>> neededCtors;
                 for (auto function : viableDeclarations) {
-                    neededCasts.push_back(vector<CastOperation*>());
+                    neededCtors.push_back(vector<ConstructorOperation*>());
                     auto argumentTypes = ((FunctionType*)function->type)->argumentTypes;
                     for (int i = 0; i < argumentTypes.size(); ++i) {
                         if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
-                            auto cast = CastOperation::Create(arguments[i]->position, argumentTypes[i]);
-                            cast->arguments.push_back(arguments[i]);
-                            auto castInterpret = cast->interpret(scope, true);
-                            if (castInterpret) {
-                                neededCasts.back().value().push_back(cast);
+                            auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
+                            auto ctorInterpret = ctor->interpret(scope, true);
+                            if (ctorInterpret) {
+                                neededCtors.back().value().push_back(ctor);
                             } else {
-                                neededCasts.back() = nullopt;
+                                neededCtors.back() = nullopt;
                                 break;
                             }
                         } else {
-                            neededCasts.back().value().push_back(nullptr);
+                            neededCtors.back().value().push_back(nullptr);
                         }
                     }
                 }
 
                 int matchId = -1;
                 vector<FunctionValue*> possibleFunctions;
-                for (int i = 0; i < neededCasts.size(); ++i) {
-                    if (neededCasts[i]) {
+                for (int i = 0; i < neededCtors.size(); ++i) {
+                    if (neededCtors[i]) {
                         matchId = i;
                         possibleFunctions.push_back(viableDeclarations[i]);
                     }
@@ -121,13 +120,13 @@ std::pair<FunctionValue*, ClassDeclaration*> findClassConstructor(const CodePosi
                 }
 
                 for (int i = 0; i < arguments.size(); ++i) {
-                    CastOperation* cast = neededCasts[matchId].value()[i];
-                    if (cast) {
-                        auto castInterpret = cast->interpret(scope);
-                        if (castInterpret.value()) {
-                            arguments[i] = castInterpret.value();
+                    auto ctor = neededCtors[matchId].value()[i];
+                    if (ctor) {
+                        auto ctorInterpret = ctor->interpret(scope);
+                        if (ctorInterpret.value()) {
+                            arguments[i] = ctorInterpret.value();
                         } else {
-                            arguments[i] = cast;
+                            arguments[i] = ctor;
                         }
                     }
                 }
@@ -533,8 +532,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;
     }
     case Kind::LogicalNot: {
-        Value* bool1 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
-        ((Operation*)bool1)->arguments.push_back(arguments[0]);
+        Value* bool1 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[0]});
         auto bool1Interpret = bool1->interpret(scope);
         if (!bool1Interpret) return nullopt;
         if (bool1Interpret.value()) bool1 = bool1Interpret.value();
@@ -550,14 +548,12 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;   
     }
     case Kind::LogicalAnd: {
-        Value* bool1 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
-        ((Operation*)bool1)->arguments.push_back(arguments[0]);
+        Value* bool1 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[0]});
         auto bool1Interpret = bool1->interpret(scope);
         if (!bool1Interpret) return nullopt;
         if (bool1Interpret.value()) bool1 = bool1Interpret.value();
 
-        Value* bool2 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
-        ((Operation*)bool2)->arguments.push_back(arguments[0]);
+        Value* bool2 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[1]});
         auto bool2Interpret = bool2->interpret(scope);
         if (!bool2Interpret) return nullopt;
         if (bool2Interpret.value()) bool2 = bool2Interpret.value();
@@ -573,14 +569,12 @@ optional<Value*> Operation::interpret(Scope* scope) {
         break;   
     }
     case Kind::LogicalOr: {
-        Value* bool1 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
-        ((Operation*)bool1)->arguments.push_back(arguments[0]);
+        Value* bool1 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[0]});
         auto bool1Interpret = bool1->interpret(scope);
         if (!bool1Interpret) return nullopt;
         if (bool1Interpret.value()) bool1 = bool1Interpret.value();
 
-        Value* bool2 = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
-        ((Operation*)bool2)->arguments.push_back(arguments[0]);
+        Value* bool2 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[1]});
         auto bool2Interpret = bool2->interpret(scope);
         if (!bool2Interpret) return nullopt;
         if (bool2Interpret.value()) bool2 = bool2Interpret.value();
@@ -698,7 +692,6 @@ string Operation::kindToString(Kind kind) {
     case Kind::ArraySubArray: return "[x:y] (sub-array)";
     case Kind::Address: return "@ (address)";
     case Kind::GetValue: return "$ (valueOf)";
-    case Kind::Allocation: return "alloc";
     case Kind::Deallocation: return "dealloc";
     case Kind::Cast: return "[T]() (cast)";
     case Kind::BitNeg: return "~ (bit negation)";
@@ -750,7 +743,6 @@ int Operation::priority(Kind kind) {
         return 1;
     case Kind::Address:
     case Kind::GetValue:
-    case Kind::Allocation:
     case Kind::Deallocation:
     case Kind::Destroy:
     case Kind::Cast:
@@ -841,7 +833,6 @@ bool Operation::isLeftAssociative(Kind kind) {
 int Operation::numberOfArguments(Kind kind) {
     switch (kind) {
     case Kind::FunctionCall:
-    case Kind::Allocation:
         return 0;
     case Kind::Cast:
     case Kind::ArrayIndex:
@@ -1030,13 +1021,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         break;
     }
     case Kind::Destroy: {
-        llvm::Value* value;
-        if (arguments[0]->type->kind == Type::Kind::Class) {
-            value = arguments[0]->getReferenceLlvm(llvmObj);
-        } else {
-            value = arguments[0]->createLlvm(llvmObj);
-        }
-        arguments[0]->type->createDestructorLlvm(llvmObj, value);
+        arguments[0]->type->createDestructorLlvm(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
         return nullptr;
     }
     case Kind::Minus: {
@@ -1640,15 +1625,15 @@ optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
         }
     }
 
-    switch (arguments[0]->type->kind) {
+    switch (arguments[0]->type->getEffectiveType()->kind) {
         case Type::Kind::StaticArray:
-            type = ReferenceType::Create(((StaticArrayType*)arguments[0]->type)->elementType);
+            type = ReferenceType::Create(((StaticArrayType*)arguments[0]->type->getEffectiveType())->elementType);
             break;
         case Type::Kind::DynamicArray:
-            type = ReferenceType::Create(((DynamicArrayType*)arguments[0]->type)->elementType);
+            type = ReferenceType::Create(((DynamicArrayType*)arguments[0]->type->getEffectiveType())->elementType);
             break;
         case Type::Kind::ArrayView:
-            type = ReferenceType::Create(((ArrayViewType*)arguments[0]->type)->elementType);
+            type = ReferenceType::Create(((ArrayViewType*)arguments[0]->type->getEffectiveType())->elementType);
             break;
         default:
             break;
@@ -1681,8 +1666,8 @@ bool ArrayIndexOperation::operator==(const Statement& value) const {
 llvm::Value* ArrayIndexOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto arg = arguments[0]->getReferenceLlvm(llvmObj);
     vector<llvm::Value*> indexList;
-    if (arguments[0]->type->kind == Type::Kind::StaticArray) {
-        if (((StaticArrayType*)arguments[0]->type)->sizeAsInt != -1) {
+    if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::StaticArray) {
+        if (((StaticArrayType*)arguments[0]->type->getEffectiveType())->sizeAsInt != -1) {
             indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
         }
     }
@@ -1791,31 +1776,30 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         errorMessageBool(message, position);
         return FindFunctionStatus::Error;
     } else {
-        vector<optional<vector<CastOperation*>>> neededCasts;
+        vector<optional<vector<ConstructorOperation*>>> neededCtors;
         for (Declaration* declaration : viableDeclarations) {
-            neededCasts.push_back(vector<CastOperation*>());
+            neededCtors.push_back(vector<ConstructorOperation*>());
             auto argumentTypes = ((FunctionType*)declaration->variable->type)->argumentTypes;
             for (int i = 0; i < argumentTypes.size(); ++i) {
                 if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
-                    auto cast = CastOperation::Create(arguments[i]->position, argumentTypes[i]);
-                    cast->arguments.push_back(arguments[i]);
-                    auto castInterpret = cast->interpret(scope, true);
+                    auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
+                    auto castInterpret = ctor->interpret(scope, true);
                     if (castInterpret) {
-                        neededCasts.back().value().push_back(cast);
+                        neededCtors.back().value().push_back(ctor);
                     } else {
-                        neededCasts.back() = nullopt;
+                        neededCtors.back() = nullopt;
                         break;
                     }
                 } else {
-                    neededCasts.back().value().push_back(nullptr);
+                    neededCtors.back().value().push_back(nullptr);
                 }
             }
         }
 
         int matchId = -1;
         vector<Declaration*> possibleDeclarations;
-        for (int i = 0; i < neededCasts.size(); ++i) {
-            if (neededCasts[i]) {
+        for (int i = 0; i < neededCtors.size(); ++i) {
+            if (neededCtors[i]) {
                 matchId = i;
                 possibleDeclarations.push_back(viableDeclarations[i]);
             }
@@ -1838,13 +1822,13 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         }
 
         for (int i = 0; i < arguments.size(); ++i) {
-            CastOperation* cast = neededCasts[matchId].value()[i];
-            if (cast) {
-                auto castInterpret = cast->interpret(scope);
-                if (castInterpret.value()) {
-                    arguments[i] = castInterpret.value();
+            auto ctor = neededCtors[matchId].value()[i];
+            if (ctor) {
+                auto ctorInterpret = ctor->interpret(scope);
+                if (ctorInterpret.value()) {
+                    arguments[i] = ctorInterpret.value();
                 } else {
-                    arguments[i] = cast;
+                    arguments[i] = ctor;
                 }
             }
         }
@@ -1868,12 +1852,33 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         return nullptr;
     }
     wasInterpreted = true;
+
+    // first check if is it class constructor. if yes -> its ConstructorOperation
+    if (function->valueKind == Value::ValueKind::Variable) {
+        auto functionName = ((Variable*)function)->name;
+        Scope* searchScope = scope; 
+        auto classDeclaration = searchScope->classDeclarationMap.getDeclaration(functionName);
+        while (searchScope->parentScope && !classDeclaration) {
+            searchScope = searchScope->parentScope;
+            classDeclaration = searchScope->classDeclarationMap.getDeclaration(functionName);
+        }
+        if (classDeclaration) {
+            auto constructorType = ClassType::Create(classDeclaration->name);
+            constructorType->declaration = classDeclaration;
+            auto op = ConstructorOperation::Create(position, constructorType, arguments);
+            auto opInterpret = op->interpret(scope);
+            if (!opInterpret) return nullopt;
+            if (opInterpret.value()) return opInterpret.value();
+            else return op;
+        }
+    }
+
     if (!interpretAllArguments(scope)) {
         return nullopt;
     }
 
     // first check if is it class constructor
-    if (function->valueKind == Value::ValueKind::Variable) {
+    /*if (function->valueKind == Value::ValueKind::Variable) {
         auto [constructor, classDeclaration] = findClassConstructor(position, scope, ((Variable*)function)->name, arguments);
         if (classDeclaration) {
             if (constructor) {
@@ -1884,7 +1889,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
                 return nullopt;
             }
         }
-    }
+    }*/
 
     auto functionInterpret = function->interpret(scope);
     if (!functionInterpret) return nullopt;
@@ -1939,12 +1944,11 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         }
         for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
             if (!cmpPtr(functionType->argumentTypes[i], arguments[i]->type)) {
-                auto cast = CastOperation::Create(position, functionType->argumentTypes[i]);
-                cast->arguments.push_back(arguments[i]);
-                auto castInterpret = cast->interpret(scope);
-                if (!castInterpret) return nullopt;
-                if (castInterpret.value()) arguments[i] = castInterpret.value();
-                else arguments[i] = cast;
+                auto ctor = ConstructorOperation::Create(position, functionType->argumentTypes[i], {arguments[i]});
+                auto ctorInterpret = ctor->interpret(scope);
+                if (!ctorInterpret) return nullopt;
+                if (ctorInterpret.value()) arguments[i] = ctorInterpret.value();
+                else arguments[i] = ctor;
             }
         }
 
@@ -2270,12 +2274,11 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                             + " got nothing", position);
                     } 
                 } else {
-                    CastOperation* cast = CastOperation::Create(position, returnType);
-                    cast->arguments.push_back(arguments[0]);
-                    arguments[0] = cast;
-                    auto castInterpret = arguments[0]->interpret(scope);
-                    if (!castInterpret) return nullopt;
-                    if (castInterpret.value()) arguments[0] = castInterpret.value();
+                    auto ctor = ConstructorOperation::Create(position, returnType, {arguments[0]});
+                    arguments[0] = ctor;
+                    auto ctorInterpret = arguments[0]->interpret(scope);
+                    if (!ctorInterpret) return nullopt;
+                    if (ctorInterpret.value()) arguments[0] = ctorInterpret.value();
                     arguments[0]->type = returnType;
                 }
                 break;
@@ -2408,140 +2411,6 @@ bool SizeofOperation::operator==(const Statement& value) const {
 
 
 
-ConstructorOperation::ConstructorOperation(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, vector<Value*> arguments) : 
-    Operation(position, Operation::Kind::Constructor),
-    constructor(constructor),
-    classDeclaration(classDeclaration)
-{
-    this->arguments = arguments;
-    auto thisType = ClassType::Create(classDeclaration->name);
-    thisType->declaration = classDeclaration;
-    type = thisType;
-}
-vector<unique_ptr<ConstructorOperation>> ConstructorOperation::objects;
-ConstructorOperation* ConstructorOperation::Create(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, vector<Value*> arguments) {
-    objects.emplace_back(make_unique<ConstructorOperation>(position, constructor, classDeclaration, arguments));
-    return objects.back().get();
-}
-optional<Value*> ConstructorOperation::interpret(Scope* scope) {
-    if (type->needsDestruction()) {
-        scope->valuesToDestroyBuffer.push_back(this);
-    }
-    return nullptr;
-}
-bool ConstructorOperation::operator==(const Statement& value) const {
-    if(typeid(value) == typeid(*this)){
-        const auto& other = static_cast<const ConstructorOperation&>(value);
-        return this->constructor == other.constructor
-            && Operation::operator==(other);
-    }
-    else {
-        return false;
-    }
-}
-llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
-    llvmValue = type->allocaLlvm(llvmObj);
-
-    vector<llvm::Value*> args;
-    auto functionType = (FunctionType*)constructor->type;
-    for (int i = 0; i < arguments.size(); ++i) {
-        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
-            args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
-        } else {
-            args.push_back(arguments[i]->createLlvm(llvmObj));
-        }
-    }
-    args.push_back(llvmValue);
-
-    llvm::CallInst::Create(constructor->createLlvm(llvmObj), args, "", llvmObj->block);
-
-    return llvmValue;
-}
-llvm::Value* ConstructorOperation::createLlvm(LlvmObject* llvmObj) {
-    return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-}
-void ConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
-    type->createDestructorLlvm(llvmObj, llvmValue);
-}
-
-
-BuildInConstructorOperation::BuildInConstructorOperation(const CodePosition& position, Type* type) : 
-    Operation(position, Operation::Kind::BuildInConstructor)
-{
-    this->type = type;
-}
-vector<unique_ptr<BuildInConstructorOperation>> BuildInConstructorOperation::objects;
-BuildInConstructorOperation* BuildInConstructorOperation::Create(const CodePosition& position, Type* type) {
-    objects.emplace_back(make_unique<BuildInConstructorOperation>(position, type));
-    return objects.back().get();
-}
-optional<Value*> BuildInConstructorOperation::interpret(Scope* scope) {
-    if (wasInterpreted) {
-        return nullptr;
-    }
-    wasInterpreted = true;
-
-    if (!interpretAllArguments(scope)) {
-        return nullopt;
-    }
-
-    switch (type->kind) {
-    case Type::Kind::StaticArray: {
-        auto staticArrayType = (StaticArrayType*)type;
-        switch (arguments.size()) {
-        case 0: {
-            if (staticArrayType->elementType->kind == Type::Kind::Class) {
-                auto classType = (ClassType*)staticArrayType->elementType;
-                if (classType->declaration->body->constructors.size() > 0) {
-                    for (auto constructor : classType->declaration->body->constructors) {
-                        if (constructor->arguments.size() == 1) {
-                            classConstructor = constructor;
-                        }
-                    }
-                    if (!classConstructor) {
-                        return errorMessageOpt("class type " + classType->name + " has no 0 argument constructor", position);
-                    }
-                } else {
-                    classConstructor = classType->declaration->body->inlineConstructors;
-                }
-            }
-            break;
-        }
-        case 1: {
-            if (!cmpPtr(arguments[0]->type, staticArrayType->elementType)) {
-                auto cast = CastOperation::Create(arguments[0]->position, staticArrayType->elementType);
-                cast->arguments.push_back(arguments[0]);
-                auto castInterpret = cast->interpret(scope);
-                if (!castInterpret) return nullopt;
-                if (castInterpret.value()) arguments[0] = castInterpret.value();
-                else arguments[0] = cast;
-            } 
-            break;
-        }
-        default: 
-            return errorMessageOpt("static array constructor can take 0 or 1 arguments, got "
-                + to_string(arguments.size()), position
-            );
-        }
-        break;
-    }
-    default:
-        internalError("unexpected Build-in constructor operation", position);
-    }
-    if (type->needsDestruction()) {
-        scope->valuesToDestroyBuffer.push_back(this);
-    }
-    return nullptr;
-}
-bool BuildInConstructorOperation::operator==(const Statement& value) const {
-    if(typeid(value) == typeid(*this)){
-        const auto& other = static_cast<const BuildInConstructorOperation&>(value);
-        return Operation::operator==(other);
-    }
-    else {
-        return false;
-    }
-}
 void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, function<void(llvm::Value*)> bodyFunction) {
     auto i64Type = llvm::Type::getInt64Ty(llvmObj->context);
 
@@ -2580,140 +2449,140 @@ void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, function
 
     llvmObj->block = afterLoopBlock;
 }
-llvm::Value* BuildInConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
-    llvmValue = type->allocaLlvm(llvmObj, "");
+void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, function<void()> ifTrueFunction, function<void()> ifFalseFunction) {
+    auto ifTrueBlock = llvm::BasicBlock::Create(llvmObj->context, "ifTrue", llvmObj->function);
+    auto oldBlock = llvmObj->block;
 
-    switch (type->kind) {
-    case Type::Kind::StaticArray: {
-        auto staticArrayType = (StaticArrayType*)type;
-        llvm::Value* sizeValue;
-        if (staticArrayType->sizeAsInt == -1) {
-            sizeValue = staticArrayType->size->createLlvm(llvmObj);
-        } else {
-            sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), staticArrayType->sizeAsInt);
-        }
-        switch (arguments.size()) {
-        case 0: {
-            if (classConstructor) {
-                createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
-                    vector<llvm::Value*> indexList;
-                    if (staticArrayType->sizeAsInt != -1) {
-                        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-                    }
-                    indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
-                    auto gep = llvm::GetElementPtrInst::Create(
-                        ((llvm::PointerType*)llvmValue->getType())->getElementType(), llvmValue, indexList, "", llvmObj->block
-                    );
-                    llvm::CallInst::Create(classConstructor->createLlvm(llvmObj), gep, "", llvmObj->block);
-                });
-            }
-            break;
-        }
-        case 1: {
-            auto constructValue = arguments[0]->createLlvm(llvmObj);
+    llvmObj->block = ifTrueBlock;
+    ifTrueFunction();
+    auto afterIfTrueBlock = llvmObj->block;
 
-            createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
-                vector<llvm::Value*> indexList;
-                if (staticArrayType->sizeAsInt != -1) {
-                    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-                }
-                indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
-                auto gep = llvm::GetElementPtrInst::Create(
-                    ((llvm::PointerType*)llvmValue->getType())->getElementType(), llvmValue, indexList, "", llvmObj->block
-                );
-                new llvm::StoreInst(constructValue, gep, llvmObj->block);
-            });
+    auto ifFalseBlock = llvm::BasicBlock::Create(llvmObj->context, "ifFalse", llvmObj->function);
+    llvmObj->block = oldBlock;
+    llvm::BranchInst::Create(ifTrueBlock, ifFalseBlock, condition, llvmObj->block);
 
-            break;
-        }
-        default: 
-            internalError("static array buildin-constructor with arguments.size > 1 during llvm creating", position);
-        }
-        break;
+    llvmObj->block = ifFalseBlock;
+    ifFalseFunction();
+    auto afterConditionalBlock = llvm::BasicBlock::Create(llvmObj->context, "afterConditional", llvmObj->function);
+    
+    llvm::BranchInst::Create(afterConditionalBlock, afterIfTrueBlock);
+    llvm::BranchInst::Create(afterConditionalBlock, llvmObj->block);
+    llvmObj->block = afterConditionalBlock;
+}
+void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, function<void()> ifTrueFunction) {
+    auto ifTrueBlock = llvm::BasicBlock::Create(llvmObj->context, "ifTrue", llvmObj->function);
+    auto oldBlock = llvmObj->block;
+    llvmObj->block = ifTrueBlock;
+    ifTrueFunction();
+    auto afterIfTrueBlock = llvm::BasicBlock::Create(llvmObj->context, "afterConditional", llvmObj->function);
+    llvm::BranchInst::Create(afterIfTrueBlock, llvmObj->block);
+    llvmObj->block = oldBlock;
+    llvm::BranchInst::Create(ifTrueBlock, afterIfTrueBlock, condition, llvmObj->block);
+    llvmObj->block = afterIfTrueBlock;
+}
+
+ConstructorOperation::ConstructorOperation(const CodePosition& position, Type* constructorType, std::vector<Value*> arguments, bool isHeapAllocation, bool isExplicit) : 
+    Operation(position, Operation::Kind::Constructor),
+    constructorType(constructorType),
+    isHeapAllocation(isHeapAllocation),
+    isExplicit(isExplicit)
+{
+    this->arguments = arguments;
+    if (isHeapAllocation) {
+        type = OwnerPointerType::Create(constructorType);
+    } else {
+        type = constructorType;
     }
-    default:
-        internalError("unexpected Build-in constructor operation during llvm creating", position);
-    }
-
-    return llvmValue;
 }
-llvm::Value* BuildInConstructorOperation::createLlvm(LlvmObject* llvmObj) {
-    return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-}
-void BuildInConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
-    type->createDestructorLlvm(llvmObj, llvmValue);
-}
-
-
-
-AllocationOperation::AllocationOperation(const CodePosition& position) : 
-    Operation(position, Operation::Kind::Allocation)
-{}
-vector<unique_ptr<AllocationOperation>> AllocationOperation::objects;
-AllocationOperation* AllocationOperation::Create(const CodePosition& position) {
-    objects.emplace_back(make_unique<AllocationOperation>(position));
+vector<unique_ptr<ConstructorOperation>> ConstructorOperation::objects;
+ConstructorOperation* ConstructorOperation::Create(const CodePosition& position, Type* constructorType, std::vector<Value*> arguments, bool isHeapAllocation, bool isExplicit) {
+    objects.emplace_back(make_unique<ConstructorOperation>(position, constructorType, arguments, isHeapAllocation, isExplicit));
     return objects.back().get();
 }
-optional<Value*> AllocationOperation::interpret(Scope* scope) {
-    if (!type->interpret(scope, false)) {
-        return nullopt;
-    }
-    auto underlyingType = ((OwnerPointerType*)type)->underlyingType;
-    typesize = underlyingType->typesize(scope);
+optional<Value*> ConstructorOperation::interpret(Scope* scope) {
+    return interpret(scope, false, false);
+}
+optional<Value*> ConstructorOperation::interpret(Scope* scope, bool onlyTry, bool parentIsAssignment) {
+    if (wasInterpreted) return nullptr;
+    wasInterpreted = true;
+    if (!type->interpret(scope)) return nullopt;
+    if (!interpretAllArguments(scope)) return nullopt;
 
-    if (underlyingType->kind == Type::Kind::Class) {
-        auto [constructor, classDeclaration] = findClassConstructor(position, scope, ((ClassType*)underlyingType)->name, arguments);
-        this->constructor = constructor;
-        this->classDeclaration = classDeclaration;
-        if (!constructor) {
-            return nullopt;
+    if (isHeapAllocation) {
+        typesize = constructorType->typesize(scope);
+    } 
+    if (arguments.size() == 1 && cmpPtr(constructorType, arguments[0]->type->getEffectiveType())) {
+        if (isHeapAllocation) {
+            arguments[0]->wasCaptured = true;
+            return nullptr;
+        } else {
+            return arguments[0];
+        }
+    } 
+
+    auto constructorInterpret = constructorType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment || isHeapAllocation, isExplicit);
+    if (!constructorInterpret) return nullopt;
+    if (constructorInterpret.value().value) {
+        if (isHeapAllocation || constructorType->kind == Type::Kind::StaticArray) {
+            arguments = {constructorInterpret.value().value};
+        } else {
+            return constructorInterpret.value().value;
         }
     }
-    
-    if (type->needsDestruction()) {
-        scope->valuesToDestroyBuffer.push_back(this);
-    }
+    classConstructor = constructorInterpret.value().classConstructor;
+
+    if (type->needsDestruction()) scope->valuesToDestroyBuffer.push_back(this);
     return nullptr;
 }
-bool AllocationOperation::operator==(const Statement& value) const {
-    if(typeid(value) == typeid(*this)){
-        const auto& other = static_cast<const AllocationOperation&>(value);
-        return this->typesize == other.typesize
-            && Operation::operator==(other);
-    }
-    else {
-        return false;
+void ConstructorOperation::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+    if (isHeapAllocation) {
+        llvmValue = new llvm::BitCastInst(
+            llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
+            type->createLlvm(llvmObj), 
+            "", 
+            llvmObj->block
+        );
+        constructorType->createLlvmConstructor(llvmObj, llvmValue, arguments, classConstructor);
+        type->createLlvmMoveConstructor(llvmObj, leftLlvmRef, llvmValue);
+    } else {
+        type->createLlvmConstructor(llvmObj, leftLlvmRef, arguments, classConstructor);
     }
 }
-llvm::Value* AllocationOperation::getReferenceLlvm(LlvmObject* llvmObj) {
-    return nullptr;
-}
-llvm::Value* AllocationOperation::createLlvm(LlvmObject* llvmObj) {
-    llvmValue = new llvm::BitCastInst(
-        llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
-        type->createLlvm(llvmObj), 
-        "", 
-        llvmObj->block
-    );
-
-    if (constructor) {
-        vector<llvm::Value*> args;
-        auto functionType = (FunctionType*)constructor->type;
-        for (int i = 0; i < arguments.size(); ++i) {
-            if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
-                args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
-            } else {
-                args.push_back(arguments[i]->createLlvm(llvmObj));
-            }
-        }
-        args.push_back(llvmValue);
-
-        llvm::CallInst::Create(constructor->createLlvm(llvmObj), args, "", llvmObj->block);
+void ConstructorOperation::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+    if (isHeapAllocation) {
+        llvmValue = new llvm::BitCastInst(
+            llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
+            type->createLlvm(llvmObj), 
+            "", 
+            llvmObj->block
+        );
+        constructorType->createLlvmConstructor(llvmObj, llvmValue, arguments, classConstructor);
+        type->createLlvmMoveAssignment(llvmObj, leftLlvmRef, llvmValue);
+    } else {
+        type->createLlvmAssignment(llvmObj, leftLlvmRef, arguments, classConstructor);
     }
-
+}
+llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    llvmValue = type->createLlvmReference(llvmObj, arguments, classConstructor);
     return llvmValue;
 }
-void AllocationOperation::createDestructorLlvm(LlvmObject* llvmObj) {
+llvm::Value* ConstructorOperation::createLlvm(LlvmObject* llvmObj) {
+    if (isHeapAllocation) {
+        llvmValue = new llvm::BitCastInst(
+            llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
+            type->createLlvm(llvmObj), 
+            "", 
+            llvmObj->block
+        );
+        constructorType->createLlvmConstructor(llvmObj, llvmValue, arguments, classConstructor);
+        return llvmValue;
+    } else {
+        auto createValue = type->createLlvmValue(llvmObj, arguments, classConstructor);
+        llvmValue = createValue.first;
+        return createValue.second;
+    }
+}
+void ConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
     type->createDestructorLlvm(llvmObj, llvmValue);
 }
 
@@ -2739,11 +2608,15 @@ optional<Value*> AssignOperation::interpret(Scope* scope) {
         }
     }
 
-    auto arg1Interpret = arguments[1]->interpret(scope);
+    optional<Value*> arg1Interpret = nullopt;
+    if (arguments[1]->valueKind == Value::ValueKind::Operation && ((Operation*)arguments[1])->kind == Operation::Kind::Constructor) {
+        arg1Interpret = ((ConstructorOperation*)arguments[1])->interpret(scope, false, true);
+    } else {
+        arg1Interpret = arguments[1]->interpret(scope);
+    }
     if (!arg1Interpret) return nullopt;
     if (arg1Interpret.value()) arguments[1] = arg1Interpret.value();
     if (!arguments[1]->type->interpret(scope)) return nullopt;
-    arguments[1]->wasCaptured = true;
 
     if (arguments[1]->valueKind == Value::ValueKind::Operation) {
         containsErrorResolve = ((Operation*)arguments[1])->containsErrorResolve;
@@ -2769,14 +2642,12 @@ optional<Value*> AssignOperation::interpret(Scope* scope) {
         return errorMessageOpt("left argument of an assignment must be an l-value", position);
     }
 
-    CastOperation* cast = CastOperation::Create(arguments[1]->position, arguments[0]->type->getEffectiveType());
+    arguments[1] = ConstructorOperation::Create(arguments[1]->position, arguments[0]->type->getEffectiveType(), {arguments[1]});
+    auto constructorInterpret = ((ConstructorOperation*)arguments[1])->interpret(scope, false, true);
+    if (!constructorInterpret) return nullopt;
+    if (constructorInterpret.value()) arguments[1] = constructorInterpret.value();
+    arguments[1]->wasCaptured = true;
 
-    cast->arguments.push_back(arguments[1]);
-    arguments[1] = cast;
-
-    auto castInterpret = arguments[1]->interpret(scope);
-    if (!castInterpret) return nullopt;
-    if (castInterpret.value()) arguments[1] = castInterpret.value();
     type = arguments[0]->type;
 
     return nullptr;
@@ -2794,30 +2665,38 @@ bool AssignOperation::operator==(const Statement& value) const {
 llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto arg0Reference = arguments[0]->getReferenceLlvm(llvmObj);
 
-    if (isConstruction) {
-        if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
-            if (isLvalue(arguments[1])) {
+    if (arguments[1]->valueKind == Value::ValueKind::Operation && ((Operation*)arguments[1])->kind == Operation::Kind::Constructor) {
+        auto constructorOp = (ConstructorOperation*)arguments[1];
+        if (isConstruction) {
+            constructorOp->createLlvmConstructor(llvmObj, arg0Reference);
+        } else {
+            constructorOp->createLlvmAssignment(llvmObj, arg0Reference);
+        }
+    }
+    else if (isConstruction) {
+        if (isLvalue(arguments[1])) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
                 arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
-                arguments[0]->type->createLlvmMoveConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
+                arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
             }
         } else {
-            if (isLvalue(arguments[1])) {
-                arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
+            if (arguments[0]->type->kind == Type::Kind::Class) {
+                arguments[0]->type->createLlvmMoveConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmMoveConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
             }
         }
     } else {
-        if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
-            if (isLvalue(arguments[1])) {
+        if (isLvalue(arguments[1])) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray) {
                 arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
-                arguments[0]->type->createLlvmMoveAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
+                arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
             }
         } else {
-            if (isLvalue(arguments[1])) {
-                arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
+            if (arguments[0]->type->kind == Type::Kind::Class) {
+                arguments[0]->type->createLlvmMoveAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmMoveAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
             }
