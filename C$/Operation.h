@@ -24,7 +24,6 @@ struct Operation : Value {
         Cast,
         FunctionCall,
         TemplateFunctionCall,
-        Allocation,
         Deallocation,
         //ErrorCoding,
         Break,
@@ -35,7 +34,6 @@ struct Operation : Value {
         Sizeof,
         Typesize,
         Constructor,
-        BuildInConstructor,
         Destroy,
         LeftBracket // not really operator - only for convinience in reverse polish notation
     };
@@ -162,25 +160,23 @@ private:
             return evaluate(arguments[0], arguments[1], function);
         }
         if (type) {
-            auto cast1 = CastOperation::Create(position, type);
-            cast1->arguments.push_back(arguments[0]);
-            auto cast1Interpret = cast1->interpret(scope);
-            if (!cast1Interpret) {
+            auto ctor1 = ConstructorOperation::Create(position, type, {arguments[0]});
+            auto ctor1Interpret = ctor1->interpret(scope);
+            if (!ctor1Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
             }
-            if (cast1Interpret.value()) arguments[0] = cast1Interpret.value();
-            else arguments[0] = cast1;
+            if (ctor1Interpret.value()) arguments[0] = ctor1Interpret.value();
+            else arguments[0] = ctor1;
 
-            auto cast2 = CastOperation::Create(position, type);
-            cast2->arguments.push_back(arguments[1]);
-            auto cast2Interpret = cast2->interpret(scope);
-            if (!cast2Interpret) {
+            auto ctor2 = ConstructorOperation::Create(position, type, {arguments[1]});
+            auto ctor2Interpret = ctor2->interpret(scope);
+            if (!ctor2Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
             }
-            if (cast2Interpret.value()) arguments[1] = cast2Interpret.value();
-            else arguments[1] = cast2;
+            if (ctor2Interpret.value()) arguments[1] = ctor2Interpret.value();
+            else arguments[1] = ctor2;
         }
         return nullptr;
     }
@@ -208,25 +204,23 @@ private:
             return evaluateIntegerOnly(arguments[0], arguments[1], function);
         }
         if (type) {
-            auto cast1 = CastOperation::Create(position, type);
-            cast1->arguments.push_back(arguments[0]);
-            auto cast1Interpret = cast1->interpret(scope);
-            if (!cast1Interpret) {
+            auto ctor1 = ConstructorOperation::Create(position, type, {arguments[0]});
+            auto ctor1Interpret = ctor1->interpret(scope);
+            if (!ctor1Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
             }
-            if (cast1Interpret.value()) arguments[0] = cast1Interpret.value();
-            else arguments[0] = cast1;
+            if (ctor1Interpret.value()) arguments[0] = ctor1Interpret.value();
+            else arguments[0] = ctor1;
 
-            auto cast2 = CastOperation::Create(position, type);
-            cast2->arguments.push_back(arguments[1]);
-            auto cast2Interpret = cast2->interpret(scope);
-            if (!cast2Interpret) {
+            auto ctor2 = ConstructorOperation::Create(position, type, {arguments[1]});
+            auto ctor2Interpret = ctor2->interpret(scope);
+            if (!ctor2Interpret) {
                 type = nullptr;
                 internalError("casting failed, but shouldn't", position);
             }
-            if (cast2Interpret.value()) arguments[1] = cast2Interpret.value();
-            else arguments[1] = cast2;
+            if (ctor2Interpret.value()) arguments[1] = ctor2Interpret.value();
+            else arguments[1] = ctor2;
         }
         return nullptr;
     }
@@ -360,6 +354,32 @@ private:
     static std::vector<std::unique_ptr<SizeofOperation>> objects;
 };
 
+void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, std::function<void(llvm::Value*)> bodyFunction);
+void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, std::function<void()> ifTrueFunction, std::function<void()> ifFalseFunction);
+void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, std::function<void()> ifTrueFunction);
+
+struct ConstructorOperation : Operation {
+    ConstructorOperation(const CodePosition& position, Type* constructorType, std::vector<Value*> arguments={}, bool isHeapAllocation=false, bool isExplicit=false);
+    static ConstructorOperation* Create(const CodePosition& position, Type* constructorType, std::vector<Value*> arguments={}, bool isHeapAllocation=false, bool isExplicit=false);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    std::optional<Value*> interpret(Scope* scope, bool onlyTry, bool parentIsAssignment=false);
+    void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef);
+    void createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj);
+
+    Type* constructorType = nullptr;
+    bool isHeapAllocation = false;
+    bool isExplicit = false;
+    Value* typesize = nullptr;
+    FunctionValue* classConstructor = nullptr;
+
+private:
+    static std::vector<std::unique_ptr<ConstructorOperation>> objects;
+};
+
+/*
 struct ConstructorOperation : Operation {
     ConstructorOperation(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, std::vector<Value*> arguments);
     static ConstructorOperation* Create(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, std::vector<Value*> arguments);
@@ -377,7 +397,6 @@ private:
     static std::vector<std::unique_ptr<ConstructorOperation>> objects;
 };
 
-void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, std::function<void(llvm::Value*)> bodyFunction);
 struct BuildInConstructorOperation : Operation {
     BuildInConstructorOperation(const CodePosition& position, Type* type);
     static BuildInConstructorOperation* Create(const CodePosition& position, Type* type);
@@ -410,6 +429,7 @@ struct AllocationOperation : Operation {
 private:
     static std::vector<std::unique_ptr<AllocationOperation>> objects;
 };
+*/
 
 struct AssignOperation : Operation {
     AssignOperation(const CodePosition& position);

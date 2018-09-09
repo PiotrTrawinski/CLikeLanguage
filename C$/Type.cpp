@@ -47,6 +47,63 @@ int Type::sizeInBytes() {
 bool Type::needsDestruction() {
     return false;
 }
+optional<InterpretConstructorResult> Type::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    switch (kind) {
+    case Kind::Bool:
+        switch (arguments.size()) {
+        case 0: 
+            if (parentIsAssignment) {
+                return InterpretConstructorResult(nullptr, nullptr);
+            } else {
+                return BoolValue::Create(position, false);
+            }
+        case 1: 
+            if (arguments[0]->isConstexpr) {
+                switch (arguments[0]->valueKind) {
+                case Value::ValueKind::Char:        return BoolValue::Create(position, ((CharValue*)arguments[0])->value != 0);
+                case Value::ValueKind::Integer:     return BoolValue::Create(position, ((IntegerValue*)arguments[0])->value != 0);
+                case Value::ValueKind::Float:       return BoolValue::Create(position, ((FloatValue*)arguments[0])->value != 0);
+                case Value::ValueKind::String:      return BoolValue::Create(position, ((StringValue*)arguments[0])->value.size() != 0);
+                case Value::ValueKind::StaticArray: return BoolValue::Create(position, ((StaticArrayValue*)arguments[0])->values.size() != 0);
+                }
+            } 
+            if (arguments[0]->type->getEffectiveType()->kind != Type::Kind::Class) {
+                if (arguments[0]->type->kind == Type::Kind::Integer) {
+                    auto op = Operation::Create(position, Operation::Kind::Neq);
+                    op->arguments.push_back(arguments[0]);
+                    auto integerValue = IntegerValue::Create(position, 0);
+                    integerValue->type = IntegerType::Create(((IntegerType*)arguments[0]->type)->size);
+                    op->arguments.push_back(integerValue);
+                    auto opInterpret = op->interpret(scope);
+                    if (!opInterpret) return nullopt;
+                    if (opInterpret.value()) return opInterpret.value();
+                    else return op;
+                } 
+                if (arguments[0]->type->kind == Type::Kind::Float) {
+                    auto op = Operation::Create(position, Operation::Kind::Neq);
+                    op->arguments.push_back(arguments[0]);
+                    auto floatValue = FloatValue::Create(position, 0);
+                    floatValue->type = FloatType::Create(((FloatType*)arguments[0]->type)->size);
+                    op->arguments.push_back(floatValue);
+                    auto opInterpret = op->interpret(scope);
+                    if (!opInterpret) return nullopt;
+                    if (opInterpret.value()) return opInterpret.value();
+                    else return op;
+                }
+            }
+            if (!onlyTry) errorMessageOpt("no fitting bool constructor (bad argument type)", position);
+            return nullopt;
+        default:
+            if (!onlyTry) errorMessageOpt("no fitting bool constructor (too many arguments)", position);
+            return nullopt;
+        }
+    case Kind::Void:
+        if (!onlyTry) errorMessageOpt("cannot construct void value", position);
+        return nullopt;
+    default:
+        internalError("unknown type construction", position);
+    }
+}
 /*unique_ptr<Type> Type::copy() {
     return make_unique<Type>(this->kind);
 }*/
@@ -62,6 +119,26 @@ llvm::Type* Type::createLlvm(LlvmObject* llvmObj) {
 llvm::AllocaInst* Type::allocaLlvm(LlvmObject* llvmObj, const string& name) {
     return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
 }
+pair<llvm::Value*, llvm::Value*> Type::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return { nullptr, nullptr };
+}
+llvm::Value* Type::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return nullptr;
+}
+void Type::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {}
+bool Type::hasLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (kind) {
+    case Type::Kind::Bool:
+    case Type::Kind::Void:
+        return false;
+    default:
+        return true;
+    }
+}
+void Type::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    createDestructorLlvm(llvmObj, leftLlvmRef);
+    createLlvmConstructor(llvmObj, leftLlvmRef, arguments, classConstructor);
+}
 void Type::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     new llvm::StoreInst(rightLlvmValue, leftLlvmRef, llvmObj->block);
 }
@@ -75,7 +152,7 @@ void Type::createLlvmMoveAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRe
     createDestructorLlvm(llvmObj, leftLlvmRef);
     createLlvmMoveConstructor(llvmObj, leftLlvmRef, rightLlvmValue);
 }
-void Type::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {}
+void Type::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {}
 
 Type* getSuitingIntegerType(IntegerType* i1, IntegerType* i2) {
     if (i1->isSigned() || i2->isSigned()) {
@@ -137,6 +214,21 @@ int OwnerPointerType::sizeInBytes() {
 bool OwnerPointerType::needsDestruction() {
     return true;
 }
+optional<InterpretConstructorResult> OwnerPointerType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    switch (arguments.size()) {
+    case 0:
+        return NullValue::Create(position, this);
+    case 1:
+        if (arguments[0]->valueKind == Value::ValueKind::Null) {
+            return NullValue::Create(position, this);
+        }
+        if (!onlyTry) errorMessageOpt("no fitting owner pointer constructor (bad argument type)", position);
+        return nullopt;
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting owner pointer constructor (too many arguments)", position);
+        return nullopt;
+    }
+}
 /*unique_ptr<Type> OwnerPointerType::copy() {
     return make_unique<OwnerPointerType>(this->underlyingType->copy());
 }*/
@@ -147,36 +239,97 @@ llvm::Type* OwnerPointerType::createLlvm(LlvmObject* llvmObj) {
         return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
     }
 }
-void OwnerPointerType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
-    auto llvmTypesize = IntegerValue::Create(CodePosition(nullptr,0,0), underlyingType->sizeInBytes());
-    auto newAllocatedValue = new llvm::BitCastInst(
-        llvm::CallInst::Create(llvmObj->mallocFunction, llvmTypesize->createLlvm(llvmObj), "", llvmObj->block), 
-        this->createLlvm(llvmObj), 
-        "", 
-        llvmObj->block
-    );
-    if (underlyingType->kind == Type::Kind::Class) {
-        underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, rightLlvmValue);
+void OwnerPointerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (Value::isLvalue(arguments[0])) {
+        createLlvmCopyConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
     } else {
-        underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
+        createLlvmMoveConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
     }
-    new llvm::StoreInst(newAllocatedValue, leftLlvmRef, llvmObj->block);
+}
+void OwnerPointerType::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    internalError("owner pointer should never createLlvmAssignment");
+}
+void OwnerPointerType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    auto rightAsInt = new llvm::PtrToIntInst(rightLlvmValue, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
+    createLlvmConditional(
+        llvmObj,
+        new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, rightAsInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+        [&]() {
+            new llvm::StoreInst(llvm::ConstantPointerNull::get((llvm::PointerType*)createLlvm(llvmObj)), leftLlvmRef, llvmObj->block);
+        },
+        [&]() {
+            auto llvmTypesize = IntegerValue::Create(CodePosition(nullptr,0,0), underlyingType->sizeInBytes());
+            auto newAllocatedValue = new llvm::BitCastInst(
+                llvm::CallInst::Create(llvmObj->mallocFunction, llvmTypesize->createLlvm(llvmObj), "", llvmObj->block), 
+                this->createLlvm(llvmObj), 
+                "", 
+                llvmObj->block
+            );
+            if (underlyingType->kind == Type::Kind::Class) {
+                underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, rightLlvmValue);
+            } else {
+                underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
+            }
+            new llvm::StoreInst(newAllocatedValue, leftLlvmRef, llvmObj->block);
+        }
+    );
 }
 void OwnerPointerType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
-    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), new llvm::LoadInst(leftLlvmRef, "", llvmObj->block), llvmObj->block);
+    auto rightAsInt = new llvm::PtrToIntInst(rightLlvmValue, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
+    createLlvmConditional(
+        llvmObj,
+        new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, rightAsInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+        [&]() {
+            createDestructorLlvm(llvmObj, leftLlvmRef);
+            new llvm::StoreInst(llvm::ConstantPointerNull::get((llvm::PointerType*)createLlvm(llvmObj)), leftLlvmRef, llvmObj->block);
+        },
+        [&]() {
+            auto leftLlvmValue = new llvm::LoadInst(leftLlvmRef, "", llvmObj->block);
+            auto leftAsInt = new llvm::PtrToIntInst(leftLlvmValue, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
+            createLlvmConditional(
+                llvmObj,
+                new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, leftAsInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+                [&]() {
+                    auto llvmTypesize = IntegerValue::Create(CodePosition(nullptr,0,0), underlyingType->sizeInBytes());
+                    auto newAllocatedValue = new llvm::BitCastInst(
+                        llvm::CallInst::Create(llvmObj->mallocFunction, llvmTypesize->createLlvm(llvmObj), "", llvmObj->block), 
+                        this->createLlvm(llvmObj), 
+                        "", 
+                        llvmObj->block
+                    );
+                    if (underlyingType->kind == Type::Kind::Class) {
+                        underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, rightLlvmValue);
+                    } else {
+                        underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
+                    }
+                    new llvm::StoreInst(newAllocatedValue, leftLlvmRef, llvmObj->block);
+                },
+                [&]() {
+                    if (underlyingType->kind == Type::Kind::Class) {
+                        underlyingType->createLlvmCopyConstructor(llvmObj, leftLlvmValue, rightLlvmValue);
+                    } else {
+                        underlyingType->createLlvmCopyConstructor(llvmObj, leftLlvmValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
+                    }
+                }
+            );
+        }
+    );
 }
-void OwnerPointerType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
-    if (underlyingType->kind == Type::Kind::Class) {
-        underlyingType->createDestructorLlvm(llvmObj, llvmValue);
-    } else {
-        underlyingType->createDestructorLlvm(llvmObj, new llvm::LoadInst(llvmValue, "", llvmObj->block));
-    }
-    
-    llvm::CallInst::Create(
-        llvmObj->freeFunction, 
-        new llvm::BitCastInst(llvmValue, llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block), 
-        "", 
-        llvmObj->block
+void OwnerPointerType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+    auto leftLlvmValue = new llvm::LoadInst(leftLlvmRef, "", llvmObj->block);
+    auto leftAsInt = new llvm::PtrToIntInst(leftLlvmValue, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
+    createLlvmConditional(
+        llvmObj,
+        new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_NE, leftAsInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+        [&]() {
+            underlyingType->createDestructorLlvm(llvmObj, leftLlvmValue);
+            llvm::CallInst::Create(
+                llvmObj->freeFunction, 
+                new llvm::BitCastInst(leftLlvmValue, llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block), 
+                "", 
+                llvmObj->block
+            );
+        }
     );
 }
 
@@ -206,6 +359,39 @@ bool RawPointerType::operator==(const Type& type) const {
 }
 int RawPointerType::sizeInBytes() {
     return 8;
+}
+optional<InterpretConstructorResult> RawPointerType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    switch (arguments.size()) {
+    case 0: 
+        if (parentIsAssignment) {
+            return InterpretConstructorResult(nullptr, nullptr);
+        } else {
+            return NullValue::Create(position, this);
+        }
+    case 1:
+        if (arguments[0]->valueKind == Value::ValueKind::Null) {
+            return NullValue::Create(position, this);
+        }
+        if (!onlyTry) errorMessageOpt("no fitting raw pointer constructor (bad argument type)", position);
+        return nullopt;
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting raw pointer constructor (too many arguments)", position);
+        return nullopt;
+    }
+}
+void RawPointerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0: 
+        break;
+    case 1: 
+        createLlvmCopyConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
+        break;
+    default: 
+        internalError("incorrect raw pointer constructor during llvm creating (> 1 argument)");
+    }
+}
+bool RawPointerType::hasLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return arguments.size() == 1;
 }
 /*unique_ptr<Type> RawPointerType::copy() {
     return make_unique<RawPointerType>(this->underlyingType->copy());
@@ -241,21 +427,14 @@ bool MaybeErrorType::operator==(const Type& type) const {
         return false;
     }
 }
-Value* MaybeErrorType::typesize(Scope* scope) {
-    auto position = CodePosition(nullptr,0,0);
-    auto add = Operation::Create(position, Operation::Kind::Add);
-    add->arguments.push_back(IntegerValue::Create(position, 8));
-    add->arguments.push_back(underlyingType->typesize(scope));
-    auto addInterpret = add->interpret(scope);
-    if (!addInterpret) internalError("couldn't calculate sizeof maybe error type");
-    if (addInterpret.value()) return addInterpret.value();
-    else return add;
-}
 int MaybeErrorType::sizeInBytes() {
     return underlyingType->sizeInBytes() + 8;
 }
 bool MaybeErrorType::needsDestruction() {
     return underlyingType->needsDestruction();
+}
+optional<InterpretConstructorResult> MaybeErrorType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    return nullopt;
 }
 /*unique_ptr<Type> MaybeErrorType::copy() {
     return make_unique<MaybeErrorType>(this->underlyingType->copy());
@@ -303,6 +482,26 @@ Type* ReferenceType::getEffectiveType() {
 int ReferenceType::sizeInBytes() {
     return 8;
 }
+optional<InterpretConstructorResult> ReferenceType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    switch (arguments.size()) {
+    case 0: 
+        if (!onlyTry) errorMessageOpt("reference constructor requires a value", position);
+        return nullopt;
+    case 1:
+        if (!Value::isLvalue(arguments[0])){
+            if (!onlyTry) errorMessageBool("cannot create reference to non-lvalue", position);
+            return nullopt;
+        }
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), this->getEffectiveType())) {
+            return arguments[0];
+        }
+        if (!onlyTry) errorMessageOpt("no fitting reference constructor (bad argument type)", position);
+        return nullopt;
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting reference constructor (too many arguments)", position);
+        return nullopt;
+    }
+}
 /*unique_ptr<Type> ReferenceType::copy() {
     return make_unique<ReferenceType>(this->underlyingType->copy());
 }*/
@@ -341,6 +540,8 @@ bool StaticArrayType::interpret(Scope* scope, bool needFullDeclaration) {
         if (size->isConstexpr) {
             sizeAsInt = ((IntegerValue*)size)->value;
             size = nullptr;
+        } else {
+            return errorMessageBool("static array must have constexpr integer size");
         }
     }
     
@@ -356,32 +557,46 @@ bool StaticArrayType::operator==(const Type& type) const {
         return false;
     }
 }
-Value* StaticArrayType::typesize(Scope* scope) {
-    Operation* mul;
-    if (sizeAsInt == -1) {
-        mul = Operation::Create(size->position, Operation::Kind::Mul);
-        mul->arguments.push_back(size);
-    } else {
-        mul = Operation::Create(CodePosition(nullptr,0,0), Operation::Kind::Mul);
-        mul->arguments.push_back(IntegerValue::Create(CodePosition(nullptr,0,0), sizeAsInt));
-    }
-    mul->arguments.push_back(elementType->typesize(scope));
-    auto mulInterpret = mul->interpret(scope);
-    if (!mulInterpret) {
-        if (size) {
-            internalError("couldn't calculate sizeof static array type", size->position);
-        } else {
-            internalError("couldn't calculate sizeof static array type");
-        }
-    }
-    if (mulInterpret.value()) return mulInterpret.value();
-    else return mul;
-}
 int StaticArrayType::sizeInBytes() {
     return sizeAsInt * elementType->sizeInBytes();
 }
 bool StaticArrayType::needsDestruction() {
     return elementType->needsDestruction();
+}
+optional<InterpretConstructorResult> StaticArrayType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    auto result = elementType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment, isExplicit);
+    if (result && !isExplicit) {
+        if (!onlyTry) errorMessageOpt("cannot implicitly create static array with those arguments", position);
+        return nullopt;
+    } else {
+        return result;
+    }
+}
+pair<llvm::Value*, llvm::Value*> StaticArrayType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor);
+    return {llvmRef, new llvm::LoadInst(llvmRef, "", llvmObj->block)};
+}
+llvm::Value* StaticArrayType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto llvmRef = allocaLlvm(llvmObj);
+    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
+    return llvmRef;
+}
+void StaticArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (elementType->hasLlvmConstructor(llvmObj, leftLlvmRef, arguments, classConstructor)) {
+        auto sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
+        createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
+            vector<llvm::Value*> indexList;
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
+            auto leftGepRef = llvm::GetElementPtrInst::Create(
+                ((llvm::PointerType*)leftLlvmRef->getType())->getElementType(), leftLlvmRef, indexList, "", llvmObj->block
+            );
+            elementType->createLlvmConstructor(llvmObj, leftGepRef, arguments, classConstructor);
+        });
+    }
+}
+bool StaticArrayType::hasLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return elementType->hasLlvmConstructor(llvmObj, leftLlvmRef, arguments, classConstructor);
 }
 /*unique_ptr<Type> StaticArrayType::copy() {
     if (this->size) {
@@ -391,29 +606,16 @@ bool StaticArrayType::needsDestruction() {
     }
 }*/
 llvm::Type* StaticArrayType::createLlvm(LlvmObject* llvmObj) {
-    if (sizeAsInt == -1) {
-        return llvm::PointerType::get(elementType->createLlvm(llvmObj), 0);
-    } else {
-        return llvm::ArrayType::get(elementType->createLlvm(llvmObj), sizeAsInt);
-    }
+    return llvm::ArrayType::get(elementType->createLlvm(llvmObj), sizeAsInt);
 }
 llvm::AllocaInst* StaticArrayType::allocaLlvm(LlvmObject* llvmObj, const string& name) {
-    if (sizeAsInt == -1) {
-        return new llvm::AllocaInst(elementType->createLlvm(llvmObj), 0, size->createLlvm(llvmObj), name, llvmObj->block);
-    } else {
-        return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
-    }
+    return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
 }
 void StaticArrayType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
-    llvm::Value* sizeValue;
-    if (sizeAsInt == -1) sizeValue = size->createLlvm(llvmObj);
-    else                 sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
-
+    auto sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
     createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
         vector<llvm::Value*> indexList;
-        if (sizeAsInt != -1) {
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-        }
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
         indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
         auto leftGepRef = llvm::GetElementPtrInst::Create(
             ((llvm::PointerType*)leftLlvmRef->getType())->getElementType(), leftLlvmRef, indexList, "", llvmObj->block
@@ -421,18 +623,44 @@ void StaticArrayType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value
         auto rightGepRef = llvm::GetElementPtrInst::Create(
             ((llvm::PointerType*)rightLlvmValue->getType())->getElementType(), rightLlvmValue, indexList, "", llvmObj->block
         );
-        elementType->createLlvmCopyConstructor(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
+        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray) {
+            elementType->createLlvmCopyConstructor(llvmObj, leftGepRef, rightGepRef);
+        } else {
+            elementType->createLlvmCopyConstructor(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
+        }  
     });
 }
-void StaticArrayType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
-    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
-}
 void StaticArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
-    // run copyAssignment on all elements in loop
+    auto sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
+    createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
+        vector<llvm::Value*> indexList;
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+        indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
+        auto leftGepRef = llvm::GetElementPtrInst::Create(
+            ((llvm::PointerType*)leftLlvmRef->getType())->getElementType(), leftLlvmRef, indexList, "", llvmObj->block
+        );
+        auto rightGepRef = llvm::GetElementPtrInst::Create(
+            ((llvm::PointerType*)rightLlvmValue->getType())->getElementType(), rightLlvmValue, indexList, "", llvmObj->block
+        );
+        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray) {
+            elementType->createLlvmCopyAssignment(llvmObj, leftGepRef, rightGepRef);
+        } else {
+            elementType->createLlvmCopyAssignment(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
+        }  
+    });
 }
-void StaticArrayType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+void StaticArrayType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
     if (elementType->needsDestruction()) {
-        // run destructor on all elements in loop
+        auto sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
+        createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
+            vector<llvm::Value*> indexList;
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
+            auto leftGepRef = llvm::GetElementPtrInst::Create(
+                ((llvm::PointerType*)leftLlvmRef->getType())->getElementType(), leftLlvmRef, indexList, "", llvmObj->block
+            );
+            elementType->createDestructorLlvm(llvmObj, leftGepRef);
+        });
     }
 }
 
@@ -466,6 +694,9 @@ int DynamicArrayType::sizeInBytes() {
 }
 bool DynamicArrayType::needsDestruction() {
     return true;
+}
+optional<InterpretConstructorResult> DynamicArrayType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    return nullopt;
 }
 /*unique_ptr<Type> DynamicArrayType::copy() {
     return make_unique<DynamicArrayType>(this->elementType->copy());
@@ -501,6 +732,9 @@ bool ArrayViewType::operator==(const Type& type) const {
 }
 int ArrayViewType::sizeInBytes() {
     return 16;
+}
+optional<InterpretConstructorResult> ArrayViewType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    return nullopt;
 }
 /*unique_ptr<Type> ArrayViewType::copy() {
     return make_unique<ArrayViewType>(this->elementType->copy());
@@ -560,6 +794,130 @@ bool ClassType::needsDestruction() {
     }
     return false;
 }
+optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    if (declaration->body->constructors.empty()) {
+        if (arguments.size() == 0) {
+            return InterpretConstructorResult(nullptr, declaration->body->inlineConstructors);
+        } 
+        /*else if (arguments.size() == 1 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)classType)) {
+            return {classDeclaration->body->copyConstructor, classDeclaration};
+        }*/
+        else {
+            return errorMessageOpt("only default (0 argument) constructor exists, got "
+                + to_string(arguments.size()) + " arguments", position
+            );
+        }
+    } else {
+        vector<FunctionValue*> viableDeclarations;
+        vector<FunctionValue*> perfectMatches;
+        for (const auto function : declaration->body->constructors) {
+            auto functionType = (FunctionType*)function->type;
+            if (functionType && functionType->argumentTypes.size()-1 == arguments.size()) {
+                bool allMatch = true;
+                for (int i = 0; i < arguments.size(); ++i) {
+                    if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !Value::isLvalue(arguments[i])) {
+                        allMatch = false;
+                    }
+                    if (!cmpPtr(functionType->argumentTypes[i]->getEffectiveType(), arguments[i]->type->getEffectiveType())) {
+                        allMatch = false;
+                    }
+                }
+                if (allMatch) {
+                    perfectMatches.push_back(function);
+                } else {
+                    viableDeclarations.push_back(function);
+                }
+            }
+        }
+        if (perfectMatches.size() == 1) {
+            return InterpretConstructorResult(nullptr, perfectMatches.back());
+        } else if (perfectMatches.size() > 1) {
+            string message = "ambogous constructor call. ";
+            message += "Possible constructors at lines: ";
+            for (int i = 0; i < perfectMatches.size(); ++i) {
+                message += to_string(perfectMatches[i]->position.lineNumber);
+                if (i != perfectMatches.size() - 1) {
+                    message += ", ";
+                }
+            }
+            return errorMessageOpt(message, position);
+        } else {
+            vector<optional<vector<ConstructorOperation*>>> neededCtors;
+            for (auto function : viableDeclarations) {
+                neededCtors.push_back(vector<ConstructorOperation*>());
+                auto argumentTypes = ((FunctionType*)function->type)->argumentTypes;
+                for (int i = 0; i < argumentTypes.size(); ++i) {
+                    if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
+                        auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
+                        auto ctorInterpret = ctor->interpret(scope, true);
+                        if (ctorInterpret) {
+                            neededCtors.back().value().push_back(ctor);
+                        } else {
+                            neededCtors.back() = nullopt;
+                            break;
+                        }
+                    } else {
+                        neededCtors.back().value().push_back(nullptr);
+                    }
+                }
+            }
+
+            int matchId = -1;
+            vector<FunctionValue*> possibleFunctions;
+            for (int i = 0; i < neededCtors.size(); ++i) {
+                if (neededCtors[i]) {
+                    matchId = i;
+                    possibleFunctions.push_back(viableDeclarations[i]);
+                }
+            }
+
+            if (matchId == -1) {
+                if (arguments.size() == 1 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+                    return InterpretConstructorResult(nullptr, declaration->body->copyConstructor);
+                } else {
+                    return errorMessageOpt("no fitting constructor to call", position);
+                }
+            } 
+            if (possibleFunctions.size() > 1) {
+                string message = "ambogous constructor call. ";
+                message += "Possible constructor at lines: ";
+                for (int i = 0; i < possibleFunctions.size(); ++i) {
+                    message += to_string(possibleFunctions[i]->position.lineNumber);
+                    if (i != possibleFunctions.size() - 1) {
+                        message += ", ";
+                    }
+                }
+                return errorMessageOpt(message, position);
+            }
+
+            for (int i = 0; i < arguments.size(); ++i) {
+                auto ctor = neededCtors[matchId].value()[i];
+                if (ctor) {
+                    auto ctorInterpret = ctor->interpret(scope);
+                    if (ctorInterpret.value()) {
+                        arguments[i] = ctorInterpret.value();
+                    } else {
+                        arguments[i] = ctor;
+                    }
+                }
+            }
+            return InterpretConstructorResult(nullptr, viableDeclarations[matchId]);
+        }
+    }
+    /*switch (arguments.size()) {
+    case 0:
+        return NullValue::Create(position, this);
+    case 1:
+        if (arguments[0]->valueKind == Value::ValueKind::Null) {
+            return NullValue::Create(position, this);
+        }
+        if (!onlyTry) errorMessageOpt("no fitting owner pointer constructor (bad argument type)", position);
+        return nullopt;
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting owner pointer constructor (too many arguments)", position);
+        return nullopt;
+    }*/
+}
 /*unique_ptr<Type> ClassType::copy() {
     auto type = make_unique<ClassType>(this->name);
     for (auto& templateType : templateTypes) {
@@ -570,6 +928,28 @@ bool ClassType::needsDestruction() {
 llvm::Type* ClassType::createLlvm(LlvmObject* llvmObj) {
     return declaration->getLlvmType(llvmObj);
 }
+pair<llvm::Value*, llvm::Value*> ClassType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor);
+    return {llvmRef, new llvm::LoadInst(llvmRef, "", llvmObj->block)};
+}
+llvm::Value* ClassType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto llvmRef = allocaLlvm(llvmObj);
+    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
+    return llvmRef;
+}
+void ClassType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    vector<llvm::Value*> args;
+    auto functionType = (FunctionType*)classConstructor->type;
+    for (int i = 0; i < arguments.size(); ++i) {
+        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
+            args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
+        } else {
+            args.push_back(arguments[i]->createLlvm(llvmObj));
+        }
+    }
+    args.push_back(leftLlvmRef);
+    llvm::CallInst::Create(classConstructor->createLlvm(llvmObj), args, "", llvmObj->block);
+}
 void ClassType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     llvm::CallInst::Create(declaration->body->copyConstructor->createLlvm(llvmObj), {rightLlvmValue, leftLlvmRef}, "", llvmObj->block);
 }
@@ -579,11 +959,11 @@ void ClassType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* left
 void ClassType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     llvm::CallInst::Create(declaration->body->operatorEq->createLlvm(llvmObj), {rightLlvmValue, leftLlvmRef}, "", llvmObj->block);
 }
-void ClassType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+void ClassType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
     if (declaration->body->destructor) {
-        llvm::CallInst::Create(declaration->body->destructor->createLlvm(llvmObj), llvmValue, "", llvmObj->block);
+        llvm::CallInst::Create(declaration->body->destructor->createLlvm(llvmObj), leftLlvmRef, "", llvmObj->block);
     } else if (declaration->body->inlineDestructors) {
-        llvm::CallInst::Create(declaration->body->inlineDestructors->createLlvm(llvmObj), llvmValue, "", llvmObj->block);
+        llvm::CallInst::Create(declaration->body->inlineDestructors->createLlvm(llvmObj), leftLlvmRef, "", llvmObj->block);
     }
 }
 
@@ -616,6 +996,9 @@ bool FunctionType::operator==(const Type& type) const {
 }
 int FunctionType::sizeInBytes() {
     return 8;
+}
+optional<InterpretConstructorResult> FunctionType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    return nullopt;
 }
 /*unique_ptr<Type> FunctionType::copy() {
     auto type = make_unique<FunctionType>();
@@ -678,6 +1061,98 @@ int IntegerType::sizeInBytes() {
         return 0;
     }
 }
+optional<InterpretConstructorResult> IntegerType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    switch (arguments.size()) {
+    case 0: 
+        if (parentIsAssignment) {
+            return InterpretConstructorResult(nullptr, nullptr);
+        } else {
+            auto intValue = IntegerValue::Create(position, 0);
+            intValue->type = this;
+            return intValue;
+        }
+    case 1:
+        switch (arguments[0]->type->getEffectiveType()->kind) {
+        case Type::Kind::Integer:
+            if (arguments[0]->isConstexpr) {
+                if (arguments[0]->valueKind == Value::ValueKind::Char) {
+                    auto intValue = IntegerValue::Create(position, ((CharValue*)arguments[0])->value);
+                    intValue->type = this;
+                    return intValue;
+                }
+                arguments[0]->type = this;
+                return arguments[0];
+            }
+            return InterpretConstructorResult(nullptr, nullptr);
+        case Type::Kind::Float:
+            if (arguments[0]->isConstexpr) {
+                auto intValue = IntegerValue::Create(position, ((FloatValue*)arguments[0])->value);
+                intValue->type = this;
+                return intValue;
+            }
+            return InterpretConstructorResult(nullptr, nullptr);
+        case Type::Kind::Bool:
+            if (arguments[0]->isConstexpr) {
+                int value = ((BoolValue*)arguments[0])->value ? 1 : 0;
+                auto intValue = IntegerValue::Create(position, value);
+                intValue->type = this;
+                return intValue;
+            }
+            return InterpretConstructorResult(nullptr, nullptr);
+        }
+        if (!onlyTry) errorMessageOpt("no fitting integer constructor (bad argument type)", position);
+        return nullopt;
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting integer constructor (too many arguments)", position);
+        return nullopt;
+    }
+}
+pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        internalError("incorrect integer constructor value creating during llvm creating (no arguments)");
+    case 1: {
+        auto arg0Type = arguments[0]->type->getEffectiveType();
+        switch (arg0Type->kind) {
+        case Type::Kind::Integer: {
+            auto sizeCast = sizeInBytes();
+            auto sizeArg = ((IntegerType*)arg0Type)->sizeInBytes();
+            if (sizeCast == sizeArg) {
+                return { nullptr, arguments[0]->createLlvm(llvmObj) };
+            } else if (sizeCast > sizeArg) {
+                return { nullptr, new llvm::SExtInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            } else {
+                return { nullptr, new llvm::TruncInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            }
+        }
+        case Type::Kind::Float:
+            if (isSigned()) {
+                return { nullptr, new llvm::FPToSIInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            } else {
+                return { nullptr, new llvm::FPToUIInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            }
+        default:
+            internalError("integer can only be constructed from integer and float values in llvm stage");
+        }
+    }
+    default: 
+        internalError("incorrect integer constructor value creating during llvm creating (> 1 argument)");
+    }
+}
+void IntegerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0: 
+        break;
+    case 1: 
+        createLlvmCopyConstructor(llvmObj, leftLlvmRef, createLlvmValue(llvmObj, arguments, classConstructor).second);
+        break;
+    default: 
+        internalError("incorrect integer constructor during llvm creating (> 1 argument)");
+    }
+}
+bool IntegerType::hasLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return arguments.size() == 1;
+}
 bool IntegerType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
         const auto& other = static_cast<const IntegerType&>(type);
@@ -736,6 +1211,93 @@ int FloatType::sizeInBytes() {
     default: 
         return 0;
     }
+}
+optional<InterpretConstructorResult> FloatType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    switch (arguments.size()) {
+    case 0: 
+        if (parentIsAssignment) {
+            return InterpretConstructorResult(nullptr, nullptr);
+        } else {
+            auto floatValue = FloatValue::Create(position, 0);
+            floatValue->type = this;
+            return floatValue;
+        }
+    case 1:
+        switch (arguments[0]->type->getEffectiveType()->kind) {
+        case Type::Kind::Integer:
+            if (arguments[0]->isConstexpr) {
+                Value* floatValue;
+                if (arguments[0]->valueKind == Value::ValueKind::Integer) {
+                    floatValue = FloatValue::Create(position, ((IntegerValue*)arguments[0])->value);
+                } else {
+                    floatValue = FloatValue::Create(position, ((CharValue*)arguments[0])->value);
+                }
+                floatValue->type = this;
+                return floatValue;
+            }
+            return InterpretConstructorResult(nullptr, nullptr);
+        case Type::Kind::Float:
+            if (arguments[0]->isConstexpr) {
+                arguments[0]->type = this;
+                return arguments[0];
+            }
+            return InterpretConstructorResult(nullptr, nullptr);
+        case Type::Kind::Bool:
+            if (arguments[0]->isConstexpr) {
+                double value = ((BoolValue*)arguments[0])->value ? 1 : 0;
+                auto floatValue = FloatValue::Create(position, value);
+                floatValue->type = this;
+                return floatValue;
+            }
+            return InterpretConstructorResult(nullptr, nullptr);
+        }
+        if (!onlyTry) errorMessageOpt("no fitting float constructor (bad argument type)", position);
+        return nullopt;
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting float constructor (too many arguments)", position);
+        return nullopt;
+    }
+}
+pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        internalError("incorrect float constructor value creating during llvm creating (no arguments)");
+    case 1: {
+        auto arg0Type = arguments[0]->type->getEffectiveType();
+        switch (arg0Type->kind) {
+        case Type::Kind::Integer:
+            if (((IntegerType*)arg0Type)->isSigned()) {
+                return { nullptr, new llvm::SIToFPInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            } else {
+                return { nullptr, new llvm::UIToFPInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            }
+        case Type::Kind::Float:
+            if (size == FloatType::Size::F32) {
+                return { nullptr, new llvm::FPTruncInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            } else {
+                return { nullptr, new llvm::FPExtInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            }
+        default:
+            internalError("float can only be constructed from integer and float values in llvm stage");
+        }
+    }
+    default: 
+        internalError("incorrect float constructor value creating during llvm creating (> 1 argument)");
+    }
+}
+void FloatType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0: 
+        break;
+    case 1: 
+        createLlvmCopyConstructor(llvmObj, leftLlvmRef, createLlvmValue(llvmObj, arguments, classConstructor).second);
+        break;
+    default: 
+        internalError("incorrect float constructor during llvm creating (> 1 argument)");
+    }
+}
+bool FloatType::hasLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return arguments.size() == 1;
 }
 /*unique_ptr<Type> FloatType::copy() {
     return make_unique<FloatType>(size);

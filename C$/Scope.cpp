@@ -222,6 +222,31 @@ void appendOperator(vector<Operation*>& stack, vector<Value*>& out, Operation* o
 void appendOperator(vector<Operation*>& stack, vector<Value*>& out, Operation::Kind kind, const CodePosition& codePosition) {
     appendOperator(stack, out, Operation::Create(codePosition, kind));
 }
+bool Scope::addArguments(Operation* operation, const vector<Token>& tokens, int& i) {
+    if (tokens[i].value == "(") {
+        i += 1;
+        if (tokens[i].value != ")") {
+            do {
+                auto value = getValue(tokens, i, {",", ")"});
+                if (!value) return false;     
+                operation->arguments.push_back(value);
+                i += 1;
+            } while (tokens[i-1].value != ")");
+        } else {
+            i += 1;
+        }
+    }
+    return true;
+}
+bool Scope::addConstructorOperation(vector<Value*>& out, const vector<Token>& tokens, int& i, bool isHeapAllocation) {
+    int oldI = i;
+    auto type = getType(tokens, i, {});
+    if (!type) return false;
+    auto constructorOp = ConstructorOperation::Create(tokens[oldI].codePosition, type, {}, isHeapAllocation, true);
+    if (!addArguments(constructorOp, tokens, i)) return false;
+    out.push_back(constructorOp);
+    return true;
+}
 optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& tokens, int& i) {
     vector<Operation*> stack;
     vector<Value*> out;
@@ -332,46 +357,30 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 endOfExpression = true;
                 break;
             }
-            if (tokens[i].value == "true") {
+            auto typeKeyword = Keyword::get(tokens[i].value);
+            if (typeKeyword && typeKeyword->kind == Keyword::Kind::TypeName) {
+                addConstructorOperation(out, tokens, i);
+                expectValue = false;
+            }
+            else if (tokens[i].value == "true") {
                 out.push_back(BoolValue::Create(tokens[i].codePosition, true));
                 i += 1;
                 expectValue = false;
-                break;
             }
             else if (tokens[i].value == "false") {
                 out.push_back(BoolValue::Create(tokens[i].codePosition, false));
                 i += 1;
                 expectValue = false;
-                break;
             }
             else if (tokens[i].value == "null") {
-                auto voidPtrCast = CastOperation::Create(tokens[i].codePosition, RawPointerType::Create(Type::Create(Type::Kind::Void)));
-                appendOperator(stack, out, voidPtrCast);
-                out.push_back(IntegerValue::Create(tokens[i].codePosition, 0));
+                out.push_back(NullValue::Create(tokens[i].codePosition, RawPointerType::Create(Type::Create(Type::Kind::Void))));
                 i += 1;
                 expectValue = false;
-                break;
             }
             else if (tokens[i].value == "alloc") {
                 i += 1;
-                auto operation = AllocationOperation::Create(tokens[i].codePosition);
-                operation->type = getType(tokens, i, {";", "("});
-                if (!operation->type) {
-                    return nullopt;
-                }
-                operation->type = OwnerPointerType::Create(operation->type);
-                if (tokens[i].value == "(") {
-                    i += 1;
-                    while (tokens[i].value != ")") {
-                        auto value = getValue(tokens, i, {",", ")"});
-                        if (!value) return nullopt;     
-                        operation->arguments.push_back(value);
-                    }
-                    i += 1;
-                }       
-                out.push_back(operation);
+                addConstructorOperation(out, tokens, i, true);
                 expectValue = false;
-                //appendOperator(stack, out, Operation::Kind::Allocation, tokens[i++].codePosition);
             }
             else if (tokens[i].value == "dealloc") {
                 appendOperator(stack, out, Operation::Kind::Deallocation, tokens[i++].codePosition);
@@ -684,21 +693,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                             || tokens[j].value == "[" || tokens[j].value == "?" || tokens[j].value == "^")
                         {
                             // static array constructor ([N]T or [N]T(...))
-                            auto& oldPosition = tokens[i].codePosition;
-                            auto type = getType(tokens, i, {";", "("});
-                            if (!type) return nullopt;
-                            auto operation = BuildInConstructorOperation::Create(oldPosition, type);
-
-                            if (tokens[i].value == "(") {
-                                i += 1;
-                                while (tokens[i].value != ")") {
-                                    auto value = getValue(tokens, i, {",", ")"});
-                                    if (!value) return nullopt;     
-                                    operation->arguments.push_back(value);
-                                }
-                                i += 1;
-                            }       
-                            out.push_back(operation);
+                            addConstructorOperation(out, tokens, i);
                             expectValue = false;
                         } else {
                             // static array ([x, y, z, ...])
@@ -719,6 +714,14 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                             expectValue = false;
                         }
                     }
+                } else if (tokens[i].value == "^") {
+                    // owner pointer constructor
+                    addConstructorOperation(out, tokens, i);
+                    expectValue = false;
+                } else if (tokens[i].value == "*") {
+                    // raw pointer constructor
+                    addConstructorOperation(out, tokens, i);
+                    expectValue = false;
                 } else if (tokens[i].value == "-") {
                     appendOperator(stack, out, Operation::Kind::Minus, tokens[i++].codePosition);
                     expectValue = true;
@@ -1197,6 +1200,9 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
     if (!type) {
         return nullptr;
     }
+    if (delimiters.empty()) {
+        return type;
+    }
     if (find(delimiters.begin(), delimiters.end(), tokens[i].value) != delimiters.end()) {
         return type;
     } else {
@@ -1608,6 +1614,14 @@ bool GlobalScope::setCDeclaration(const CodePosition& codePosition, const string
     cDeclarations.push_back(declaration);
     return true;
 }
+bool GlobalScope::interpret() {
+    for (auto& declaration : cDeclarations) {
+        if (!declaration->variable->type->interpret(this, false)) {
+            return false;
+        }
+    }
+    return CodeScope::interpret();
+}
 void GlobalScope::createLlvm(LlvmObject* llvmObj) {
     for (auto declaration : cDeclarations) {
         ((FunctionValue*)declaration->value)->llvmFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction(
@@ -1666,6 +1680,12 @@ bool ClassScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return true;
 }
 bool ClassScope::interpret() {
+    if (wasInterpreted) {
+        return true;
+    }
+    wasInterpreted = true;
+    ClassType::Create(classDeclaration->name)->declaration = classDeclaration;
+
     bool wereErrors = false;
     for (auto& declaration : declarations) {
         if (!declaration->variable->isConst || (declaration->value && declaration->value->valueKind != Value::ValueKind::FunctionValue)) {
@@ -2254,8 +2274,7 @@ bool WhileScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return CodeScope::createCodeTree(tokens, i);
 }
 bool WhileScope::interpret() {
-    auto boolCondition = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
-    boolCondition->arguments.push_back(conditionExpression);
+    auto boolCondition = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {conditionExpression});
     auto valueInterpret = boolCondition->interpret(parentScope);
     if (!valueInterpret) return false;
     if (valueInterpret.value()) conditionExpression = valueInterpret.value();
@@ -2351,8 +2370,7 @@ bool IfScope::createCodeTree(const vector<Token>& tokens, int& i) {
     return true;
 }
 bool IfScope::interpret() {
-    auto boolCondition = CastOperation::Create(position, Type::Create(Type::Kind::Bool));
-    boolCondition->arguments.push_back(conditionExpression);
+    auto boolCondition = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {conditionExpression});
     auto valueInterpret = boolCondition->interpret(parentScope);
     if (!valueInterpret) return false;
     if (valueInterpret.value()) conditionExpression = valueInterpret.value();

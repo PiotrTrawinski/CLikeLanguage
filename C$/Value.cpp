@@ -404,12 +404,11 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
             }
         }
         for (auto& element : values) {
-            auto castToDeduced = CastOperation::Create(position, deducedType);
-            castToDeduced->arguments.push_back(element);
-            auto castInterpret = castToDeduced->interpret(scope);
+            auto ctorToDeduced = ConstructorOperation::Create(position, deducedType, {element});
+            auto castInterpret = ctorToDeduced->interpret(scope);
             if (!castInterpret) internalError("successfully deduced array type, but couldn't cast memebers to deduced type", position);
             else if (castInterpret.value()) element = castInterpret.value();
-            else element = castToDeduced;
+            else element = ctorToDeduced;
         }
         type = StaticArrayType::Create(deducedType, values.size());
     }
@@ -562,3 +561,29 @@ llvm::Value* FunctionValue::createLlvm(LlvmObject* llvmObj, const string& functi
 
     return llvmFunction;
 }
+
+
+/*
+    NullValue
+*/
+NullValue::NullValue(const CodePosition& position, Type* type) : 
+    Value(position, Value::ValueKind::Null)
+{
+    isConstexpr = true;
+    this->type = type;
+}
+vector<unique_ptr<NullValue>> NullValue::objects;
+NullValue* NullValue::Create(const CodePosition& position, Type* type) {
+    objects.emplace_back(make_unique<NullValue>(position, type));
+    return objects.back().get();
+}
+optional<Value*> NullValue::interpret(Scope* scope) {
+    if (!type->interpret(scope)) {
+        return nullopt;
+    }
+    return nullptr;
+}
+llvm::Value* NullValue::createLlvm(LlvmObject* llvmObj) {
+    return llvm::ConstantPointerNull::get((llvm::PointerType*)type->createLlvm(llvmObj));
+}
+
