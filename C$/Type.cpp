@@ -265,7 +265,7 @@ void OwnerPointerType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Valu
                 "", 
                 llvmObj->block
             );
-            if (underlyingType->kind == Type::Kind::Class) {
+            if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
                 underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, rightLlvmValue);
             } else {
                 underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
@@ -434,7 +434,29 @@ bool MaybeErrorType::needsDestruction() {
     return underlyingType->needsDestruction();
 }
 optional<InterpretConstructorResult> MaybeErrorType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
-    return nullopt;
+    switch (arguments.size()) {
+    case 0:
+        return InterpretConstructorResult(nullptr, nullptr);
+    case 1: {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        if (cmpPtr(argEffType, underlyingType)) {
+            return InterpretConstructorResult(nullptr, nullptr);
+        }
+        if (underlyingType->kind == Type::Kind::Void && argEffType->kind == Type::Kind::Integer) {
+            return InterpretConstructorResult(nullptr, nullptr);
+        }
+        if (argEffType->kind == Type::Kind::MaybeError) {
+            if (underlyingType->kind == Type::Kind::Void || ((MaybeErrorType*)argEffType)->underlyingType->kind == Type::Kind::Void) {
+                return InterpretConstructorResult(nullptr, nullptr);
+            }
+        }
+        if (!onlyTry) errorMessageOpt("no fitting maybe error constructor (bad argument type)", position);
+        return nullopt;
+    }
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting maybe error constructor (too many arguments)", position);
+        return nullopt;
+    }
 }
 /*unique_ptr<Type> MaybeErrorType::copy() {
     return make_unique<MaybeErrorType>(this->underlyingType->copy());
@@ -452,6 +474,193 @@ llvm::Type* MaybeErrorType::createLlvm(LlvmObject* llvmObj) {
     }
     return llvmType;
 }
+pair<llvm::Value*, llvm::Value*> MaybeErrorType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        if (underlyingType->kind == Type::Kind::Void) {
+            return { nullptr, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), -1) };
+        } else if (!underlyingType->needsDestruction()){
+            return { 
+                nullptr,
+                llvm::ConstantStruct::get((llvm::StructType*)createLlvm(llvmObj), {
+                    llvm::UndefValue::get(underlyingType->createLlvm(llvmObj)),
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), -1)
+                }) 
+            };
+        }
+        break;
+    case 1: {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        if (underlyingType->kind == Type::Kind::Void && argEffType->kind == Type::Kind::Integer) {
+            return { nullptr, arguments[0]->createLlvm(llvmObj) };
+        }
+        break;
+    }
+    default: 
+        break;
+    }
+    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor);
+    return {llvmRef, new llvm::LoadInst(llvmRef, "", llvmObj->block)};
+}
+llvm::Value* MaybeErrorType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto llvmRef = allocaLlvm(llvmObj);
+    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
+    return llvmRef;
+}
+llvm::Value* MaybeErrorType::llvmGepError(LlvmObject* llvmObj, llvm::Value* llvmRef) {
+    vector<llvm::Value*> indexList;
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 1));
+    return llvm::GetElementPtrInst::Create(
+        ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
+    );
+}
+llvm::Value* MaybeErrorType::llvmGepValue(LlvmObject* llvmObj, llvm::Value* llvmRef) {
+    vector<llvm::Value*> indexList;
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
+    return llvm::GetElementPtrInst::Create(
+        ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
+    );
+}
+void MaybeErrorType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        if (underlyingType->kind == Type::Kind::Void) {
+            new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), -1), leftLlvmRef, llvmObj->block);
+        } else {
+            new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), -1), llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+        }
+        break;
+    case 1: {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        if (cmpPtr(argEffType, underlyingType)) {
+            if (Value::isLvalue(arguments[0])) {
+                if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
+                    underlyingType->createLlvmCopyConstructor(llvmObj, llvmGepValue(llvmObj, leftLlvmRef), arguments[0]->getReferenceLlvm(llvmObj));
+                } else {
+                    underlyingType->createLlvmCopyConstructor(llvmObj, llvmGepValue(llvmObj, leftLlvmRef), arguments[0]->createLlvm(llvmObj));
+                }
+            } else {
+                arguments[0]->wasCaptured = true;
+                if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
+                    underlyingType->createLlvmMoveConstructor(llvmObj, llvmGepValue(llvmObj, leftLlvmRef), arguments[0]->getReferenceLlvm(llvmObj));
+                } else {
+                    underlyingType->createLlvmMoveConstructor(llvmObj, llvmGepValue(llvmObj, leftLlvmRef), arguments[0]->createLlvm(llvmObj));
+                }
+            }
+            new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+        }
+        else if (underlyingType->kind == Type::Kind::Void && argEffType->kind == Type::Kind::Integer) {
+            new llvm::StoreInst(arguments[0]->createLlvm(llvmObj), leftLlvmRef, llvmObj->block);
+        }
+        else if (argEffType->kind == Type::Kind::MaybeError) {
+            if (underlyingType->kind == Type::Kind::Void) {
+                new llvm::StoreInst(new llvm::LoadInst(llvmGepError(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)), "", llvmObj->block), leftLlvmRef, llvmObj->block);
+            } else if (((MaybeErrorType*)argEffType)->underlyingType->kind == Type::Kind::Void) {
+                new llvm::StoreInst(arguments[0]->createLlvm(llvmObj), llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+            }
+        } else {
+            internalError("incorrect maybe error constructor during llvm creating (bad argument)");
+        }
+        break;
+    }
+    default: 
+        internalError("incorrect maybe error constructor during llvm creating (>1 argument)");
+        break;
+    }
+}
+void MaybeErrorType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    if (underlyingType->kind == Type::Kind::Void) {
+        new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
+    } else {
+        auto rightError = new llvm::LoadInst(llvmGepError(llvmObj, rightLlvmValue), "", llvmObj->block);
+        createLlvmConditional(
+            llvmObj,
+            new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, rightError, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+            [&]() {
+                if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
+                    underlyingType->createLlvmCopyConstructor(llvmObj, llvmGepValue(llvmObj, leftLlvmRef), llvmGepValue(llvmObj, rightLlvmValue));
+                } else {
+                    underlyingType->createLlvmCopyConstructor(
+                        llvmObj, 
+                        llvmGepValue(llvmObj, leftLlvmRef), 
+                        new llvm::LoadInst(llvmGepValue(llvmObj, rightLlvmValue), "", llvmObj->block)
+                    );
+                }
+                new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+            },
+            [&]() {
+                new llvm::StoreInst(rightError, llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+            }
+        );
+    }
+}
+void MaybeErrorType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    if (underlyingType->kind == Type::Kind::Void) {
+        new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
+    } else {
+        auto rightError = new llvm::LoadInst(llvmGepError(llvmObj, rightLlvmValue), "", llvmObj->block);
+        auto leftError = new llvm::LoadInst(llvmGepError(llvmObj, leftLlvmRef), "", llvmObj->block);
+        createLlvmConditional(
+            llvmObj,
+            new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, rightError, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+            [&]() {
+                createLlvmConditional(
+                    llvmObj, 
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, leftError, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+                    [&]() {
+                        if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
+                            underlyingType->createLlvmCopyAssignment(llvmObj, llvmGepValue(llvmObj, leftLlvmRef), llvmGepValue(llvmObj, rightLlvmValue));
+                        } else {
+                            underlyingType->createLlvmCopyAssignment(
+                                llvmObj, 
+                                llvmGepValue(llvmObj, leftLlvmRef), 
+                                new llvm::LoadInst(llvmGepValue(llvmObj, rightLlvmValue), "", llvmObj->block)
+                            );
+                        }
+                    },
+                    [&]() {
+                        if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
+                            underlyingType->createLlvmCopyConstructor(llvmObj, llvmGepValue(llvmObj, leftLlvmRef), llvmGepValue(llvmObj, rightLlvmValue));
+                        } else {
+                            underlyingType->createLlvmCopyConstructor(
+                                llvmObj, 
+                                llvmGepValue(llvmObj, leftLlvmRef), 
+                                new llvm::LoadInst(llvmGepValue(llvmObj, rightLlvmValue), "", llvmObj->block)
+                            );
+                        }
+                        new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+                    }
+                );
+            },
+            [&]() {
+                createLlvmConditional(
+                    llvmObj,
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, leftError, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+                    [&]() {
+                        underlyingType->createDestructorLlvm(llvmObj, llvmGepValue(llvmObj, leftLlvmRef));
+                    }
+                );
+                new llvm::StoreInst(rightError, llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+            }
+        );
+    }
+}
+void MaybeErrorType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+    if (underlyingType->needsDestruction()) {
+        auto errorValue = new llvm::LoadInst(llvmGepError(llvmObj, leftLlvmRef), "", llvmObj->block);
+        createLlvmConditional(
+            llvmObj,
+            new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, errorValue, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+            [&]() {
+                underlyingType->createDestructorLlvm(llvmObj, llvmGepValue(llvmObj, leftLlvmRef));
+                new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), -1), llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+            }
+        );
+    }
+}
+
 
 /*
     ReferenceType
@@ -623,7 +832,7 @@ void StaticArrayType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value
         auto rightGepRef = llvm::GetElementPtrInst::Create(
             ((llvm::PointerType*)rightLlvmValue->getType())->getElementType(), rightLlvmValue, indexList, "", llvmObj->block
         );
-        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray) {
+        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::MaybeError) {
             elementType->createLlvmCopyConstructor(llvmObj, leftGepRef, rightGepRef);
         } else {
             elementType->createLlvmCopyConstructor(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
@@ -642,7 +851,7 @@ void StaticArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value*
         auto rightGepRef = llvm::GetElementPtrInst::Create(
             ((llvm::PointerType*)rightLlvmValue->getType())->getElementType(), rightLlvmValue, indexList, "", llvmObj->block
         );
-        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray) {
+        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::MaybeError) {
             elementType->createLlvmCopyAssignment(llvmObj, leftGepRef, rightGepRef);
         } else {
             elementType->createLlvmCopyAssignment(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
