@@ -47,6 +47,17 @@ int Type::sizeInBytes() {
 bool Type::needsDestruction() {
     return false;
 }
+optional<Type*> Type::interpretFunction(const CodePosition& position, Scope* scope, const string functionName, vector<Value*> arguments) {
+    return errorMessageOpt(DeclarationMap::toString(this) + " type has no member function named " + functionName, position);
+}
+llvm::Value* Type::createFunctionLlvmReference(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments) {
+    internalError("cannot createFunctionLlvmReference for this type during llvm creating");
+    return nullptr;
+}
+llvm::Value* Type::createFunctionLlvmValue(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments) {
+    internalError("cannot createFunctionLlvmReference for this type during llvm creating");
+    return nullptr;
+}
 optional<InterpretConstructorResult> Type::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     switch (kind) {
     case Kind::Bool:
@@ -907,6 +918,51 @@ int DynamicArrayType::sizeInBytes() {
 }
 bool DynamicArrayType::needsDestruction() {
     return true;
+}
+optional<Type*> DynamicArrayType::interpretFunction(const CodePosition& position, Scope* scope, const string functionName, vector<Value*> arguments) {
+    if (functionName == "push") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "pushArray") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "insert") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "insertArray") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "resize") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "extend") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "shrink") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "reserve") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "pop") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "remove") {
+        return errorMessageOpt("dynamic array type function " + functionName + " is not implemented yet", position);
+    } else if (functionName == "clear") {
+        if (arguments.size() == 0) {
+            return Type::Create(Type::Kind::Void);
+        } else {
+            return errorMessageOpt("dynamic array 'clear' function takes no arguments", position);
+        }
+    } else if (functionName == "last") {
+        if (arguments.size() == 0) {
+            return ReferenceType::Create(elementType);
+        } else {
+            return errorMessageOpt("dynamic array 'last' function takes no arguments", position);
+        }
+    } else {
+        return errorMessageOpt(DeclarationMap::toString(this) + " type has no member function named " + functionName, position);
+    }
+}
+llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments) {
+    internalError("cannot createFunctionLlvmReference for this type during llvm creating");
+    return nullptr;
+}
+llvm::Value* DynamicArrayType::createFunctionLlvmValue(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments) {
+    internalError("cannot createFunctionLlvmValue for this type during llvm creating");
+    return nullptr;
 }
 optional<InterpretConstructorResult> DynamicArrayType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     switch (arguments.size()) {

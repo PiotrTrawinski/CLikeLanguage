@@ -106,7 +106,7 @@ optional<Value*> Variable::interpret(Scope* scope) {
         while (searchScope) {
             if (searchScope->owner == Scope::Owner::Function) {
                 auto functionScope = (FunctionScope*)searchScope;
-                auto dotOperation = Operation::Create(position, Operation::Kind::Dot);
+                auto dotOperation = DotOperation::Create(position);
                 dotOperation->arguments.push_back(functionScope->function->arguments.back()->variable);
                 dotOperation->arguments.push_back(declaration->variable);
                 auto interpretValue = dotOperation->interpret(functionScope);

@@ -184,24 +184,22 @@ optional<Value*> Operation::interpret(Scope* scope) {
         return nullptr;
     }
     
-    if (kind != Kind::Dot && !interpretAllArguments(scope)) {
+    if (!interpretAllArguments(scope)) {
         return nullopt;
     }
 
     Type* effectiveType1 = nullptr;
     Type* effectiveType2 = nullptr;
 
-    if (kind != Kind::Dot) {
-        if (arguments.size() >= 1) {
-            effectiveType1 = arguments[0]->type->getEffectiveType();
-        }
-        if (arguments.size() >= 2) {
-            effectiveType2 = arguments[1]->type->getEffectiveType();
-        }
-        for (auto argument : arguments) {
-            if (argument->valueKind == Value::ValueKind::Operation) {
-                containsErrorResolve |= ((Operation*)argument)->containsErrorResolve;
-            }
+    if (arguments.size() >= 1) {
+        effectiveType1 = arguments[0]->type->getEffectiveType();
+    }
+    if (arguments.size() >= 2) {
+        effectiveType2 = arguments[1]->type->getEffectiveType();
+    }
+    for (auto argument : arguments) {
+        if (argument->valueKind == Value::ValueKind::Operation) {
+            containsErrorResolve |= ((Operation*)argument)->containsErrorResolve;
         }
     }
 
@@ -209,69 +207,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
     type = nullptr;
 
     switch (kind) {
-    case Kind::Dot: {
-        auto arg0Interpret = arguments[0]->interpret(scope);
-        if (!arg0Interpret) return nullopt;
-        if (arg0Interpret.value()) arguments[0] = arg0Interpret.value();
-        
-        effectiveType1 = arguments[0]->type->getEffectiveType();
-        ClassType* classType = nullptr;
-        switch (effectiveType1->kind) {
-        case Type::Kind::Class: {
-            classType = (ClassType*)effectiveType1;
-            break;
-        }
-        case Type::Kind::RawPointer:
-            if ((((RawPointerType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
-                classType = (ClassType*)((RawPointerType*)effectiveType1)->underlyingType;
-            }    
-            break;
-        case Type::Kind::OwnerPointer:
-            if ((((OwnerPointerType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
-                classType = (ClassType*)((OwnerPointerType*)effectiveType1)->underlyingType;
-            }
-            break;
-        case Type::Kind::MaybeError:
-            if ((((MaybeErrorType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
-                classType = (ClassType*)((MaybeErrorType*)effectiveType1)->underlyingType;
-            }
-            break;
-        }
-
-        if (!classType) {
-            return errorMessageOpt("can use '.' operation on class or pointer to class type only, got "
-                + DeclarationMap::toString(arguments[0]->type), position
-            );
-        }
-        if (arguments[1]->valueKind != Value::ValueKind::Variable) {
-            return errorMessageOpt("right side of '.' operation needs to be a variable name", position);
-        }
-        
-        Variable* field = (Variable*)arguments[1];
-        auto& declarations = classType->declaration->body->declarations;
-        vector<Declaration*> viableDeclarations;
-        for (auto& declaration : declarations) {
-            if (declaration->variable->name == field->name) {
-                viableDeclarations.push_back(declaration);
-            }
-        }
-        
-        if (viableDeclarations.size() == 0) {
-            return errorMessageOpt("class " + DeclarationMap::toString(effectiveType1)
-                + " has no field named " + field->name, position
-            );
-        }
-        Declaration* declaration = viableDeclarations.back();
-        if (declaration->variable->isConstexpr && declaration->value->valueKind != Value::ValueKind::FunctionValue) {
-            return declaration->value;
-        }
-
-        arguments[1] = declaration->variable;
-        ((Variable*)arguments[1])->declaration = declaration;
-        type = declaration->variable->type;
-
-        break;
-    }
     case Kind::Address: {
         if (!isLvalue(arguments[0])) {
             return errorMessageOpt("You can only take address of an l-value", position);
@@ -927,62 +862,6 @@ bool Operation::operator==(const Statement& value) const {
 }*/
 llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
     switch (kind) {
-    case Kind::Dot: {
-        auto effectiveType0 = arguments[0]->type->getEffectiveType();
-        ClassType* classType = nullptr;
-        switch (effectiveType0->kind) {
-        case Type::Kind::Class: {
-            classType = (ClassType*)effectiveType0;
-            break;
-        }
-        case Type::Kind::RawPointer:
-            classType = (ClassType*)((RawPointerType*)effectiveType0)->underlyingType;
-            break;
-        case Type::Kind::OwnerPointer:
-            classType = (ClassType*)((OwnerPointerType*)effectiveType0)->underlyingType;
-            break;
-        case Type::Kind::MaybeError:
-            classType = (ClassType*)((MaybeErrorType*)effectiveType0)->underlyingType;
-            break;
-        }
-        auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
-        auto& declarations = classType->declaration->body->declarations;
-        int declarationIndex = 0;
-        bool found = false;
-        for (auto declaration : declarations) {
-            if (declaration->variable->isConstexpr) {
-                continue;
-            }
-            if (declaration == accessedDeclaration) {
-                found = true;
-                break;
-            }
-            declarationIndex += 1;
-        }
-        if (!found) {
-            internalError("couldn't find index of field during llvm creating", position);
-        }
-
-        llvm::Value* arg0;
-        if (effectiveType0->kind == Type::Kind::RawPointer || effectiveType0->kind == Type::Kind::OwnerPointer) {
-            arg0 = arguments[0]->createLlvm(llvmObj);
-        } else if (effectiveType0->kind == Type::Kind::MaybeError) {
-            arg0 = ((MaybeErrorType*)effectiveType0)->llvmGepValue(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
-        } else {
-            arg0 = arguments[0]->getReferenceLlvm(llvmObj);
-        }
-
-        vector<llvm::Value*> indexList;
-        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), declarationIndex));
-        return llvm::GetElementPtrInst::Create(
-            ((llvm::PointerType*)arg0->getType())->getElementType(),
-            arg0,
-            indexList,
-            "",
-            llvmObj->block
-        );
-    }
     case Kind::GetValue: {
         switch (arguments[0]->type->kind) {
         case Type::Kind::RawPointer: {
@@ -1010,14 +889,6 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
 }
 llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     switch (kind) {
-    case Kind::Dot: {
-        auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
-        if (accessedDeclaration->value && accessedDeclaration->variable->isConstexpr) {
-            // is const member function
-            return accessedDeclaration->value->createLlvm(llvmObj);
-        }
-        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-    }
     case Kind::Address: {
         return arguments[0]->getReferenceLlvm(llvmObj);
     }
@@ -1678,20 +1549,6 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         return nullopt;
     }
 
-    // first check if is it class constructor
-    /*if (function->valueKind == Value::ValueKind::Variable) {
-        auto [constructor, classDeclaration] = findClassConstructor(position, scope, ((Variable*)function)->name, arguments);
-        if (classDeclaration) {
-            if (constructor) {
-                auto op = ConstructorOperation::Create(position, constructor, classDeclaration, arguments);
-                op->interpret(scope);
-                return op;
-            } else {
-                return nullopt;
-            }
-        }
-    }*/
-
     auto functionInterpret = function->interpret(scope);
     if (!functionInterpret) return nullopt;
     if (functionInterpret.value()) function = functionInterpret.value();
@@ -1712,28 +1569,36 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     } else if (function->valueKind == Value::ValueKind::Operation
         && (((Operation*)function)->kind == Operation::Kind::Dot)
         && ((Variable*)((Operation*)function)->arguments[1])->isConstexpr) {
-        auto dotOperation = (Operation*)function;
-        auto var = (Variable*)dotOperation->arguments[1];
+        auto dotOperation = (DotOperation*)function;
+        auto varName = ((Variable*)dotOperation->arguments[1])->name;
         auto arg0Type = dotOperation->arguments[0]->type;
-        ClassScope* classScope = nullptr;
 
-        if (arg0Type->kind == Type::Kind::Class) {
-            classScope = ((ClassType*)arg0Type)->declaration->body;
-            auto thisArgument = Operation::Create(position, Operation::Kind::Address);
-            thisArgument->arguments.push_back(dotOperation->arguments[0]);
-            if (!thisArgument->interpret(scope)) {
-                return nullopt;
-            }
-            arguments.push_back(thisArgument);
+        if (arg0Type->getEffectiveType()->kind == Type::Kind::DynamicArray) {
+            auto interpretFunction = arg0Type->getEffectiveType()->interpretFunction(position, scope, varName, arguments);
+            if (!interpretFunction) return nullopt;
+            type = interpretFunction.value();
+            buildInFunctionName = varName;
         } else {
-            classScope = ((ClassType*)((RawPointerType*)arg0Type)->underlyingType)->declaration->body;
-            arguments.push_back(dotOperation->arguments[0]);
-        }
+            ClassScope* classScope = nullptr;
 
-        switch (findFunction(scope, classScope, var->name)) {
-        case FindFunctionStatus::Error:   return nullopt;
-        case FindFunctionStatus::Fail:    return errorMessageOpt("no fitting class function to call", position);
-        case FindFunctionStatus::Success: break;
+            if (arg0Type->kind == Type::Kind::Class) {
+                classScope = ((ClassType*)arg0Type)->declaration->body;
+                auto thisArgument = Operation::Create(position, Operation::Kind::Address);
+                thisArgument->arguments.push_back(dotOperation->arguments[0]);
+                if (!thisArgument->interpret(scope)) {
+                    return nullopt;
+                }
+                arguments.push_back(thisArgument);
+            } else {
+                classScope = ((ClassType*)((RawPointerType*)arg0Type)->underlyingType)->declaration->body;
+                arguments.push_back(dotOperation->arguments[0]);
+            }
+
+            switch (findFunction(scope, classScope, varName)) {
+            case FindFunctionStatus::Error:   return nullopt;
+            case FindFunctionStatus::Fail:    return errorMessageOpt("no fitting class function to call", position);
+            case FindFunctionStatus::Success: break;
+            }
         }
     }
     else if (function->type->kind == Type::Kind::Function) {
@@ -1775,7 +1640,16 @@ bool FunctionCallOperation::operator==(const Statement& value) const {
     }
 }
 llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
-    if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Reference) {
+    if (!buildInFunctionName.empty()) {
+        auto dotOperation = (DotOperation*)function;
+        auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
+        if (arg0EffType->kind == Type::Kind::DynamicArray) {
+            return arg0EffType->createFunctionLlvmValue(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments);
+        } else {
+            internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
+        }
+    }
+    else if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Reference) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
     } else if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Class) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
@@ -1784,6 +1658,16 @@ llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
     }
 }
 llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    if (!buildInFunctionName.empty()) {
+        auto dotOperation = (DotOperation*)function;
+        auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
+        if (arg0EffType->kind == Type::Kind::DynamicArray) {
+            return arg0EffType->createFunctionLlvmReference(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments);
+        } else {
+            internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
+        }
+    }
+
     vector<llvm::Value*> args;
     auto functionType = (FunctionType*)function->type;
     for (int i = 0; i < arguments.size(); ++i) {
@@ -2551,4 +2435,192 @@ llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
 }
 llvm::Value* AssignOperation::createLlvm(LlvmObject* llvmObj) {
     return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+}
+
+
+DotOperation::DotOperation(const CodePosition& position) : 
+    Operation(position, Operation::Kind::Dot)
+{}
+vector<unique_ptr<DotOperation>> DotOperation::objects;
+DotOperation* DotOperation::Create(const CodePosition& position) {
+    objects.emplace_back(make_unique<DotOperation>(position));
+    return objects.back().get();
+}
+optional<Value*> DotOperation::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+
+    auto arg0Interpret = arguments[0]->interpret(scope);
+    if (!arg0Interpret) return nullopt;
+    if (arg0Interpret.value()) arguments[0] = arg0Interpret.value();
+    auto effectiveType1 = arguments[0]->type->getEffectiveType();
+
+    if (arguments[1]->valueKind != Value::ValueKind::Variable) {
+        return errorMessageOpt("right side of '.' operation needs to be a label", position);
+    }
+    auto fieldName = ((Variable*)arguments[1])->name;
+
+    if (effectiveType1->kind == Type::Kind::DynamicArray) {
+        isBuildInOperation = true;
+        if (fieldName == "size" || fieldName == "capacity") {
+            type = IntegerType::Create(IntegerType::Size::I64);
+            return nullptr;
+        } else if (fieldName == "data") {
+            type = RawPointerType::Create(((DynamicArrayType*)effectiveType1)->elementType);
+            return nullptr;
+        } else if (fieldName == "push" || fieldName == "pushArray" || fieldName == "insert" || fieldName == "insertArray"
+            || fieldName == "resize" || fieldName == "extend" || fieldName == "shrink" || fieldName == "reserve"
+            || fieldName == "pop" || fieldName == "remove" || fieldName == "clear" || fieldName == "last") 
+        {
+            arguments[1]->isConstexpr = true;
+            type = Type::Create(Type::Kind::Void);
+            return nullptr;
+        } else {
+            return errorMessageOpt("dynamic array has no field named " + fieldName, position);
+        }
+    } else {
+        ClassType* classType = nullptr;
+        switch (effectiveType1->kind) {
+        case Type::Kind::Class: {
+            classType = (ClassType*)effectiveType1;
+            break;
+        }
+        case Type::Kind::RawPointer:
+            if ((((RawPointerType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
+                classType = (ClassType*)((RawPointerType*)effectiveType1)->underlyingType;
+            }    
+            break;
+        case Type::Kind::OwnerPointer:
+            if ((((OwnerPointerType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
+                classType = (ClassType*)((OwnerPointerType*)effectiveType1)->underlyingType;
+            }
+            break;
+        case Type::Kind::MaybeError:
+            if ((((MaybeErrorType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
+                classType = (ClassType*)((MaybeErrorType*)effectiveType1)->underlyingType;
+            }
+            break;
+        }
+
+        if (!classType) {
+            return errorMessageOpt("can use '.' operation on class or pointer to class type only, got "
+                + DeclarationMap::toString(arguments[0]->type), position
+            );
+        }
+
+        auto& declarations = classType->declaration->body->declarations;
+        vector<Declaration*> viableDeclarations;
+        for (auto& declaration : declarations) {
+            if (declaration->variable->name == fieldName) {
+                viableDeclarations.push_back(declaration);
+            }
+        }
+
+        if (viableDeclarations.size() == 0) {
+            return errorMessageOpt("class " + DeclarationMap::toString(effectiveType1)
+                + " has no field named " + fieldName, position
+            );
+        }
+        Declaration* declaration = viableDeclarations.back();
+        if (declaration->variable->isConstexpr && declaration->value->valueKind != Value::ValueKind::FunctionValue) {
+            return declaration->value;
+        }
+
+        arguments[1] = declaration->variable;
+        ((Variable*)arguments[1])->declaration = declaration;
+        type = declaration->variable->type;
+    }
+
+    return nullptr;
+}
+bool DotOperation::operator==(const Statement& value) const {
+    if(typeid(value) == typeid(*this)){
+        const auto& other = static_cast<const DotOperation&>(value);
+        return Operation::operator==(other);
+    }
+    else {
+        return false;
+    }
+}
+llvm::Value* DotOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    auto effectiveType0 = arguments[0]->type->getEffectiveType();
+    if (effectiveType0->kind == Type::Kind::DynamicArray) {
+        auto fieldName = ((Variable*)arguments[1])->name;
+        if (fieldName == "size") {
+            return ((DynamicArrayType*)effectiveType0)->llvmGepSize(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        } else if (fieldName == "capacity") {
+            return ((DynamicArrayType*)effectiveType0)->llvmGepCapacity(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        } else if (fieldName == "data") {
+            return ((DynamicArrayType*)effectiveType0)->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        } else {
+            internalError("dot operation on dynamic type with unknown name during llvm creating");
+        }
+    }
+    ClassType* classType = nullptr;
+    switch (effectiveType0->kind) {
+    case Type::Kind::Class: {
+        classType = (ClassType*)effectiveType0;
+        break;
+    }
+    case Type::Kind::RawPointer:
+        classType = (ClassType*)((RawPointerType*)effectiveType0)->underlyingType;
+        break;
+    case Type::Kind::OwnerPointer:
+        classType = (ClassType*)((OwnerPointerType*)effectiveType0)->underlyingType;
+        break;
+    case Type::Kind::MaybeError:
+        classType = (ClassType*)((MaybeErrorType*)effectiveType0)->underlyingType;
+        break;
+    }
+    auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
+    auto& declarations = classType->declaration->body->declarations;
+    int declarationIndex = 0;
+    bool found = false;
+    for (auto declaration : declarations) {
+        if (declaration->variable->isConstexpr) {
+            continue;
+        }
+        if (declaration == accessedDeclaration) {
+            found = true;
+            break;
+        }
+        declarationIndex += 1;
+    }
+    if (!found) {
+        internalError("couldn't find index of field during llvm creating", position);
+    }
+
+    llvm::Value* arg0;
+    if (effectiveType0->kind == Type::Kind::RawPointer || effectiveType0->kind == Type::Kind::OwnerPointer) {
+        arg0 = arguments[0]->createLlvm(llvmObj);
+    } else if (effectiveType0->kind == Type::Kind::MaybeError) {
+        arg0 = ((MaybeErrorType*)effectiveType0)->llvmGepValue(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+    } else {
+        arg0 = arguments[0]->getReferenceLlvm(llvmObj);
+    }
+
+    vector<llvm::Value*> indexList;
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), declarationIndex));
+    return llvm::GetElementPtrInst::Create(
+        ((llvm::PointerType*)arg0->getType())->getElementType(),
+        arg0,
+        indexList,
+        "",
+        llvmObj->block
+    );
+}
+llvm::Value* DotOperation::createLlvm(LlvmObject* llvmObj) {
+    if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::DynamicArray) {
+        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+    } else {
+        auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
+        if (accessedDeclaration->value && accessedDeclaration->variable->isConstexpr) {
+            // is const member function
+            return accessedDeclaration->value->createLlvm(llvmObj);
+        }
+        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+    }
 }

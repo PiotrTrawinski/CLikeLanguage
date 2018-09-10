@@ -921,7 +921,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     appendOperator(stack, out, Operation::Kind::Mod, tokens[i++].codePosition);
                     expectValue = true;
                 } else if (tokens[i].value == ".") {
-                    appendOperator(stack, out, Operation::Kind::Dot, tokens[i++].codePosition);
+                    appendOperator(stack, out, DotOperation::Create(tokens[i++].codePosition));
                     expectValue = true;
                 } else if (tokens[i].value == "|") {
                     appendOperator(stack, out, Operation::Kind::BitOr, tokens[i++].codePosition);
@@ -1782,7 +1782,7 @@ bool ClassScope::interpret() {
 
     for (auto& declaration : declarations) {
         if (!declaration->variable->isConst) {
-            auto otherVar = Operation::Create(declaration->position, Operation::Kind::Dot);
+            auto otherVar = DotOperation::Create(declaration->position);
             otherVar->arguments.push_back(Variable::Create(declaration->position, "other"));
             otherVar->arguments.push_back(Variable::Create(declaration->position, declaration->variable->name));
 
@@ -1813,7 +1813,7 @@ bool ClassScope::interpret() {
 
     for (auto& declaration : declarations) {
         if (!declaration->variable->isConst) {
-            auto otherVar = Operation::Create(declaration->position, Operation::Kind::Dot);
+            auto otherVar = DotOperation::Create(declaration->position);
             otherVar->arguments.push_back(Variable::Create(declaration->position, "other"));
             otherVar->arguments.push_back(Variable::Create(declaration->position, declaration->variable->name));
 

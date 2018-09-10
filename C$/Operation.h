@@ -289,6 +289,7 @@ struct FunctionCallOperation : Operation {
     virtual void createDestructorLlvm(LlvmObject* llvmObj);
 
     Value* function = nullptr;
+    std::string buildInFunctionName = "";
     std::string idName = "";
 
     llvm::Value* llvmClassStackTemp = nullptr;
@@ -380,58 +381,6 @@ private:
     static std::vector<std::unique_ptr<ConstructorOperation>> objects;
 };
 
-/*
-struct ConstructorOperation : Operation {
-    ConstructorOperation(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, std::vector<Value*> arguments);
-    static ConstructorOperation* Create(const CodePosition& position, FunctionValue* constructor, ClassDeclaration* classDeclaration, std::vector<Value*> arguments);
-    virtual std::optional<Value*> interpret(Scope* scope);
-    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
-    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
-    virtual void createDestructorLlvm(LlvmObject* llvmObj);
-    
-    virtual bool operator==(const Statement& value) const;
-
-    FunctionValue* constructor = nullptr;
-    ClassDeclaration* classDeclaration = nullptr;
-
-private:
-    static std::vector<std::unique_ptr<ConstructorOperation>> objects;
-};
-
-struct BuildInConstructorOperation : Operation {
-    BuildInConstructorOperation(const CodePosition& position, Type* type);
-    static BuildInConstructorOperation* Create(const CodePosition& position, Type* type);
-    virtual std::optional<Value*> interpret(Scope* scope);
-    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
-    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
-    virtual void createDestructorLlvm(LlvmObject* llvmObj);
-    virtual bool operator==(const Statement& value) const;
-
-    FunctionValue* classConstructor = nullptr;
-
-private:
-    static std::vector<std::unique_ptr<BuildInConstructorOperation>> objects;
-};
-
-struct AllocationOperation : Operation {
-    AllocationOperation(const CodePosition& position);
-    static AllocationOperation* Create(const CodePosition& position);
-    virtual std::optional<Value*> interpret(Scope* scope);
-    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
-    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
-    virtual void createDestructorLlvm(LlvmObject* llvmObj);
-
-    virtual bool operator==(const Statement& value) const;
-
-    Value* typesize = nullptr;
-    FunctionValue* constructor = nullptr;
-    ClassDeclaration* classDeclaration = nullptr;
-
-private:
-    static std::vector<std::unique_ptr<AllocationOperation>> objects;
-};
-*/
-
 struct AssignOperation : Operation {
     AssignOperation(const CodePosition& position);
     static AssignOperation* Create(const CodePosition& position);
@@ -444,4 +393,18 @@ struct AssignOperation : Operation {
 
 private:
     static std::vector<std::unique_ptr<AssignOperation>> objects;
+};
+
+struct DotOperation : Operation {
+    DotOperation(const CodePosition& position);
+    static DotOperation* Create(const CodePosition& position);
+    virtual std::optional<Value*> interpret(Scope* scope);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual bool operator==(const Statement& value) const;
+
+    bool isBuildInOperation = false;
+
+private:
+    static std::vector<std::unique_ptr<DotOperation>> objects;
 };
