@@ -1470,21 +1470,16 @@ bool ArrayIndexOperation::operator==(const Statement& value) const {
     return value;
 }*/
 llvm::Value* ArrayIndexOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    auto effType = arguments[0]->type->getEffectiveType();
     auto arg = arguments[0]->getReferenceLlvm(llvmObj);
     vector<llvm::Value*> indexList;
-    if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::StaticArray) {
-        if (((StaticArrayType*)arguments[0]->type->getEffectiveType())->sizeAsInt != -1) {
-            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
-        }
+    if (effType->kind == Type::Kind::StaticArray) {
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    } else if (effType->kind == Type::Kind::DynamicArray) {
+        arg = new llvm::LoadInst(((DynamicArrayType*)effType)->llvmGepData(llvmObj, arg), "", llvmObj->block);
     }
     indexList.push_back(index->createLlvm(llvmObj));
-    return llvm::GetElementPtrInst::Create(
-        ((llvm::PointerType*)arg->getType())->getElementType(),
-        arg,
-        indexList,
-        "",
-        llvmObj->block
-    );
+    return llvm::GetElementPtrInst::Create(((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block);
 }
 llvm::Value* ArrayIndexOperation::createLlvm(LlvmObject* llvmObj) {
     return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
@@ -2255,6 +2250,49 @@ void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, function
 
     llvmObj->block = afterLoopBlock;
 }
+void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* start, llvm::Value* end, function<void(llvm::Value*)> bodyFunction) {
+    auto i64Type = llvm::Type::getInt64Ty(llvmObj->context);
+
+    auto loopStartBlock     = llvm::BasicBlock::Create(llvmObj->context, "loopStart",     llvmObj->function);
+    auto loopStepBlock      = llvm::BasicBlock::Create(llvmObj->context, "loopStep",      llvmObj->function);
+    auto loopConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "loopCondition", llvmObj->function);
+    auto loopBodyBlock      = llvm::BasicBlock::Create(llvmObj->context, "loop",          llvmObj->function);
+    auto afterLoopBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterLoop",     llvmObj->function);
+
+    // start block
+    llvm::BranchInst::Create(loopStartBlock, llvmObj->block);
+    llvmObj->block = loopStartBlock;
+    auto index = new llvm::AllocaInst(i64Type, 0, "", llvmObj->block);
+    new llvm::StoreInst(start, index, llvmObj->block);
+    llvm::BranchInst::Create(loopConditionBlock, loopStartBlock);
+
+    // body block
+    llvmObj->block = loopBodyBlock;
+    bodyFunction(index);
+
+    // after block
+    llvm::BranchInst::Create(loopStepBlock, llvmObj->block);
+
+    // step block
+    llvmObj->block = loopStepBlock;
+    auto indexAfterIncrement = llvm::BinaryOperator::CreateAdd(
+        new llvm::LoadInst(index, "", llvmObj->block), 
+        llvm::ConstantInt::get(i64Type, 1), "", llvmObj->block
+    );
+    new llvm::StoreInst(indexAfterIncrement, index, llvmObj->block);
+    llvm::BranchInst::Create(loopConditionBlock, loopStepBlock);
+
+    // condition block
+    llvmObj->block = loopConditionBlock;
+    llvm::BranchInst::Create(
+        loopBodyBlock, 
+        afterLoopBlock, 
+        new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, new llvm::LoadInst(index, "", llvmObj->block), end, ""),
+        loopConditionBlock
+    );
+
+    llvmObj->block = afterLoopBlock;
+}
 void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, function<void()> ifTrueFunction, function<void()> ifFalseFunction) {
     auto ifTrueBlock = llvm::BasicBlock::Create(llvmObj->context, "ifTrue", llvmObj->function);
     auto oldBlock = llvmObj->block;
@@ -2481,7 +2519,7 @@ llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     }
     else if (isConstruction) {
         if (isLvalue(arguments[1])) {
-            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::DynamicArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
                 arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
@@ -2495,7 +2533,7 @@ llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
         }
     } else {
         if (isLvalue(arguments[1])) {
-            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::DynamicArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
                 arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
