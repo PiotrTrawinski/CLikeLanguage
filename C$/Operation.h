@@ -290,6 +290,7 @@ struct FunctionCallOperation : Operation {
 
     Value* function = nullptr;
     std::string buildInFunctionName = "";
+    FunctionValue* classConstructor = nullptr;
     std::string idName = "";
 
     llvm::Value* llvmClassStackTemp = nullptr;
@@ -357,6 +358,7 @@ private:
 
 void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, std::function<void(llvm::Value*)> bodyFunction);
 void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* start, llvm::Value* end, std::function<void(llvm::Value*)> bodyFunction);
+void createLlvmForEachLoopReversed(LlvmObject* llvmObj, llvm::Value* start, llvm::Value* end, std::function<void(llvm::Value*)> bodyFunction);
 void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, std::function<void()> ifTrueFunction, std::function<void()> ifFalseFunction);
 void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, std::function<void()> ifTrueFunction);
 
