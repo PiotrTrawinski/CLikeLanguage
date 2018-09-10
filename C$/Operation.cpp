@@ -222,10 +222,19 @@ optional<Value*> Operation::interpret(Scope* scope) {
             break;
         }
         case Type::Kind::RawPointer:
-            classType = (ClassType*)((RawPointerType*)effectiveType1)->underlyingType;
+            if ((((RawPointerType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
+                classType = (ClassType*)((RawPointerType*)effectiveType1)->underlyingType;
+            }    
             break;
         case Type::Kind::OwnerPointer:
-            classType = (ClassType*)((OwnerPointerType*)effectiveType1)->underlyingType;
+            if ((((OwnerPointerType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
+                classType = (ClassType*)((OwnerPointerType*)effectiveType1)->underlyingType;
+            }
+            break;
+        case Type::Kind::MaybeError:
+            if ((((MaybeErrorType*)effectiveType1)->underlyingType)->kind == Type::Kind::Class) {
+                classType = (ClassType*)((MaybeErrorType*)effectiveType1)->underlyingType;
+            }
             break;
         }
 
@@ -932,6 +941,9 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
         case Type::Kind::OwnerPointer:
             classType = (ClassType*)((OwnerPointerType*)effectiveType0)->underlyingType;
             break;
+        case Type::Kind::MaybeError:
+            classType = (ClassType*)((MaybeErrorType*)effectiveType0)->underlyingType;
+            break;
         }
         auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
         auto& declarations = classType->declaration->body->declarations;
@@ -954,6 +966,8 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
         llvm::Value* arg0;
         if (effectiveType0->kind == Type::Kind::RawPointer || effectiveType0->kind == Type::Kind::OwnerPointer) {
             arg0 = arguments[0]->createLlvm(llvmObj);
+        } else if (effectiveType0->kind == Type::Kind::MaybeError) {
+            arg0 = ((MaybeErrorType*)effectiveType0)->llvmGepValue(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
         } else {
             arg0 = arguments[0]->getReferenceLlvm(llvmObj);
         }
