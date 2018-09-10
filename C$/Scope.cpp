@@ -688,6 +688,8 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     // static array ([x, y, z, ...]) or dynamic array constructor ([]T) or static array constructor ([N]T)
                     if (tokens[i + 1].value == "]") {
                         // dynamic array constructor ([]T or []T(...))
+                        addConstructorOperation(out, tokens, i);
+                        expectValue = false;
                     } else {
                         // static array ([x, y, z, ...]) or static array constructor ([N]T)
                         int openBrackets = 1;

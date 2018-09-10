@@ -24,6 +24,13 @@ unique_ptr<LlvmObject> createLlvm(CodeScope* globalScope) {
             false
         )
     ));
+    llvmObj->reallocFunction = llvm::cast<llvm::Function>(llvmObj->module->getOrInsertFunction("realloc", 
+        llvm::FunctionType::get(
+            llvm::PointerType::get(llvm::Type::getInt8Ty(llvmObj->context), 0), 
+            {llvm::PointerType::get(llvm::Type::getInt8Ty(llvmObj->context), 0), llvm::Type::getInt64Ty(llvmObj->context)}, 
+            false
+        )
+    ));
 
     globalScope->createLlvm(llvmObj.get());
 

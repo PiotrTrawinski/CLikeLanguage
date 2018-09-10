@@ -189,8 +189,21 @@ struct DynamicArrayType : Type {
     virtual bool needsDestruction();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*> arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    llvm::Value* llvmGepSize(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    llvm::Value* llvmGepCapacity(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    llvm::Value* llvmGepData(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    void llvmAllocData(LlvmObject* llvmObj, llvm::Value* llvmRef, llvm::Value* numberOfElements);
+    void llvmReallocData(LlvmObject* llvmObj, llvm::Value* llvmRef, llvm::Value* numberOfElements);
+    void llvmDeallocData(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef);
 
     Type* elementType = nullptr;
+    llvm::Type* llvmType = nullptr;
 
 private:
     static std::vector<std::unique_ptr<DynamicArrayType>> objects;

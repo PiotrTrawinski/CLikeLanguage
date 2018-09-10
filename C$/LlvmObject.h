@@ -9,4 +9,5 @@ struct LlvmObject {
     llvm::BasicBlock* block = nullptr;
     llvm::Function* mallocFunction = nullptr;
     llvm::Function* freeFunction = nullptr;
+    llvm::Function* reallocFunction = nullptr;
 };
