@@ -491,8 +491,12 @@ pair<llvm::Value*, llvm::Value*> MaybeErrorType::createLlvmValue(LlvmObject* llv
         break;
     case 1: {
         auto argEffType = arguments[0]->type->getEffectiveType();
-        if (underlyingType->kind == Type::Kind::Void && argEffType->kind == Type::Kind::Integer) {
-            return { nullptr, arguments[0]->createLlvm(llvmObj) };
+        if (underlyingType->kind == Type::Kind::Void) {
+            if (argEffType->kind == Type::Kind::Integer) {
+                return { nullptr, arguments[0]->createLlvm(llvmObj) };
+            } else if (argEffType->kind == Type::Kind::MaybeError) {
+                return { nullptr, new llvm::LoadInst(((MaybeErrorType*)argEffType)->llvmGepError(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)), "", llvmObj->block) };
+            }
         }
         break;
     }
@@ -1308,6 +1312,10 @@ optional<InterpretConstructorResult> IntegerType::interpretConstructor(const Cod
                 return intValue;
             }
             return InterpretConstructorResult(nullptr, nullptr);
+        case Type::Kind::MaybeError:
+            if (((MaybeErrorType*)arguments[0]->type->getEffectiveType())->underlyingType->kind == Type::Kind::Void) {
+                return InterpretConstructorResult(nullptr, nullptr);
+            }
         }
         if (!onlyTry) errorMessageOpt("no fitting integer constructor (bad argument type)", position);
         return nullopt;
@@ -1340,6 +1348,8 @@ pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmOb
             } else {
                 return { nullptr, new llvm::FPToUIInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
             }
+        case Type::Kind::MaybeError:
+            return { nullptr, arguments[0]->createLlvm(llvmObj)};
         default:
             internalError("integer can only be constructed from integer and float values in llvm stage");
         }
