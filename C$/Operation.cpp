@@ -1576,7 +1576,8 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         if (arg0Type->getEffectiveType()->kind == Type::Kind::DynamicArray) {
             auto interpretFunction = arg0Type->getEffectiveType()->interpretFunction(position, scope, varName, arguments);
             if (!interpretFunction) return nullopt;
-            type = interpretFunction.value();
+            type = interpretFunction.value().first;
+            classConstructor = interpretFunction.value().second;
             buildInFunctionName = varName;
         } else {
             ClassScope* classScope = nullptr;
@@ -1644,7 +1645,7 @@ llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
         auto dotOperation = (DotOperation*)function;
         auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
         if (arg0EffType->kind == Type::Kind::DynamicArray) {
-            return arg0EffType->createFunctionLlvmValue(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments);
+            return arg0EffType->createFunctionLlvmValue(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
         } else {
             internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
         }
@@ -1662,7 +1663,7 @@ llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
         auto dotOperation = (DotOperation*)function;
         auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
         if (arg0EffType->kind == Type::Kind::DynamicArray) {
-            return arg0EffType->createFunctionLlvmReference(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments);
+            return arg0EffType->createFunctionLlvmReference(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
         } else {
             internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
         }
@@ -2172,6 +2173,49 @@ void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* start, llvm::Value*
         loopBodyBlock, 
         afterLoopBlock, 
         new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, new llvm::LoadInst(index, "", llvmObj->block), end, ""),
+        loopConditionBlock
+    );
+
+    llvmObj->block = afterLoopBlock;
+}
+void createLlvmForEachLoopReversed(LlvmObject* llvmObj, llvm::Value* start, llvm::Value* end, function<void(llvm::Value*)> bodyFunction) {
+    auto i64Type = llvm::Type::getInt64Ty(llvmObj->context);
+
+    auto loopStartBlock     = llvm::BasicBlock::Create(llvmObj->context, "loopStart",     llvmObj->function);
+    auto loopStepBlock      = llvm::BasicBlock::Create(llvmObj->context, "loopStep",      llvmObj->function);
+    auto loopConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "loopCondition", llvmObj->function);
+    auto loopBodyBlock      = llvm::BasicBlock::Create(llvmObj->context, "loop",          llvmObj->function);
+    auto afterLoopBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterLoop",     llvmObj->function);
+
+    // start block
+    llvm::BranchInst::Create(loopStartBlock, llvmObj->block);
+    llvmObj->block = loopStartBlock;
+    auto index = new llvm::AllocaInst(i64Type, 0, "", llvmObj->block);
+    new llvm::StoreInst(start, index, llvmObj->block);
+    llvm::BranchInst::Create(loopConditionBlock, loopStartBlock);
+
+    // body block
+    llvmObj->block = loopBodyBlock;
+    bodyFunction(index);
+
+    // after block
+    llvm::BranchInst::Create(loopStepBlock, llvmObj->block);
+
+    // step block
+    llvmObj->block = loopStepBlock;
+    auto indexAfterIncrement = llvm::BinaryOperator::CreateSub(
+        new llvm::LoadInst(index, "", llvmObj->block), 
+        llvm::ConstantInt::get(i64Type, 1), "", llvmObj->block
+    );
+    new llvm::StoreInst(indexAfterIncrement, index, llvmObj->block);
+    llvm::BranchInst::Create(loopConditionBlock, loopStepBlock);
+
+    // condition block
+    llvmObj->block = loopConditionBlock;
+    llvm::BranchInst::Create(
+        loopBodyBlock, 
+        afterLoopBlock, 
+        new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGT, new llvm::LoadInst(index, "", llvmObj->block), end, ""),
         loopConditionBlock
     );
 
