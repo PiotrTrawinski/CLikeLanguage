@@ -47,6 +47,9 @@ int Type::sizeInBytes() {
 bool Type::needsDestruction() {
     return false;
 }
+bool Type::needsReference() {
+    return false;
+}
 optional<pair<Type*,FunctionValue*>> Type::interpretFunction(const CodePosition& position, Scope* scope, const string functionName, vector<Value*> arguments) {
     return errorMessageOpt(DeclarationMap::toString(this) + " type has no member function named " + functionName, position);
 }
@@ -147,7 +150,7 @@ bool Type::hasLlvmConstructor(LlvmObject* llvmObj, const std::vector<Value*>& ar
     }
 }
 void Type::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    createDestructorLlvm(llvmObj, leftLlvmRef);
+    createLlvmDestructorRef(llvmObj, leftLlvmRef);
     createLlvmConstructor(llvmObj, leftLlvmRef, arguments, classConstructor);
 }
 void Type::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
@@ -160,10 +163,11 @@ void Type::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRe
     new llvm::StoreInst(rightLlvmValue, leftLlvmRef, llvmObj->block);
 }
 void Type::createLlvmMoveAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
-    createDestructorLlvm(llvmObj, leftLlvmRef);
+    createLlvmDestructorRef(llvmObj, leftLlvmRef);
     createLlvmMoveConstructor(llvmObj, leftLlvmRef, rightLlvmValue);
 }
-void Type::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {}
+void Type::createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue) {}
+void Type::createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef) {}
 
 Type* getSuitingIntegerType(IntegerType* i1, IntegerType* i2) {
     if (i1->isSigned() || i2->isSigned()) {
@@ -195,6 +199,17 @@ Type* Type::getSuitingArithmeticType(Type* val1, Type* val2) {
         return nullptr;
     }
 }
+
+llvm::Constant* llvmInt(LlvmObject* llvmObj, int value) {
+    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), value);
+}
+llvm::Value* llvmLoad(LlvmObject* llvmObj, llvm::Value* ptrToLoad) {
+    return new llvm::LoadInst(ptrToLoad, "", llvmObj->block);
+}
+void llvmStore(LlvmObject* llvmObj, llvm::Value* value, llvm::Value* ptr) {
+    new llvm::StoreInst(value, ptr, llvmObj->block);
+}
+
 
 /*
     OwnerPointerType
@@ -291,7 +306,7 @@ void OwnerPointerType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value
         llvmObj,
         new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, rightAsInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
         [&]() {
-            createDestructorLlvm(llvmObj, leftLlvmRef);
+            createLlvmDestructorRef(llvmObj, leftLlvmRef);
             new llvm::StoreInst(llvm::ConstantPointerNull::get((llvm::PointerType*)createLlvm(llvmObj)), leftLlvmRef, llvmObj->block);
         },
         [&]() {
@@ -326,22 +341,24 @@ void OwnerPointerType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value
         }
     );
 }
-void OwnerPointerType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
-    auto leftLlvmValue = new llvm::LoadInst(leftLlvmRef, "", llvmObj->block);
-    auto leftAsInt = new llvm::PtrToIntInst(leftLlvmValue, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
+void OwnerPointerType::createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    auto leftAsInt = new llvm::PtrToIntInst(llvmValue, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
     createLlvmConditional(
         llvmObj,
         new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_NE, leftAsInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
         [&]() {
-            underlyingType->createDestructorLlvm(llvmObj, leftLlvmValue);
+            underlyingType->createLlvmDestructorRef(llvmObj, llvmValue);
             llvm::CallInst::Create(
                 llvmObj->freeFunction, 
-                new llvm::BitCastInst(leftLlvmValue, llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block), 
+                new llvm::BitCastInst(llvmValue, llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block), 
                 "", 
                 llvmObj->block
             );
         }
     );
+}
+void OwnerPointerType::createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef) {
+    createLlvmDestructorValue(llvmObj, new llvm::LoadInst(llvmRef, "", llvmObj->block));
 }
 
 
@@ -444,6 +461,9 @@ int MaybeErrorType::sizeInBytes() {
 bool MaybeErrorType::needsDestruction() {
     return underlyingType->needsDestruction();
 }
+bool MaybeErrorType::needsReference() {
+    return underlyingType->needsReference();
+}
 optional<InterpretConstructorResult> MaybeErrorType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     switch (arguments.size()) {
     case 0:
@@ -537,6 +557,18 @@ llvm::Value* MaybeErrorType::llvmGepValue(LlvmObject* llvmObj, llvm::Value* llvm
     return llvm::GetElementPtrInst::Create(
         ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
     );
+}
+llvm::Value* MaybeErrorType::llvmExtractError(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    return llvm::ExtractValueInst::Create(llvmValue, {1}, "", llvmObj->block);
+}
+llvm::Value* MaybeErrorType::llvmExtractValue(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    return llvm::ExtractValueInst::Create(llvmValue, {0}, "", llvmObj->block);
+}
+llvm::Value* MaybeErrorType::llvmInsertError(LlvmObject* llvmObj, llvm::Value* llvmValue, llvm::Value* toInsert) {
+    return llvm::InsertValueInst::Create(llvmValue, toInsert, {1}, "", llvmObj->block);
+}
+llvm::Value* MaybeErrorType::llvmInsertValue(LlvmObject* llvmObj, llvm::Value* llvmValue, llvm::Value* toInsert) {
+    return llvm::InsertValueInst::Create(llvmValue, toInsert, {0}, "", llvmObj->block);
 }
 void MaybeErrorType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (arguments.size()) {
@@ -654,7 +686,7 @@ void MaybeErrorType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* 
                     llvmObj,
                     new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, leftError, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
                     [&]() {
-                        underlyingType->createDestructorLlvm(llvmObj, llvmGepValue(llvmObj, leftLlvmRef));
+                        underlyingType->createLlvmDestructorRef(llvmObj, llvmGepValue(llvmObj, leftLlvmRef));
                     }
                 );
                 new llvm::StoreInst(rightError, llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
@@ -662,15 +694,32 @@ void MaybeErrorType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* 
         );
     }
 }
-void MaybeErrorType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+void MaybeErrorType::createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    if (!needsReference()) {
+        if (underlyingType->needsDestruction()) {
+            auto errorValue = llvmExtractError(llvmObj, llvmValue);
+            createLlvmConditional(
+                llvmObj,
+                new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, errorValue, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
+                [&]() {
+                    underlyingType->createLlvmDestructorValue(llvmObj, llvmExtractValue(llvmObj, llvmValue));
+                    llvmInsertError(llvmObj, llvmValue, llvmInt(llvmObj, -1));
+                }
+            );
+        }
+    } else {
+        internalError("value destructor that needsReference on MaybeErrorType");
+    }
+}
+void MaybeErrorType::createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     if (underlyingType->needsDestruction()) {
-        auto errorValue = new llvm::LoadInst(llvmGepError(llvmObj, leftLlvmRef), "", llvmObj->block);
+        auto errorValue = new llvm::LoadInst(llvmGepError(llvmObj, llvmRef), "", llvmObj->block);
         createLlvmConditional(
             llvmObj,
             new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, errorValue, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
             [&]() {
-                underlyingType->createDestructorLlvm(llvmObj, llvmGepValue(llvmObj, leftLlvmRef));
-                new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), -1), llvmGepError(llvmObj, leftLlvmRef), llvmObj->block);
+                underlyingType->createLlvmDestructorRef(llvmObj, llvmGepValue(llvmObj, llvmRef));
+                new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), -1), llvmGepError(llvmObj, llvmRef), llvmObj->block);
             }
         );
     }
@@ -733,6 +782,7 @@ llvm::Type* ReferenceType::createLlvm(LlvmObject* llvmObj) {
     return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
 }
 
+
 /*
     StaticArrayType
 */
@@ -786,6 +836,9 @@ int StaticArrayType::sizeInBytes() {
 }
 bool StaticArrayType::needsDestruction() {
     return elementType->needsDestruction();
+}
+bool StaticArrayType::needsReference() {
+    return true;
 }
 optional<InterpretConstructorResult> StaticArrayType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     auto result = elementType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment, isExplicit);
@@ -873,7 +926,10 @@ void StaticArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value*
         }  
     });
 }
-void StaticArrayType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+void StaticArrayType::createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    internalError("value destructor on StaticArrayType");
+}
+void StaticArrayType::createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     if (elementType->needsDestruction()) {
         auto sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
         createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
@@ -881,9 +937,9 @@ void StaticArrayType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* lef
             indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
             indexList.push_back(new llvm::LoadInst(index, "", llvmObj->block));
             auto leftGepRef = llvm::GetElementPtrInst::Create(
-                ((llvm::PointerType*)leftLlvmRef->getType())->getElementType(), leftLlvmRef, indexList, "", llvmObj->block
+                ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
             );
-            elementType->createDestructorLlvm(llvmObj, leftGepRef);
+            elementType->createLlvmDestructorRef(llvmObj, leftGepRef);
         });
     }
 }
@@ -1101,15 +1157,6 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
         return errorMessageOpt(DeclarationMap::toString(this) + " type has no member function named " + functionName, position);
     }
 }
-llvm::Constant* llvmInt(LlvmObject* llvmObj, int value) {
-    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), value);
-}
-llvm::Value* llvmLoad(LlvmObject* llvmObj, llvm::Value* ptrToLoad) {
-    return new llvm::LoadInst(ptrToLoad, "", llvmObj->block);
-}
-void llvmStore(LlvmObject* llvmObj, llvm::Value* value, llvm::Value* ptr) {
-    new llvm::StoreInst(value, ptr, llvmObj->block);
-}
 llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     if (functionName == "push") {
         auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
@@ -1185,13 +1232,13 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             if (elementType->needsDestruction()) {
                 createLlvmForEachLoop(llvmObj, start, [&](llvm::Value* index){
                     auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                    elementType->createLlvmDestructorRef(llvmObj, gepRef);
                 });
                 auto endPlus1 = llvm::BinaryOperator::CreateAdd(end, llvmInt(llvmObj, 1), "", llvmObj->block);
                 auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
                 createLlvmForEachLoop(llvmObj, endPlus1, size, false, [&](llvm::Value* index){
                     auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                    elementType->createLlvmDestructorRef(llvmObj, gepRef);
                 });
             }
             createLlvmForEachLoop(llvmObj, newSize, [&](llvm::Value* index){
@@ -1214,13 +1261,13 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             if (elementType->needsDestruction()) {
                 createLlvmForEachLoop(llvmObj, start, [&](llvm::Value* index){
                     auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                    elementType->createLlvmDestructorRef(llvmObj, gepRef);
                 });
                 auto endPlus1 = llvm::BinaryOperator::CreateAdd(end, llvmInt(llvmObj, 1), "", llvmObj->block);
                 auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
                 createLlvmForEachLoop(llvmObj, endPlus1, size, false, [&](llvm::Value* index){
                     auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                    elementType->createLlvmDestructorRef(llvmObj, gepRef);
                 });
             }
             auto newArrayIndex = IntegerType::Create(IntegerType::Size::I64)->allocaLlvm(llvmObj);
@@ -1240,7 +1287,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
                     },
                     [&]() {
                         auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                        elementType->createDestructorLlvm(llvmObj, gepRef);
+                        elementType->createLlvmDestructorRef(llvmObj, gepRef);
                     }
                 );
             });
@@ -1258,12 +1305,12 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
         auto sizeMinus1 = llvm::BinaryOperator::CreateSub(size, llvmInt(llvmObj, 1), "", llvmObj->block);
         llvmStore(llvmObj, sizeMinus1, llvmGepSize(llvmObj, llvmRef));
         auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
-        elementType->createDestructorLlvm(llvmObj, llvmGepDataElement(llvmObj, data, sizeMinus1));
+        elementType->createLlvmDestructorRef(llvmObj, llvmGepDataElement(llvmObj, data, sizeMinus1));
     } else if (functionName == "remove") {
         if (arguments.size() == 1) {
             auto indexToRemove = arguments[0]->createLlvm(llvmObj);
             auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
-            elementType->createDestructorLlvm(llvmObj, llvmGepDataElement(llvmObj, data, indexToRemove));
+            elementType->createLlvmDestructorRef(llvmObj, llvmGepDataElement(llvmObj, data, indexToRemove));
             auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
             auto sizeMinus1 = llvm::BinaryOperator::CreateSub(size, llvmInt(llvmObj, 1), "", llvmObj->block);
             llvmStore(llvmObj, sizeMinus1, llvmGepSize(llvmObj, llvmRef));
@@ -1281,7 +1328,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto endIndexPlus1 = llvm::BinaryOperator::CreateAdd(endIndex, llvmInt(llvmObj, 1), "", llvmObj->block);
             if (elementType->needsDestruction()) {
                 createLlvmForEachLoop(llvmObj, startIndex, endIndexPlus1, false, [&](llvm::Value* index){
-                    elementType->createDestructorLlvm(llvmObj, llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index)));
+                    elementType->createLlvmDestructorRef(llvmObj, llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index)));
                 });
             }
             auto removeSize = llvm::BinaryOperator::CreateSub(endIndexPlus1, startIndex, "", llvmObj->block);
@@ -1302,7 +1349,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
             createLlvmForEachLoop(llvmObj, size, [&](llvm::Value* index){
                 auto leftGepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                elementType->createDestructorLlvm(llvmObj, leftGepRef);
+                elementType->createLlvmDestructorRef(llvmObj, leftGepRef);
             });
         }
         llvmStore(llvmObj, llvmInt(llvmObj, 0), llvmGepSize(llvmObj, llvmRef));
@@ -1317,7 +1364,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
             createLlvmForEachLoop(llvmObj, newSize, size, false, [&](llvm::Value* index){
                 auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                elementType->createDestructorLlvm(llvmObj, gepRef);
+                elementType->createLlvmDestructorRef(llvmObj, gepRef);
             });
         }
         llvmStore(llvmObj, newSize, llvmGepSize(llvmObj, llvmRef));
@@ -1329,9 +1376,9 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto endSubStart = llvm::BinaryOperator::CreateSub(end, start, "", llvmObj->block);
             auto newArraySize = llvm::BinaryOperator::CreateAdd(endSubStart, llvmInt(llvmObj, 1), "", llvmObj->block);
             llvmStore(llvmObj, newArraySize, llvmGepSize(llvmObj, newArray));
-            createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, newArraySize, llvmInt(llvmObj, 150), ""), 
+            createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, newArraySize, llvmInt(llvmObj, 50), ""), 
                 [&]() {
-                llvmStore(llvmObj, llvmInt(llvmObj, 150), llvmGepCapacity(llvmObj, newArray));
+                llvmStore(llvmObj, llvmInt(llvmObj, 50), llvmGepCapacity(llvmObj, newArray));
             },
                 [&]() {
                 llvmStore(llvmObj, newArraySize, llvmGepCapacity(llvmObj, newArray));
@@ -1362,9 +1409,9 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto endSubStartDivStep = llvm::BinaryOperator::CreateSDiv(endSubStart, step, "", llvmObj->block);
             auto newArraySize = llvm::BinaryOperator::CreateAdd(endSubStartDivStep, llvmInt(llvmObj, 1), "", llvmObj->block);
             llvmStore(llvmObj, newArraySize, llvmGepSize(llvmObj, newArray));
-            createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, newArraySize, llvmInt(llvmObj, 150), ""), 
+            createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, newArraySize, llvmInt(llvmObj, 50), ""), 
                 [&]() {
-                    llvmStore(llvmObj, llvmInt(llvmObj, 150), llvmGepCapacity(llvmObj, newArray));
+                    llvmStore(llvmObj, llvmInt(llvmObj, 50), llvmGepCapacity(llvmObj, newArray));
                 },
                 [&]() {
                     llvmStore(llvmObj, newArraySize, llvmGepCapacity(llvmObj, newArray));
@@ -1497,6 +1544,15 @@ llvm::Value* DynamicArrayType::llvmGepData(LlvmObject* llvmObj, llvm::Value* llv
         ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
     );
 }
+llvm::Value* DynamicArrayType::llvmExtractSize(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    return llvm::ExtractValueInst::Create(llvmValue, {0}, "", llvmObj->block);
+}
+llvm::Value* DynamicArrayType::llvmExtractCapacity(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    return llvm::ExtractValueInst::Create(llvmValue, {1}, "", llvmObj->block);
+}
+llvm::Value* DynamicArrayType::llvmExtractData(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    return llvm::ExtractValueInst::Create(llvmValue, {2}, "", llvmObj->block);
+}
 llvm::Value* DynamicArrayType::llvmGepDataElement(LlvmObject* llvmObj, llvm::Value* data, llvm::Value* index) {
     return llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, {index}, "", llvmObj->block);
 }
@@ -1544,16 +1600,6 @@ void DynamicArrayType::llvmReallocData(LlvmObject* llvmObj, llvm::Value* llvmRef
         ),
         dataRef, 
         llvmObj->block
-    );
-}
-void DynamicArrayType::llvmDeallocData(LlvmObject* llvmObj, llvm::Value* llvmRef) {
-    llvm::CallInst::Create(
-        llvmObj->freeFunction, 
-        new llvm::BitCastInst(
-            new llvm::LoadInst(llvmGepData(llvmObj, llvmRef), "", llvmObj->block), 
-            llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block
-        ), 
-        "", llvmObj->block
     );
 }
 void DynamicArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
@@ -1660,17 +1706,44 @@ void DynamicArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value
         }
     );
 }
-void DynamicArrayType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+void DynamicArrayType::createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    auto data = llvmExtractData(llvmObj, llvmValue);
     if (elementType->needsDestruction()) {
-        auto sizeValue = new llvm::LoadInst(llvmGepSize(llvmObj, leftLlvmRef), "", llvmObj->block);
-        auto data = new llvm::LoadInst(llvmGepData(llvmObj, leftLlvmRef), "", llvmObj->block);
-        createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
-            auto leftGepRef = llvmGepDataElement(llvmObj, data, new llvm::LoadInst(index, "", llvmObj->block));
-            elementType->createDestructorLlvm(llvmObj, leftGepRef);
+        auto size = llvmExtractSize(llvmObj, llvmValue);
+        createLlvmForEachLoop(llvmObj, size, [&](llvm::Value* index) {
+            auto leftGepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
+            elementType->createLlvmDestructorRef(llvmObj, leftGepRef);
         });
     }
-    llvmDeallocData(llvmObj, leftLlvmRef);
+    llvm::CallInst::Create(
+        llvmObj->freeFunction, 
+        new llvm::BitCastInst(
+            data, 
+            llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block
+        ), 
+        "", llvmObj->block
+    );
 }
+void DynamicArrayType::createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef) {
+    auto data = new llvm::LoadInst(llvmGepData(llvmObj, llvmRef), "", llvmObj->block);
+    if (elementType->needsDestruction()) {
+        auto sizeValue = new llvm::LoadInst(llvmGepSize(llvmObj, llvmRef), "", llvmObj->block);
+        createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
+            auto leftGepRef = llvmGepDataElement(llvmObj, data, new llvm::LoadInst(index, "", llvmObj->block));
+            elementType->createLlvmDestructorRef(llvmObj, leftGepRef);
+        });
+    }
+    llvm::CallInst::Create(
+        llvmObj->freeFunction, 
+        new llvm::BitCastInst(
+            data, 
+            llvm::Type::getInt8PtrTy(llvmObj->context), "", llvmObj->block
+        ), 
+        "", llvmObj->block
+    );
+}
+
+
 
 
 /*
@@ -1798,6 +1871,12 @@ llvm::Value* ArrayViewType::llvmGepData(LlvmObject* llvmObj, llvm::Value* llvmRe
         ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
     );
 }
+llvm::Value* ArrayViewType::llvmExtractSize(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    return llvm::ExtractValueInst::Create(llvmValue, {0}, "", llvmObj->block);
+}
+llvm::Value* ArrayViewType::llvmExtractData(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    return llvm::ExtractValueInst::Create(llvmValue, {1}, "", llvmObj->block);
+}
 llvm::Value* ArrayViewType::llvmGepDataElement(LlvmObject* llvmObj, llvm::Value* data, llvm::Value* index) {
     return llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, {index}, "", llvmObj->block);
 }
@@ -1888,6 +1967,9 @@ bool ClassType::needsDestruction() {
         }
     }
     return false;
+}
+bool ClassType::needsReference() {
+    return true;
 }
 optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     if (declaration->body->constructors.empty()) {
@@ -2037,13 +2119,17 @@ void ClassType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* left
 void ClassType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     llvm::CallInst::Create(declaration->body->operatorEq->createLlvm(llvmObj), {rightLlvmValue, leftLlvmRef}, "", llvmObj->block);
 }
-void ClassType::createDestructorLlvm(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
+void ClassType::createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue) {
+    internalError("value destructor on ClassType");
+}
+void ClassType::createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     if (declaration->body->destructor) {
-        llvm::CallInst::Create(declaration->body->destructor->createLlvm(llvmObj), leftLlvmRef, "", llvmObj->block);
+        llvm::CallInst::Create(declaration->body->destructor->createLlvm(llvmObj), llvmRef, "", llvmObj->block);
     } else if (declaration->body->inlineDestructors) {
-        llvm::CallInst::Create(declaration->body->inlineDestructors->createLlvm(llvmObj), leftLlvmRef, "", llvmObj->block);
+        llvm::CallInst::Create(declaration->body->inlineDestructors->createLlvm(llvmObj), llvmRef, "", llvmObj->block);
     }
 }
+
 
 
 /*

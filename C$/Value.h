@@ -34,6 +34,7 @@ struct Value : Statement {
     bool isConstexpr = false;
     bool wasCaptured = false;
     llvm::Value* llvmValue = nullptr;
+    llvm::Value* llvmRef = nullptr;
 
 private:
     static std::vector<std::unique_ptr<Value>> objects;
@@ -127,6 +128,8 @@ struct StaticArrayValue : Value {
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
+    virtual void createDestructorLlvm(LlvmObject* llvmObj);
 
     std::vector<Value*> values;
     bool wasInterpreted = false;
@@ -158,6 +161,7 @@ struct NullValue : Value {
     static NullValue* Create(const CodePosition& position, Type* type);
     virtual std::optional<Value*> interpret(Scope* scope);
     llvm::Value* createLlvm(LlvmObject* llvmObj);
+
 private:
     static std::vector<std::unique_ptr<NullValue>> objects;
 };

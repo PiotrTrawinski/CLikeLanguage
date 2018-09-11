@@ -412,6 +412,15 @@ optional<Value*> StaticArrayValue::interpret(Scope* scope) {
         }
         type = StaticArrayType::Create(deducedType, values.size());
     }
+
+    for (auto& value : values) {
+        value->wasCaptured = true;
+    }
+
+    if (type->needsDestruction()) {
+        scope->valuesToDestroyBuffer.push_back(this);
+    }
+
     return nullptr;
 }
 bool StaticArrayValue::operator==(const Statement& value) const {
@@ -437,9 +446,10 @@ llvm::Value* StaticArrayValue::createLlvm(LlvmObject* llvmObj) {
         for (auto value : values) {
             llvmValues.push_back((llvm::Constant*)value->createLlvm(llvmObj));
         }
-        return llvm::ConstantArray::get((llvm::ArrayType*)type->createLlvm(llvmObj), llvmValues);
+        llvmValue = llvm::ConstantArray::get((llvm::ArrayType*)type->createLlvm(llvmObj), llvmValues);
+        return llvmValue;
     } else {
-        auto arrayValue = type->allocaLlvm(llvmObj);
+        llvmRef = type->allocaLlvm(llvmObj);
         for (int i = 0; i < values.size(); ++i) {
             vector<llvm::Value*> indexList;
             if (((StaticArrayType*)type)->sizeAsInt != -1) {
@@ -447,17 +457,57 @@ llvm::Value* StaticArrayValue::createLlvm(LlvmObject* llvmObj) {
             }
             indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), i));
             auto elementPtr = llvm::GetElementPtrInst::Create(
-                ((llvm::PointerType*)arrayValue->getType())->getElementType(),
-                arrayValue,
+                ((llvm::PointerType*)llvmRef->getType())->getElementType(),
+                llvmRef,
                 indexList,
                 "",
                 llvmObj->block
             );
             new llvm::StoreInst(values[i]->createLlvm(llvmObj), elementPtr, llvmObj->block);
         }
-        return new llvm::LoadInst(arrayValue, "", llvmObj->block);
+        return new llvm::LoadInst(llvmRef, "", llvmObj->block);
     }
 }
+llvm::Value* StaticArrayValue::getReferenceLlvm(LlvmObject* llvmObj) {
+    bool allElementsConstexpr = true;
+    for (auto value : values) {
+        if (!value->isConstexpr) {
+            allElementsConstexpr = false;
+            break;
+        }
+    }
+    llvmRef = type->allocaLlvm(llvmObj);
+    if (allElementsConstexpr) {
+        vector<llvm::Constant*> llvmValues;
+        for (auto value : values) {
+            llvmValues.push_back((llvm::Constant*)value->createLlvm(llvmObj));
+        }
+        new llvm::StoreInst(llvm::ConstantArray::get((llvm::ArrayType*)type->createLlvm(llvmObj), llvmValues), llvmRef, llvmObj->block);
+    } else {
+        for (int i = 0; i < values.size(); ++i) {
+            vector<llvm::Value*> indexList;
+            if (((StaticArrayType*)type)->sizeAsInt != -1) {
+                indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+            }
+            indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), i));
+            auto elementPtr = llvm::GetElementPtrInst::Create(
+                ((llvm::PointerType*)llvmRef->getType())->getElementType(),
+                llvmRef,
+                indexList,
+                "",
+                llvmObj->block
+            );
+            new llvm::StoreInst(values[i]->createLlvm(llvmObj), elementPtr, llvmObj->block);
+        }
+    }
+    return llvmRef;
+}
+void StaticArrayValue::createDestructorLlvm(LlvmObject* llvmObj) {
+    if (llvmRef) {
+        type->createLlvmDestructorRef(llvmObj, llvmRef);
+    }
+}
+
 /*unique_ptr<Value> StaticArrayValue::copy() {
     auto val = make_unique<StaticArrayValue>(position);
     val->type = type->copy();
@@ -586,4 +636,3 @@ optional<Value*> NullValue::interpret(Scope* scope) {
 llvm::Value* NullValue::createLlvm(LlvmObject* llvmObj) {
     return llvm::ConstantPointerNull::get((llvm::PointerType*)type->createLlvm(llvmObj));
 }
-
