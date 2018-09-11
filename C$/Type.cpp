@@ -54,9 +54,9 @@ llvm::Value* Type::createFunctionLlvmReference(const string functionName, LlvmOb
     internalError("cannot createFunctionLlvmReference for this type during llvm creating");
     return nullptr;
 }
-llvm::Value* Type::createFunctionLlvmValue(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+pair<llvm::Value*, llvm::Value*> Type::createFunctionLlvmValue(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     internalError("cannot createFunctionLlvmReference for this type during llvm creating");
-    return nullptr;
+    return { nullptr, nullptr };
 }
 optional<InterpretConstructorResult> Type::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     switch (kind) {
@@ -984,14 +984,32 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
             return pair<Type*,FunctionValue*>(Type::Create(Type::Kind::Void), result.value().classConstructor);
         }
     } else if (functionName == "shrink") {
-        if (arguments.size() == 1) {
+        if (arguments.size() == 2) {
             arguments[0] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[0]});
             auto intCtorInterpret = arguments[0]->interpret(scope);
             if (!intCtorInterpret) return nullopt;
             if (intCtorInterpret.value()) arguments[0] = intCtorInterpret.value();
+            arguments[1] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[1]});
+            intCtorInterpret = arguments[1]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[1] = intCtorInterpret.value();
+            return pair<Type*,FunctionValue*>(Type::Create(Type::Kind::Void), nullptr);
+        } else if (arguments.size() == 3) {
+            arguments[0] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[0]});
+            auto intCtorInterpret = arguments[0]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[0] = intCtorInterpret.value();
+            arguments[1] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[1]});
+            intCtorInterpret = arguments[1]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[1] = intCtorInterpret.value();
+            arguments[2] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[2]});
+            intCtorInterpret = arguments[2]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[2] = intCtorInterpret.value();
             return pair<Type*,FunctionValue*>(Type::Create(Type::Kind::Void), nullptr);
         } else {
-            return errorMessageOpt("dynamic array 'shrink' function takes 1 int arguments", position);
+            return errorMessageOpt("dynamic array 'shrink' function takes 2 or 3 int arguments", position);
         }
     } else if (functionName == "reserve") {
         if (arguments.size() == 1) {
@@ -1040,6 +1058,44 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
             return pair<Type*,FunctionValue*>(ReferenceType::Create(elementType), nullptr);
         } else {
             return errorMessageOpt("dynamic array 'last' function takes no arguments", position);
+        }
+    } else if (functionName == "trim") {
+        if (arguments.size() == 1) {
+            arguments[0] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[0]});
+            auto intCtorInterpret = arguments[0]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[0] = intCtorInterpret.value();
+            return pair<Type*,FunctionValue*>(Type::Create(Type::Kind::Void), nullptr);
+        } else {
+            return errorMessageOpt("dynamic array 'trim' function takes 1 int arguments", position);
+        }
+    } else if (functionName == "slice") {
+        if (arguments.size() == 2) {
+            arguments[0] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[0]});
+            auto intCtorInterpret = arguments[0]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[0] = intCtorInterpret.value();
+            arguments[1] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[1]});
+            intCtorInterpret = arguments[1]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[1] = intCtorInterpret.value();
+            return pair<Type*,FunctionValue*>(this, nullptr);
+        } else if (arguments.size() == 3) {
+            arguments[0] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[0]});
+            auto intCtorInterpret = arguments[0]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[0] = intCtorInterpret.value();
+            arguments[1] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[1]});
+            intCtorInterpret = arguments[1]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[1] = intCtorInterpret.value();
+            arguments[2] = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[2]});
+            intCtorInterpret = arguments[2]->interpret(scope);
+            if (!intCtorInterpret) return nullopt;
+            if (intCtorInterpret.value()) arguments[2] = intCtorInterpret.value();
+            return pair<Type*,FunctionValue*>(this, nullptr);
+        } else {
+            return errorMessageOpt("dynamic array 'slice' function takes 2 or 3 int arguments", position);
         }
     } else {
         return errorMessageOpt(DeclarationMap::toString(this) + " type has no member function named " + functionName, position);
@@ -1103,7 +1159,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
                 createFunctionLlvmReference("extend", llvmObj, llvmRef, arguments, classConstructor);
             },
             [&]() {
-                createFunctionLlvmReference("shrink", llvmObj, llvmRef, arguments, classConstructor);
+                createFunctionLlvmReference("trim", llvmObj, llvmRef, arguments, classConstructor);
             }
         );
     } else if (functionName == "extend") {
@@ -1113,23 +1169,83 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
         if (elementType->hasLlvmConstructor(llvmObj, constructorArgs, classConstructor)) {
             auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
             auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
-            createLlvmForEachLoop(llvmObj, size, newSize, [&](llvm::Value* index){
+            createLlvmForEachLoop(llvmObj, size, newSize, false, [&](llvm::Value* index){
                 auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
                 elementType->createLlvmConstructor(llvmObj, gepRef, constructorArgs, classConstructor);
             });
         }
         llvmStore(llvmObj, newSize, llvmGepSize(llvmObj, llvmRef));
     } else if (functionName == "shrink") {
-        auto newSize = arguments[0]->createLlvm(llvmObj);
-        if (elementType->needsDestruction()) {
+        if (arguments.size() == 2) {
+            auto start = arguments[0]->createLlvm(llvmObj);
+            auto end = arguments[1]->createLlvm(llvmObj);
+            auto endSubStart = llvm::BinaryOperator::CreateSub(end, start, "", llvmObj->block);
+            auto newSize = llvm::BinaryOperator::CreateAdd(endSubStart, llvmInt(llvmObj, 1), "", llvmObj->block);
             auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
-            auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
-            createLlvmForEachLoop(llvmObj, newSize, size, [&](llvm::Value* index){
-                auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
-                elementType->createDestructorLlvm(llvmObj, gepRef);
+            if (elementType->needsDestruction()) {
+                createLlvmForEachLoop(llvmObj, start, [&](llvm::Value* index){
+                    auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
+                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                });
+                auto endPlus1 = llvm::BinaryOperator::CreateAdd(end, llvmInt(llvmObj, 1), "", llvmObj->block);
+                auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
+                createLlvmForEachLoop(llvmObj, endPlus1, size, false, [&](llvm::Value* index){
+                    auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
+                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                });
+            }
+            createLlvmForEachLoop(llvmObj, newSize, [&](llvm::Value* index){
+                auto indexValue = llvmLoad(llvmObj, index);
+                auto indexPlusStart = llvm::BinaryOperator::CreateAdd(indexValue, start, "", llvmObj->block);
+                auto destinationGepRef = llvmGepDataElement(llvmObj, data, indexValue);
+                auto SourceGepRef = llvmGepDataElement(llvmObj, data, indexPlusStart);
+                llvmStore(llvmObj, llvmLoad(llvmObj, SourceGepRef), destinationGepRef);
             });
+            llvmStore(llvmObj, newSize, llvmGepSize(llvmObj, llvmRef));
         }
-        llvmStore(llvmObj, newSize, llvmGepSize(llvmObj, llvmRef));
+        if (arguments.size() == 3) {
+            auto start = arguments[0]->createLlvm(llvmObj);
+            auto step = arguments[1]->createLlvm(llvmObj);
+            auto end = arguments[2]->createLlvm(llvmObj);
+            auto endSubStart = llvm::BinaryOperator::CreateSub(end, start, "", llvmObj->block);
+            auto endSubStartDivStep = llvm::BinaryOperator::CreateSDiv(endSubStart, step, "", llvmObj->block);
+            auto newSize = llvm::BinaryOperator::CreateAdd(endSubStartDivStep, llvmInt(llvmObj, 1), "", llvmObj->block);
+            auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
+            if (elementType->needsDestruction()) {
+                createLlvmForEachLoop(llvmObj, start, [&](llvm::Value* index){
+                    auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
+                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                });
+                auto endPlus1 = llvm::BinaryOperator::CreateAdd(end, llvmInt(llvmObj, 1), "", llvmObj->block);
+                auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
+                createLlvmForEachLoop(llvmObj, endPlus1, size, false, [&](llvm::Value* index){
+                    auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
+                    elementType->createDestructorLlvm(llvmObj, gepRef);
+                });
+            }
+            auto newArrayIndex = IntegerType::Create(IntegerType::Size::I64)->allocaLlvm(llvmObj);
+            llvmStore(llvmObj, llvmInt(llvmObj, 0), newArrayIndex);
+            createLlvmForEachLoop(llvmObj, start, end, true, [&](llvm::Value* index){
+                auto indexValue = llvmLoad(llvmObj, index);
+                auto indexValueMinusStart = llvm::BinaryOperator::CreateSub(indexValue, start, "", llvmObj->block);
+                auto indexMinusStartDivStepRem = llvm::BinaryOperator::CreateSRem(indexValueMinusStart, step, "", llvmObj->block);
+                createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, indexMinusStartDivStepRem, llvmInt(llvmObj, 0), ""),
+                    [&]() {
+                        auto newArrayIndexValue = llvmLoad(llvmObj, newArrayIndex);
+                        auto destinationGepRef = llvmGepDataElement(llvmObj, data, newArrayIndexValue);
+                        auto indexValue = llvmLoad(llvmObj, index);
+                        auto SourceGepRef = llvmGepDataElement(llvmObj, data, indexValue);
+                        llvmStore(llvmObj, llvmLoad(llvmObj, SourceGepRef), destinationGepRef);
+                        llvmStore(llvmObj, llvm::BinaryOperator::CreateAdd(newArrayIndexValue, llvmInt(llvmObj, 1), "", llvmObj->block), newArrayIndex);
+                    },
+                    [&]() {
+                        auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
+                        elementType->createDestructorLlvm(llvmObj, gepRef);
+                    }
+                );
+            });
+            llvmStore(llvmObj, newSize, llvmGepSize(llvmObj, llvmRef));
+        }
     } else if (functionName == "reserve") {
         auto newCapacity = arguments[0]->createLlvm(llvmObj);
         auto capacity = llvmLoad(llvmObj, llvmGepCapacity(llvmObj, llvmRef));
@@ -1151,7 +1267,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
             auto sizeMinus1 = llvm::BinaryOperator::CreateSub(size, llvmInt(llvmObj, 1), "", llvmObj->block);
             llvmStore(llvmObj, sizeMinus1, llvmGepSize(llvmObj, llvmRef));
-            createLlvmForEachLoop(llvmObj, indexToRemove, sizeMinus1, [&](llvm::Value* index){
+            createLlvmForEachLoop(llvmObj, indexToRemove, sizeMinus1, false, [&](llvm::Value* index){
                 auto indexValue = llvmLoad(llvmObj, index);
                 auto gepRefI = llvmGepDataElement(llvmObj, data, indexValue);
                 auto indexPlus1 = llvm::BinaryOperator::CreateAdd(indexValue, llvmInt(llvmObj, 1), "", llvmObj->block);
@@ -1164,7 +1280,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
             auto endIndexPlus1 = llvm::BinaryOperator::CreateAdd(endIndex, llvmInt(llvmObj, 1), "", llvmObj->block);
             if (elementType->needsDestruction()) {
-                createLlvmForEachLoop(llvmObj, startIndex, endIndexPlus1, [&](llvm::Value* index){
+                createLlvmForEachLoop(llvmObj, startIndex, endIndexPlus1, false, [&](llvm::Value* index){
                     elementType->createDestructorLlvm(llvmObj, llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index)));
                 });
             }
@@ -1172,7 +1288,7 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
             auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
             auto sizeMinusRemoveSize = llvm::BinaryOperator::CreateSub(size, removeSize, "", llvmObj->block);
             llvmStore(llvmObj, sizeMinusRemoveSize, llvmGepSize(llvmObj, llvmRef));
-            createLlvmForEachLoop(llvmObj, startIndex, sizeMinusRemoveSize, [&](llvm::Value* index){
+            createLlvmForEachLoop(llvmObj, startIndex, sizeMinusRemoveSize, false, [&](llvm::Value* index){
                 auto indexValue = llvmLoad(llvmObj, index);
                 auto gepRefI = llvmGepDataElement(llvmObj, data, indexValue);
                 auto indexPlusOffset = llvm::BinaryOperator::CreateAdd(indexValue, removeSize, "", llvmObj->block);
@@ -1194,16 +1310,95 @@ llvm::Value* DynamicArrayType::createFunctionLlvmReference(const string function
         auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
         auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
         return llvmGepDataElement(llvmObj, data, llvm::BinaryOperator::CreateSub(size, llvmInt(llvmObj, 1), "", llvmObj->block));
+    } else if (functionName == "trim") {
+        auto newSize = arguments[0]->createLlvm(llvmObj);
+        if (elementType->needsDestruction()) {
+            auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
+            auto size = llvmLoad(llvmObj, llvmGepSize(llvmObj, llvmRef));
+            createLlvmForEachLoop(llvmObj, newSize, size, false, [&](llvm::Value* index){
+                auto gepRef = llvmGepDataElement(llvmObj, data, llvmLoad(llvmObj, index));
+                elementType->createDestructorLlvm(llvmObj, gepRef);
+            });
+        }
+        llvmStore(llvmObj, newSize, llvmGepSize(llvmObj, llvmRef));
+    } else if (functionName == "slice") {
+        if (arguments.size() == 2) {
+            auto start = arguments[0]->createLlvm(llvmObj);
+            auto end = arguments[1]->createLlvm(llvmObj);
+            auto newArray = allocaLlvm(llvmObj);
+            auto endSubStart = llvm::BinaryOperator::CreateSub(end, start, "", llvmObj->block);
+            auto newArraySize = llvm::BinaryOperator::CreateAdd(endSubStart, llvmInt(llvmObj, 1), "", llvmObj->block);
+            llvmStore(llvmObj, newArraySize, llvmGepSize(llvmObj, newArray));
+            createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, newArraySize, llvmInt(llvmObj, 150), ""), 
+                [&]() {
+                llvmStore(llvmObj, llvmInt(llvmObj, 150), llvmGepCapacity(llvmObj, newArray));
+            },
+                [&]() {
+                llvmStore(llvmObj, newArraySize, llvmGepCapacity(llvmObj, newArray));
+            }
+            );
+            llvmAllocData(llvmObj, newArray, llvmLoad(llvmObj, llvmGepCapacity(llvmObj, newArray)));
+            auto newData = llvmLoad(llvmObj, llvmGepData(llvmObj, newArray));
+            auto thisData = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
+            createLlvmForEachLoop(llvmObj, newArraySize, [&](llvm::Value* index){
+                auto indexValue = llvmLoad(llvmObj, index);
+                auto indexPlusStart = llvm::BinaryOperator::CreateAdd(indexValue, start, "", llvmObj->block);
+                auto newGepRef = llvmGepDataElement(llvmObj, newData, indexValue);
+                auto thisGepRef = llvmGepDataElement(llvmObj, thisData, indexPlusStart);
+                if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::DynamicArray || elementType->kind == Type::Kind::MaybeError) {
+                    elementType->createLlvmCopyConstructor(llvmObj, newGepRef, thisGepRef);
+                } else {
+                    elementType->createLlvmCopyConstructor(llvmObj, newGepRef, llvmLoad(llvmObj, thisGepRef));
+                } 
+            });
+            return newArray;
+        }
+        if (arguments.size() == 3) {
+            auto start = arguments[0]->createLlvm(llvmObj);
+            auto step = arguments[1]->createLlvm(llvmObj);
+            auto end = arguments[2]->createLlvm(llvmObj);
+            auto newArray = allocaLlvm(llvmObj);
+            auto endSubStart = llvm::BinaryOperator::CreateSub(end, start, "", llvmObj->block);
+            auto endSubStartDivStep = llvm::BinaryOperator::CreateSDiv(endSubStart, step, "", llvmObj->block);
+            auto newArraySize = llvm::BinaryOperator::CreateAdd(endSubStartDivStep, llvmInt(llvmObj, 1), "", llvmObj->block);
+            llvmStore(llvmObj, newArraySize, llvmGepSize(llvmObj, newArray));
+            createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, newArraySize, llvmInt(llvmObj, 150), ""), 
+                [&]() {
+                    llvmStore(llvmObj, llvmInt(llvmObj, 150), llvmGepCapacity(llvmObj, newArray));
+                },
+                [&]() {
+                    llvmStore(llvmObj, newArraySize, llvmGepCapacity(llvmObj, newArray));
+                }
+            );
+            llvmAllocData(llvmObj, newArray, llvmLoad(llvmObj, llvmGepCapacity(llvmObj, newArray)));
+            auto newData = llvmLoad(llvmObj, llvmGepData(llvmObj, newArray));
+            auto thisData = llvmLoad(llvmObj, llvmGepData(llvmObj, llvmRef));
+            auto thisArrayIndex = IntegerType::Create(IntegerType::Size::I64)->allocaLlvm(llvmObj);
+            llvmStore(llvmObj, start, thisArrayIndex);
+            createLlvmForEachLoop(llvmObj, newArraySize, [&](llvm::Value* index){
+                auto thisIndexValue = llvmLoad(llvmObj, thisArrayIndex);
+                auto newGepRef = llvmGepDataElement(llvmObj, newData, llvmLoad(llvmObj, index));
+                auto thisGepRef = llvmGepDataElement(llvmObj, thisData, thisIndexValue);
+                if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::DynamicArray || elementType->kind == Type::Kind::MaybeError) {
+                    elementType->createLlvmCopyConstructor(llvmObj, newGepRef, thisGepRef);
+                } else {
+                    elementType->createLlvmCopyConstructor(llvmObj, newGepRef, llvmLoad(llvmObj, thisGepRef));
+                } 
+                llvmStore(llvmObj, llvm::BinaryOperator::CreateAdd(thisIndexValue, step, "", llvmObj->block), thisArrayIndex);
+            });
+            return newArray;
+        }
     } else {
         internalError("unknown functionName during dynamic array createFunctionLlvmReference (" + functionName + ")");
     } 
     return nullptr;
 }
-llvm::Value* DynamicArrayType::createFunctionLlvmValue(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
-    if (functionName == "last") {
-        return llvmLoad(llvmObj, createFunctionLlvmReference(functionName, llvmObj, llvmRef, arguments, classConstructor));
+pair<llvm::Value*, llvm::Value*> DynamicArrayType::createFunctionLlvmValue(const string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto ref = createFunctionLlvmReference(functionName, llvmObj, llvmRef, arguments, classConstructor);
+    if (functionName == "last" || functionName == "slice") {
+        return { ref, llvmLoad(llvmObj, ref) };
     } else {
-        return createFunctionLlvmReference(functionName, llvmObj, llvmRef, arguments, classConstructor);
+        return { ref, nullptr };
     }
 }
 optional<InterpretConstructorResult> DynamicArrayType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
@@ -1440,7 +1635,7 @@ void DynamicArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value
                     elementType->createLlvmCopyAssignment(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
                 } 
             });
-            createLlvmForEachLoop(llvmObj, leftSize, rightSize, [&](llvm::Value* index) {
+            createLlvmForEachLoop(llvmObj, leftSize, rightSize, false, [&](llvm::Value* index) {
                 auto indexValue = new llvm::LoadInst(index, "", llvmObj->block);
                 auto leftGepRef = llvmGepDataElement(llvmObj, leftData, indexValue);
                 auto rightGepRef = llvmGepDataElement(llvmObj, rightData, indexValue);

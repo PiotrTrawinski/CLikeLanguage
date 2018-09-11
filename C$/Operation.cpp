@@ -1645,7 +1645,9 @@ llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
         auto dotOperation = (DotOperation*)function;
         auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
         if (arg0EffType->kind == Type::Kind::DynamicArray) {
-            return arg0EffType->createFunctionLlvmValue(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
+            auto result = arg0EffType->createFunctionLlvmValue(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
+            llvmValue = result.first;
+            return result.second;
         } else {
             internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
         }
@@ -1663,7 +1665,8 @@ llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
         auto dotOperation = (DotOperation*)function;
         auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
         if (arg0EffType->kind == Type::Kind::DynamicArray) {
-            return arg0EffType->createFunctionLlvmReference(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
+            llvmValue = arg0EffType->createFunctionLlvmReference(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
+            return llvmValue;
         } else {
             internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
         }
@@ -2135,7 +2138,7 @@ void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, function
 
     llvmObj->block = afterLoopBlock;
 }
-void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* start, llvm::Value* end, function<void(llvm::Value*)> bodyFunction) {
+void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* start, llvm::Value* end, bool includeEnd, function<void(llvm::Value*)> bodyFunction) {
     auto i64Type = llvm::Type::getInt64Ty(llvmObj->context);
 
     auto loopStartBlock     = llvm::BasicBlock::Create(llvmObj->context, "loopStart",     llvmObj->function);
@@ -2169,12 +2172,22 @@ void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* start, llvm::Value*
 
     // condition block
     llvmObj->block = loopConditionBlock;
-    llvm::BranchInst::Create(
-        loopBodyBlock, 
-        afterLoopBlock, 
-        new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, new llvm::LoadInst(index, "", llvmObj->block), end, ""),
-        loopConditionBlock
-    );
+    if (includeEnd) {
+        llvm::BranchInst::Create(
+            loopBodyBlock, 
+            afterLoopBlock, 
+            new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, new llvm::LoadInst(index, "", llvmObj->block), end, ""),
+            loopConditionBlock
+        );
+    } else {
+        llvm::BranchInst::Create(
+            loopBodyBlock, 
+            afterLoopBlock, 
+            new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, new llvm::LoadInst(index, "", llvmObj->block), end, ""),
+            loopConditionBlock
+        );
+    }
+    
 
     llvmObj->block = afterLoopBlock;
 }
@@ -2516,7 +2529,8 @@ optional<Value*> DotOperation::interpret(Scope* scope) {
             return nullptr;
         } else if (fieldName == "push" || fieldName == "pushArray" || fieldName == "insert" || fieldName == "insertArray"
             || fieldName == "resize" || fieldName == "extend" || fieldName == "shrink" || fieldName == "reserve"
-            || fieldName == "pop" || fieldName == "remove" || fieldName == "clear" || fieldName == "last") 
+            || fieldName == "pop" || fieldName == "remove" || fieldName == "clear" || fieldName == "last"
+            || fieldName == "trim" || fieldName == "slice") 
         {
             arguments[1]->isConstexpr = true;
             type = Type::Create(Type::Kind::Void);
