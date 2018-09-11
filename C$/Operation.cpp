@@ -1348,6 +1348,8 @@ llvm::Value* ArrayIndexOperation::getReferenceLlvm(LlvmObject* llvmObj) {
         indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
     } else if (effType->kind == Type::Kind::DynamicArray) {
         arg = new llvm::LoadInst(((DynamicArrayType*)effType)->llvmGepData(llvmObj, arg), "", llvmObj->block);
+    } else if (effType->kind == Type::Kind::ArrayView) {
+        arg = new llvm::LoadInst(((ArrayViewType*)effType)->llvmGepData(llvmObj, arg), "", llvmObj->block);
     }
     indexList.push_back(index->createLlvm(llvmObj));
     return llvm::GetElementPtrInst::Create(((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block);
@@ -2538,6 +2540,17 @@ optional<Value*> DotOperation::interpret(Scope* scope) {
         } else {
             return errorMessageOpt("dynamic array has no field named " + fieldName, position);
         }
+    } else if (effectiveType1->kind == Type::Kind::ArrayView) {
+        isBuildInOperation = true;
+        if (fieldName == "size") {
+            type = IntegerType::Create(IntegerType::Size::I64);
+            return nullptr;
+        } else if (fieldName == "data") {
+            type = RawPointerType::Create(((ArrayViewType*)effectiveType1)->elementType);
+            return nullptr;
+        } else {
+            return errorMessageOpt("array view has no field named " + fieldName, position);
+        }
     } else {
         ClassType* classType = nullptr;
         switch (effectiveType1->kind) {
@@ -2613,7 +2626,16 @@ llvm::Value* DotOperation::getReferenceLlvm(LlvmObject* llvmObj) {
         } else if (fieldName == "data") {
             return ((DynamicArrayType*)effectiveType0)->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
         } else {
-            internalError("dot operation on dynamic type with unknown name during llvm creating");
+            internalError("dot operation on dynamic array type with unknown name during llvm creating");
+        }
+    } else if (effectiveType0->kind == Type::Kind::ArrayView) {
+        auto fieldName = ((Variable*)arguments[1])->name;
+        if (fieldName == "size") {
+            return ((ArrayViewType*)effectiveType0)->llvmGepSize(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        } else if (fieldName == "data") {
+            return ((ArrayViewType*)effectiveType0)->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        } else {
+            internalError("dot operation on array view type with unknown name during llvm creating");
         }
     }
     ClassType* classType = nullptr;
@@ -2671,7 +2693,8 @@ llvm::Value* DotOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     );
 }
 llvm::Value* DotOperation::createLlvm(LlvmObject* llvmObj) {
-    if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::DynamicArray) {
+    auto arg0EffType = arguments[0]->type->getEffectiveType();
+    if (arg0EffType->kind == Type::Kind::DynamicArray || arg0EffType->kind == Type::Kind::ArrayView) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
     } else {
         auto accessedDeclaration = ((Variable*)arguments[1])->declaration;

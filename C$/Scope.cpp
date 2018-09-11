@@ -685,9 +685,14 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     }
                 }
                 else if (tokens[i].value == "[") {
-                    // static array ([x, y, z, ...]) or dynamic array constructor ([]T) or static array constructor ([N]T)
+                    // static array ([x, y, z, ...]) or dynamic array constructor ([]T) 
+                    // or array view constructor ([*]T) or static array constructor ([N]T)
                     if (tokens[i + 1].value == "]") {
                         // dynamic array constructor ([]T or []T(...))
+                        addConstructorOperation(out, tokens, i);
+                        expectValue = false;
+                    } else if (tokens[i + 1].value == "*" && tokens[i + 2].value == "]") {
+                        // array viewy constructor ([*]T or [*]T(...))
                         addConstructorOperation(out, tokens, i);
                         expectValue = false;
                     } else {

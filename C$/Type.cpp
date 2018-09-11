@@ -1101,7 +1101,7 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
         return errorMessageOpt(DeclarationMap::toString(this) + " type has no member function named " + functionName, position);
     }
 }
-llvm::Value* llvmInt(LlvmObject* llvmObj, int value) {
+llvm::Constant* llvmInt(LlvmObject* llvmObj, int value) {
     return llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), value);
 }
 llvm::Value* llvmLoad(LlvmObject* llvmObj, llvm::Value* ptrToLoad) {
@@ -1700,13 +1700,142 @@ int ArrayViewType::sizeInBytes() {
     return 16;
 }
 optional<InterpretConstructorResult> ArrayViewType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
-    return nullopt;
+    switch (arguments.size()) {
+    case 0:
+        return InterpretConstructorResult(nullptr, nullptr);
+    case 1: {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        if (argEffType->kind == Type::Kind::StaticArray && cmpPtr(elementType, ((StaticArrayType*)argEffType)->elementType)) {
+            return InterpretConstructorResult(nullptr, nullptr);
+        }
+        if (argEffType->kind == Type::Kind::DynamicArray && cmpPtr(elementType, ((DynamicArrayType*)argEffType)->elementType)) {
+            return InterpretConstructorResult(nullptr, nullptr);
+        }
+        if (!onlyTry) errorMessageOpt("no fitting array view constructor (argument is not of array type)", position);
+        return nullopt;
+    }
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting array view constructor (>1 argument)", position);
+        return nullopt;
+    }
 }
 /*unique_ptr<Type> ArrayViewType::copy() {
     return make_unique<ArrayViewType>(this->elementType->copy());
 }*/
 llvm::Type* ArrayViewType::createLlvm(LlvmObject* llvmObj) {
-    return llvm::Type::getFloatTy(llvmObj->context);
+    if (!llvmType) {
+        llvmType = llvm::StructType::get(llvmObj->context, {
+            llvm::Type::getInt64Ty(llvmObj->context),
+            llvm::PointerType::get(elementType->createLlvm(llvmObj), 0),
+        });
+    }
+    return llvmType;
+}
+pair<llvm::Value*, llvm::Value*> ArrayViewType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (arguments.size() == 0) {
+        return { 
+            nullptr,
+            llvm::ConstantStruct::get((llvm::StructType*)createLlvm(llvmObj), {
+                llvmInt(llvmObj, 0),
+                llvm::UndefValue::get(RawPointerType::Create(elementType)->createLlvm(llvmObj))
+            }) 
+        };
+    } else if (arguments.size() == 1) {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        auto arrayPtr = arguments[0]->getReferenceLlvm(llvmObj);
+        if (argEffType->kind == Type::Kind::StaticArray) {
+            return {
+                nullptr,
+                llvm::InsertValueInst::Create(
+                    llvm::ConstantStruct::get((llvm::StructType*)createLlvm(llvmObj), {
+                        llvmInt(llvmObj, argEffType->sizeInBytes()/((StaticArrayType*)argEffType)->elementType->sizeInBytes()),
+                        llvm::UndefValue::get(RawPointerType::Create(elementType)->createLlvm(llvmObj))
+                    }),
+                    new llvm::BitCastInst(arrayPtr, RawPointerType::Create(elementType)->createLlvm(llvmObj), "", llvmObj->block),
+                    {1}, "", llvmObj->block
+                )
+            };
+        } else if (argEffType->kind == Type::Kind::DynamicArray) {
+            return {
+                nullptr,
+                llvm::InsertValueInst::Create(
+                    llvm::InsertValueInst::Create(
+                        llvm::ConstantStruct::get((llvm::StructType*)createLlvm(llvmObj), {
+                            llvm::UndefValue::get(IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj)),
+                            llvm::UndefValue::get(RawPointerType::Create(elementType)->createLlvm(llvmObj))
+                        }),
+                        llvmLoad(llvmObj, ((DynamicArrayType*)argEffType)->llvmGepSize(llvmObj, arrayPtr)),
+                        {0}, "", llvmObj->block
+                    ),
+                    llvmLoad(llvmObj, ((DynamicArrayType*)argEffType)->llvmGepData(llvmObj, arrayPtr)),
+                    {1}, "", llvmObj->block
+                )
+            };
+        }
+    } else {
+        internalError("incorrect array view createLlvmValue (argument is not array)");
+        return {nullptr, nullptr};
+    }
+}
+llvm::Value* ArrayViewType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto llvmRef = allocaLlvm(llvmObj);
+    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
+    return llvmRef;
+}
+llvm::Value* ArrayViewType::llvmGepSize(LlvmObject* llvmObj, llvm::Value* llvmRef) {
+    vector<llvm::Value*> indexList;
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 0));
+    return llvm::GetElementPtrInst::Create(
+        ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
+    );
+}
+llvm::Value* ArrayViewType::llvmGepData(LlvmObject* llvmObj, llvm::Value* llvmRef) {
+    vector<llvm::Value*> indexList;
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+    indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvmObj->context), 1));
+    return llvm::GetElementPtrInst::Create(
+        ((llvm::PointerType*)llvmRef->getType())->getElementType(), llvmRef, indexList, "", llvmObj->block
+    );
+}
+llvm::Value* ArrayViewType::llvmGepDataElement(LlvmObject* llvmObj, llvm::Value* data, llvm::Value* index) {
+    return llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, {index}, "", llvmObj->block);
+}
+void ArrayViewType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        llvmStore(llvmObj, llvmInt(llvmObj, 0), llvmGepSize(llvmObj, leftLlvmRef));
+        break;
+    case 1: {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        auto arrayPtr = arguments[0]->getReferenceLlvm(llvmObj);
+        if (argEffType->kind == Type::Kind::StaticArray) {
+            llvmStore(llvmObj, 
+                new llvm::BitCastInst(arrayPtr, RawPointerType::Create(elementType)->createLlvm(llvmObj), "", llvmObj->block), 
+                llvmGepData(llvmObj, leftLlvmRef)
+            );
+            llvmStore(llvmObj, 
+                llvmInt(llvmObj, argEffType->sizeInBytes()/((StaticArrayType*)argEffType)->elementType->sizeInBytes()), 
+                llvmGepSize(llvmObj, leftLlvmRef)
+            );
+        } else if (argEffType->kind == Type::Kind::DynamicArray) {
+            llvmStore(llvmObj, 
+                llvmLoad(llvmObj, ((DynamicArrayType*)argEffType)->llvmGepData(llvmObj, arrayPtr)), 
+                llvmGepData(llvmObj, leftLlvmRef)
+            );
+            llvmStore(llvmObj, 
+                llvmLoad(llvmObj, ((DynamicArrayType*)argEffType)->llvmGepSize(llvmObj, arrayPtr)),
+                llvmGepSize(llvmObj, leftLlvmRef)
+            );
+        } else {
+            internalError("incorrect array view constructor during llvm creating (argument is not array)");
+        }
+        break;
+    }
+    default: 
+        internalError("incorrect array view constructor during llvm creating (>1 argument)");
+        break;
+    }
 }
 
 
