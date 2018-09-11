@@ -909,7 +909,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         break;
     }
     case Kind::Destroy: {
-        arguments[0]->type->createDestructorLlvm(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        arguments[0]->type->createLlvmDestructorRef(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
         return nullptr;
     }
     case Kind::Minus: {
@@ -1507,7 +1507,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
             }
         }
         function = viableDeclarations[matchId]->value;
-        type = ((FunctionType*)possibleDeclarations[matchId]->variable->type)->returnType;
+        type = ((FunctionType*)viableDeclarations[matchId]->variable->type)->returnType;
         idName = searchScope->declarationMap.getIdName(viableDeclarations[matchId]);
     }
     return FindFunctionStatus::Success;
@@ -1642,38 +1642,7 @@ bool FunctionCallOperation::operator==(const Statement& value) const {
         return false;
     }
 }
-llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
-    if (!buildInFunctionName.empty()) {
-        auto dotOperation = (DotOperation*)function;
-        auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
-        if (arg0EffType->kind == Type::Kind::DynamicArray) {
-            auto result = arg0EffType->createFunctionLlvmValue(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
-            llvmValue = result.first;
-            return result.second;
-        } else {
-            internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
-        }
-    }
-    else if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Reference) {
-        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-    } else if (((FunctionType*)function->type)->returnType->kind == Type::Kind::Class) {
-        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
-    } else {
-        return getReferenceLlvm(llvmObj);
-    }
-}
-llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
-    if (!buildInFunctionName.empty()) {
-        auto dotOperation = (DotOperation*)function;
-        auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
-        if (arg0EffType->kind == Type::Kind::DynamicArray) {
-            llvmValue = arg0EffType->createFunctionLlvmReference(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
-            return llvmValue;
-        } else {
-            internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
-        }
-    }
-
+llvm::Value* FunctionCallOperation::createLlvmCall(LlvmObject* llvmObj) {
     vector<llvm::Value*> args;
     auto functionType = (FunctionType*)function->type;
     for (int i = 0; i < arguments.size(); ++i) {
@@ -1683,25 +1652,63 @@ llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
             args.push_back(arguments[i]->createLlvm(llvmObj));
         }
     }
-
-    if (functionType->returnType->kind == Type::Kind::Class) {
-        llvmClassStackTemp = functionType->returnType->allocaLlvm(llvmObj);
-        new llvm::StoreInst(
-            llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block), 
-            llvmClassStackTemp, 
-            llvmObj->block
-        );
-        return llvmClassStackTemp;
+    return llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
+}
+llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
+    if (!buildInFunctionName.empty()) {
+        auto dotOperation = (DotOperation*)function;
+        auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
+        if (arg0EffType->kind == Type::Kind::DynamicArray) {
+            auto result = arg0EffType->createFunctionLlvmValue(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
+            llvmRef = result.first;
+            llvmValue = result.second;
+            return llvmValue;
+        } else {
+            internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
+        }
     }
-
-    llvmValue = llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
+    
+    auto callResult = createLlvmCall(llvmObj);
+    auto functionType = (FunctionType*)function->type;
+    if (functionType->returnType->kind == Type::Kind::Reference) {
+        llvmRef = callResult;
+        llvmValue = new llvm::LoadInst(callResult, "", llvmObj->block);
+    } else if (functionType->returnType->needsReference()) {
+        llvmValue = callResult;
+        llvmRef = functionType->returnType->allocaLlvm(llvmObj);
+        new llvm::StoreInst(llvmValue, llvmRef, llvmObj->block);
+        return llvmValue;
+    } else {
+        llvmValue = callResult;
+    }
     return llvmValue;
 }
+llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    if (!buildInFunctionName.empty()) {
+        auto dotOperation = (DotOperation*)function;
+        auto arg0EffType = dotOperation->arguments[0]->type->getEffectiveType();
+        if (arg0EffType->kind == Type::Kind::DynamicArray) {
+            llvmRef = arg0EffType->createFunctionLlvmReference(buildInFunctionName, llvmObj, dotOperation->arguments[0]->getReferenceLlvm(llvmObj), arguments, classConstructor);
+            return llvmRef;
+        } else {
+            internalError("didn't find matching buildIn dot function, but buildInFunctionName is not empty");
+        }
+    }
+
+    auto functionType = (FunctionType*)function->type;
+    if (functionType->returnType->kind == Type::Kind::Reference) {
+        llvmRef = createLlvmCall(llvmObj);
+        return llvmRef;
+    }
+    llvmRef = functionType->returnType->allocaLlvm(llvmObj);
+    new llvm::StoreInst(createLlvmCall(llvmObj), llvmRef, llvmObj->block);
+    return llvmRef;
+}
 void FunctionCallOperation::createDestructorLlvm(LlvmObject* llvmObj) {
-    if (llvmClassStackTemp) {
-        type->createDestructorLlvm(llvmObj, llvmClassStackTemp);
+    if (llvmRef) {
+        type->createLlvmDestructorRef(llvmObj, llvmRef);
     } else {
-        type->createDestructorLlvm(llvmObj, llvmValue);
+        type->createLlvmDestructorValue(llvmObj, llvmValue);
     }
 }
 
@@ -2323,35 +2330,40 @@ optional<Value*> ConstructorOperation::interpret(Scope* scope, bool onlyTry, boo
 }
 void ConstructorOperation::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
     if (isHeapAllocation) {
-        llvmValue = new llvm::BitCastInst(
+        auto allocPtr = new llvm::BitCastInst(
             llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
             type->createLlvm(llvmObj), 
             "", 
             llvmObj->block
         );
-        constructorType->createLlvmConstructor(llvmObj, llvmValue, arguments, classConstructor);
-        type->createLlvmMoveConstructor(llvmObj, leftLlvmRef, llvmValue);
+        constructorType->createLlvmConstructor(llvmObj, allocPtr, arguments, classConstructor);
+        type->createLlvmMoveConstructor(llvmObj, leftLlvmRef, allocPtr);
     } else {
         type->createLlvmConstructor(llvmObj, leftLlvmRef, arguments, classConstructor);
     }
 }
 void ConstructorOperation::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
     if (isHeapAllocation) {
-        llvmValue = new llvm::BitCastInst(
+        auto allocPtr = new llvm::BitCastInst(
             llvm::CallInst::Create(llvmObj->mallocFunction, typesize->createLlvm(llvmObj), "", llvmObj->block), 
             type->createLlvm(llvmObj), 
             "", 
             llvmObj->block
         );
-        constructorType->createLlvmConstructor(llvmObj, llvmValue, arguments, classConstructor);
-        type->createLlvmMoveAssignment(llvmObj, leftLlvmRef, llvmValue);
+        constructorType->createLlvmConstructor(llvmObj, allocPtr, arguments, classConstructor);
+        type->createLlvmMoveAssignment(llvmObj, leftLlvmRef, allocPtr);
     } else {
         type->createLlvmAssignment(llvmObj, leftLlvmRef, arguments, classConstructor);
     }
 }
 llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
-    llvmValue = type->createLlvmReference(llvmObj, arguments, classConstructor);
-    return llvmValue;
+    if (isHeapAllocation) {
+        llvmRef = type->allocaLlvm(llvmObj);
+        new llvm::StoreInst(createLlvm(llvmObj), llvmRef, llvmObj->block);
+    } else {
+        llvmRef = type->createLlvmReference(llvmObj, arguments, classConstructor);
+    }
+    return llvmRef;
 }
 llvm::Value* ConstructorOperation::createLlvm(LlvmObject* llvmObj) {
     if (isHeapAllocation) {
@@ -2362,15 +2374,19 @@ llvm::Value* ConstructorOperation::createLlvm(LlvmObject* llvmObj) {
             llvmObj->block
         );
         constructorType->createLlvmConstructor(llvmObj, llvmValue, arguments, classConstructor);
-        return llvmValue;
     } else {
         auto createValue = type->createLlvmValue(llvmObj, arguments, classConstructor);
-        llvmValue = createValue.first;
-        return createValue.second;
+        llvmRef = createValue.first;
+        llvmValue = createValue.second;
     }
+    return llvmValue;
 }
 void ConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
-    type->createDestructorLlvm(llvmObj, llvmValue);
+    if (llvmRef) {
+        type->createLlvmDestructorRef(llvmObj, llvmRef);
+    } else {
+        type->createLlvmDestructorValue(llvmObj, llvmValue);
+    }
 }
 
 
@@ -2619,23 +2635,51 @@ llvm::Value* DotOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto effectiveType0 = arguments[0]->type->getEffectiveType();
     if (effectiveType0->kind == Type::Kind::DynamicArray) {
         auto fieldName = ((Variable*)arguments[1])->name;
-        if (fieldName == "size") {
-            return ((DynamicArrayType*)effectiveType0)->llvmGepSize(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
-        } else if (fieldName == "capacity") {
-            return ((DynamicArrayType*)effectiveType0)->llvmGepCapacity(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
-        } else if (fieldName == "data") {
-            return ((DynamicArrayType*)effectiveType0)->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        auto dynamicArrayType = (DynamicArrayType*)effectiveType0;
+        if (arguments[0]->valueKind == ValueKind::Operation 
+            && (((Operation*)arguments[0])->kind == Operation::Kind::FunctionCall) || ((Operation*)arguments[0])->kind == Operation::Kind::Constructor)
+        {
+            if (fieldName == "size") {
+                dynamicArrayType->llvmExtractSize(llvmObj, arguments[0]->createLlvm(llvmObj));
+            } else if (fieldName == "capacity") {
+                dynamicArrayType->llvmExtractCapacity(llvmObj, arguments[0]->createLlvm(llvmObj));
+            } else if (fieldName == "data") {
+                dynamicArrayType->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+            } else {
+                internalError("dot operation on dynamic array type with unknown name during llvm creating");
+            }
         } else {
-            internalError("dot operation on dynamic array type with unknown name during llvm creating");
+            if (fieldName == "size") {
+                return (dynamicArrayType->llvmGepSize(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)));
+            } else if (fieldName == "capacity") {
+                return (dynamicArrayType->llvmGepCapacity(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)));
+            } else if (fieldName == "data") {
+                return (dynamicArrayType->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)));
+            } else {
+                internalError("dot operation on dynamic array type with unknown name during llvm creating");
+            }
         }
     } else if (effectiveType0->kind == Type::Kind::ArrayView) {
         auto fieldName = ((Variable*)arguments[1])->name;
-        if (fieldName == "size") {
-            return ((ArrayViewType*)effectiveType0)->llvmGepSize(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
-        } else if (fieldName == "data") {
-            return ((ArrayViewType*)effectiveType0)->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        auto arrayViewType = (ArrayViewType*)effectiveType0;
+        if (arguments[0]->valueKind == ValueKind::Operation 
+            && (((Operation*)arguments[0])->kind == Operation::Kind::FunctionCall) || ((Operation*)arguments[0])->kind == Operation::Kind::Constructor)
+        {
+            if (fieldName == "size") {
+                arrayViewType->llvmExtractSize(llvmObj, arguments[0]->createLlvm(llvmObj));
+            } else if (fieldName == "data") {
+                arrayViewType->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+            } else {
+                internalError("dot operation on array view type with unknown name during llvm creating");
+            }
         } else {
-            internalError("dot operation on array view type with unknown name during llvm creating");
+            if (fieldName == "size") {
+                return (arrayViewType->llvmGepSize(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)));
+            } else if (fieldName == "data") {
+                return (arrayViewType->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)));
+            } else {
+                internalError("dot operation on array view type with unknown name during llvm creating");
+            }
         }
     }
     ClassType* classType = nullptr;

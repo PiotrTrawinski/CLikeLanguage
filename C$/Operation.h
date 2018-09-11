@@ -284,6 +284,7 @@ struct FunctionCallOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    llvm::Value* createLlvmCall(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual void createDestructorLlvm(LlvmObject* llvmObj);
@@ -292,8 +293,6 @@ struct FunctionCallOperation : Operation {
     std::string buildInFunctionName = "";
     FunctionValue* classConstructor = nullptr;
     std::string idName = "";
-
-    llvm::Value* llvmClassStackTemp = nullptr;
     
 private:
     enum FindFunctionStatus {
