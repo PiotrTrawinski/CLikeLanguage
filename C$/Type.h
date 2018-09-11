@@ -224,9 +224,16 @@ struct ArrayViewType : Type {
     virtual int sizeInBytes();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    llvm::Value* llvmGepSize(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    llvm::Value* llvmGepData(LlvmObject* llvmObj, llvm::Value* llvmRef);
+    llvm::Value* llvmGepDataElement(LlvmObject* llvmObj, llvm::Value* data, llvm::Value* index);
+    virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
 
     Type* elementType = nullptr;
-    
+    llvm::Type* llvmType = nullptr;
+
 private:
     static std::vector<std::unique_ptr<ArrayViewType>> objects;
 };
