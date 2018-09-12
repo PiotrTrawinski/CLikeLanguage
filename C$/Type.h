@@ -12,12 +12,14 @@ struct FunctionValue;
 struct Scope;
 
 struct InterpretConstructorResult {
-    InterpretConstructorResult(Value* value, FunctionValue* classConstructor=nullptr) :
+    InterpretConstructorResult(Value* value, FunctionValue* classConstructor=nullptr, bool argWasCaptured=false) :
         value(value),
-        classConstructor(classConstructor)
+        classConstructor(classConstructor),
+        argWasCaptured(argWasCaptured)
     {}
     Value* value;
     FunctionValue* classConstructor;
+    bool argWasCaptured;
 };
 
 struct Type {
