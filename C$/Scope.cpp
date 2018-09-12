@@ -2055,14 +2055,15 @@ optional<ForScopeDeclarationType> readForScopeDeclarationType(const vector<Token
 }
 bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     /// Possible legal uses of a for loop:
-    // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
-    // 2. for _array_ {}
-    // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
-    // 4. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
+    // 1. for _range_ {}
+    // 2. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+    // 3. for _array_ {}
+    // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+    // 5. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
     auto firstValue = getValue(tokens, i, {"{", ":", "&", ","}, false, false);
     if (!firstValue) { return false; }
     if (tokens[i].value == "{") {
-        // 2. for _array_ {}
+        // 3. for _array_ {}
         ForEachData forEachData;
         forEachData.arrayValue = firstValue;
         forEachData.it = Variable::Create(tokens[i].codePosition);
@@ -2075,20 +2076,20 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         data = forEachData;
         i += 1;
     } else if(tokens[i].value == ",") {
-        // 4. for var1, var2 _declarationType_ _array_ {}
-        auto var1 = (Variable*)firstValue;
-        if (!var1) {
+        // 5. for var1, var2 _declarationType_ _array_ {}
+        if (firstValue->valueKind != Value::ValueKind::Variable) {
             return errorMessageBool("expected a new element iterator variable name", tokens[i-1].codePosition);
         }
+        auto var1 = (Variable*)firstValue;
         if (i + 5 >= tokens.size()) {
             return errorMessageBool("unexpected end of a file (tried to interpret a for loop)", tokens[tokens.size()-1].codePosition);
         }
         i += 1; // now is on the start of var2
         auto var2Value = getValue(tokens, i, {":", "&"}, false, false);
-        auto var2 = (Variable*)var2Value;
-        if (!var2) {
+        if (var2Value->valueKind != Value::ValueKind::Variable) {
             return errorMessageBool("expected a new index variable name", tokens[i-1].codePosition);
         }
+        auto var2 = (Variable*)var2Value;
         // now i shows start of _declarationType_
         auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
         if (!declarationTypeOpt) {
@@ -2106,13 +2107,34 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         forEachData.index->isConst = true;
         forEachData.index->type = IntegerType::Create(IntegerType::Size::I64);
         data = forEachData;
+    } else if (tokens[i].value == ":" && tokens[i+1].value != ":" && tokens[i+1].value != "=") {
+        // 1. for _range_ {}
+        ForIterData forIterData;
+        forIterData.iterVariable = Variable::Create(position, "index");
+        forIterData.iterVariable->type = IntegerType::Create(IntegerType::Size::I64);
+
+        forIterData.firstValue = firstValue;
+        i += 1;
+        auto secondValue = getValue(tokens, i, {":", "{"}, false, false);
+        if (!secondValue) return false;
+        if (tokens[i].value == "{") {
+            forIterData.step = IntegerValue::Create(tokens[i].codePosition, 1);
+            forIterData.lastValue = secondValue;
+        } else {
+            i += 1;
+            forIterData.step = secondValue;
+            forIterData.lastValue = getValue(tokens, i, {"{"}, false, false);
+            if (!forIterData.lastValue) return false;
+        }
+        data = forIterData;
+        i += 1; // skip '{'
     } else {
-        // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
-        // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
-        auto var1 = (Variable*)firstValue;
-        if (!var1) {
+        // 2. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+        // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+        if (firstValue->valueKind != Value::ValueKind::Variable) {
             return errorMessageBool("expected a new for loop iterator variable name", tokens[i-1].codePosition);
         }
+        auto var1 = (Variable*)firstValue;
 
         auto declarationTypeOpt = readForScopeDeclarationType(tokens, i);
         if (!declarationTypeOpt) { return false; }
