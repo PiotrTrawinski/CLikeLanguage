@@ -1229,7 +1229,7 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             case TypeKeyword::Value::Bool:
                 type = Type::Create(Type::Kind::Bool); break;
             case TypeKeyword::Value::String:
-                type = Type::Create(Type::Kind::String); break;
+                type = DynamicArrayType::Create(IntegerType::Create(IntegerType::Size::U8)); break;
             case TypeKeyword::Value::Void:
                 type = Type::Create(Type::Kind::Void); break;
             default:
@@ -2060,9 +2060,9 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     // 3. for _array_ {}
     // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
     // 5. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
-    auto firstValue = getValue(tokens, i, {"{", ":", "&", ","}, false, false);
+    auto firstValue = getValue(tokens, i, {"{", ":", "&", ",", "do"}, false, false);
     if (!firstValue) { return false; }
-    if (tokens[i].value == "{") {
+    if (tokens[i].value == "{" || tokens[i].value == "do") {
         // 3. for _array_ {}
         ForEachData forEachData;
         forEachData.arrayValue = firstValue;
@@ -2096,7 +2096,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return false;
         }
         auto declarationType = declarationTypeOpt.value();
-        auto arrayValue = getValue(tokens, i, {"{"}, true, false);
+        auto arrayValue = getValue(tokens, i, {"{", "do"}, true, false);
         if (!arrayValue) { return false; }
 
         ForEachData forEachData;
@@ -2115,15 +2115,15 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
 
         forIterData.firstValue = firstValue;
         i += 1;
-        auto secondValue = getValue(tokens, i, {":", "{"}, false, false);
+        auto secondValue = getValue(tokens, i, {":", "{", "do"}, false, false);
         if (!secondValue) return false;
-        if (tokens[i].value == "{") {
+        if (tokens[i].value == "{" || tokens[i].value == "do") {
             forIterData.step = IntegerValue::Create(tokens[i].codePosition, 1);
             forIterData.lastValue = secondValue;
         } else {
             i += 1;
             forIterData.step = secondValue;
-            forIterData.lastValue = getValue(tokens, i, {"{"}, false, false);
+            forIterData.lastValue = getValue(tokens, i, {"{", "do"}, false, false);
             if (!forIterData.lastValue) return false;
         }
         data = forIterData;
@@ -2140,9 +2140,9 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         if (!declarationTypeOpt) { return false; }
         auto declarationType = declarationTypeOpt.value();
 
-        auto secondValue = getValue(tokens, i, {":", "{"}, false, false);
+        auto secondValue = getValue(tokens, i, {":", "{", "do"}, false, false);
         if (!secondValue) { return false; }
-        if (tokens[i].value == "{") {
+        if (tokens[i].value == "{" || tokens[i].value == "do") {
             // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
             ForEachData forEachData;
             forEachData.arrayValue = secondValue;
@@ -2158,19 +2158,19 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         else if (tokens[i].value == ":") {
             // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
             i += 1;
-            auto thirdValue = getValue(tokens, i, {":", "{"}, false, false);
+            auto thirdValue = getValue(tokens, i, {":", "{", "do"}, false, false);
             if (!thirdValue) { return false; }
             ForIterData forIterData;
             forIterData.iterVariable = var1;
             forIterData.iterVariable->isConst = declarationType.isConst;
             forIterData.firstValue = secondValue;
-            if (tokens[i].value == "{") {
+            if (tokens[i].value == "{" || tokens[i].value == "do") {
                 forIterData.step = IntegerValue::Create(tokens[i].codePosition, 1);
                 forIterData.lastValue = thirdValue;
             } else {
                 i += 1;
                 forIterData.step = thirdValue;
-                forIterData.lastValue = getValue(tokens, i, {"{"}, false, false);
+                forIterData.lastValue = getValue(tokens, i, {"{", "do"}, false, false);
                 if (!forIterData.lastValue) { return false; }
             }
             data = forIterData;
@@ -2178,7 +2178,20 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         }
     }
 
-    return CodeScope::createCodeTree(tokens, i);
+    if (tokens[i-1].value == "{") {
+        return CodeScope::createCodeTree(tokens, i);
+    } else {
+        auto statementValue = readStatement(tokens, i);
+        if (statementValue.isScopeEnd) {
+            return errorMessageBool("unexpected '}' (trying to close unopened for scope)", tokens[i-1].codePosition);
+        } else if (!statementValue.statement) {
+            return false;
+        } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
+            return errorMessageBool("expected expression, got class declaration", tokens[i-1].codePosition);
+        }
+        statements.push_back(statementValue.statement);
+        return true;
+    }
 }
 bool ForScope::interpret() {
     maybeUninitializedDeclarations = parentMaybeUninitializedDeclarations;
@@ -2465,11 +2478,26 @@ bool WhileScope::operator==(const Statement& scope) const {
     }
 }
 bool WhileScope::createCodeTree(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(tokens, i, {"{"}, true, false);
+    this->conditionExpression = getValue(tokens, i, {"{", "do"}, false, false);
     if (!this->conditionExpression) {
         return false;
     }
-    return CodeScope::createCodeTree(tokens, i);
+    if (tokens[i].value == "{") {
+        i += 1;
+        return CodeScope::createCodeTree(tokens, i);
+    } else {
+        i += 1;
+        auto statementValue = readStatement(tokens, i);
+        if (statementValue.isScopeEnd) {
+            return errorMessageBool("unexpected '}' (trying to close unopened if scope)", tokens[i-1].codePosition);
+        } else if (!statementValue.statement) {
+            return false;
+        } else if (statementValue.statement->kind == Statement::Kind::ClassDeclaration) {
+            return errorMessageBool("expected expression, got class declaration", tokens[i-1].codePosition);
+        }
+        statements.push_back(statementValue.statement);
+        return true;
+    }
 }
 bool WhileScope::interpret() {
     auto boolCondition = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {conditionExpression});

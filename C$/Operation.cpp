@@ -286,16 +286,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
         auto type1 = arguments[0]->type->getEffectiveType();
         auto type2 = arguments[1]->type->getEffectiveType();
-        if (arguments[0]->type->kind == Type::Kind::String && arguments[1]->type->kind == Type::Kind::String) {
-            if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
-                return StringValue::Create(
-                    position, 
-                    ((StringValue*)arguments[0])->value + ((StringValue*)arguments[1])->value
-                );
-            }
-            type = arguments[0]->type;
-        }
-        else if (arguments[0]->valueKind == Value::ValueKind::StaticArray && arguments[1]->valueKind == Value::ValueKind::StaticArray) {
+        if (arguments[0]->valueKind == Value::ValueKind::StaticArray && arguments[1]->valueKind == Value::ValueKind::StaticArray) {
             auto staticArray1 = (StaticArrayValue*)arguments[0];
             auto staticArray2 = (StaticArrayValue*)arguments[1];
             auto arrayType1 = (StaticArrayType*)type1;
