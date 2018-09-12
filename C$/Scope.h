@@ -48,9 +48,9 @@ struct Scope : Statement {
     ReadStatementValue readStatement(const std::vector<Token>& tokens, int& i);
     bool addArguments(Operation* operation, const std::vector<Token>& tokens, int& i);
     bool  addConstructorOperation(std::vector<Value*>& out, const std::vector<Token>& tokens, int& i, bool isHeapAllocation=false);
-    std::optional<std::vector<Value*>> getReversePolishNotation(const std::vector<Token>& tokens, int& i);
+    std::optional<std::vector<Value*>> getReversePolishNotation(const std::vector<Token>& tokens, int& i, bool canBeFunction);
     Type* getType(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool writeError=true);
-    Value* getValue(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool skipOnGoodDelimiter=false);
+    Value* getValue(const std::vector<Token>& tokens, int& i, const std::vector<std::string>& delimiters, bool skipOnGoodDelimiter=false, bool canBeFunction=true);
     std::optional<std::vector<Type*>> getFunctionArgumentTypes(const std::vector<Token>& tokens, int& i, bool writeError);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i)=0;
     virtual bool interpret()=0;
