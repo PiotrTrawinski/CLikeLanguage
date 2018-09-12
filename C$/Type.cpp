@@ -1453,15 +1453,36 @@ optional<InterpretConstructorResult> DynamicArrayType::interpretConstructor(cons
     case 0:
         return InterpretConstructorResult(nullptr, nullptr);
     case 1: {
-        // capacity: i64
-        auto intCtor = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[0]});
-        auto intCtorInterpret = intCtor->interpret(scope);
-        if (!intCtorInterpret) return nullopt;
-        if (!onlyTry) {
-            if (intCtorInterpret.value()) arguments[0] = intCtorInterpret.value();
-            else arguments[0] = intCtor;
+        auto effType = arguments[0]->type->getEffectiveType();
+        if (effType->kind == Type::Kind::StaticArray) {
+            if (cmpPtr(elementType, ((StaticArrayType*)effType)->elementType)) {
+                if (Value::isLvalue(arguments[0])) {
+                    return InterpretConstructorResult(nullptr, nullptr);
+                } else {
+                    return InterpretConstructorResult(nullptr, nullptr, true);
+                }
+            }
+        } else if (effType->kind == Type::Kind::ArrayView) {
+            if (cmpPtr(elementType, ((ArrayViewType*)effType)->elementType)) {
+                return InterpretConstructorResult(nullptr, nullptr);
+            }
+        } else {
+            // capacity: i64
+            auto intCtor = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {arguments[0]});
+            auto intCtorInterpret = intCtor->interpret(scope, true);
+            if (!intCtorInterpret) {
+                if (!onlyTry) errorMessageOpt("no fitting dynamic array constructor (bad argument type)", position);
+                return nullopt;
+            }
+            if (!onlyTry) {
+                auto intCtorInterpret = intCtor->interpret(scope, false);
+                if (intCtorInterpret.value()) arguments[0] = intCtorInterpret.value();
+                else arguments[0] = intCtor;
+            }
+            return InterpretConstructorResult(nullptr, nullptr);
         }
-        return InterpretConstructorResult(nullptr, nullptr);
+        if (!onlyTry) errorMessageOpt("no fitting dynamic array constructor (bad argument type)", position);
+        return nullopt;
     }
     default: {
         // capacity: i64
@@ -1603,19 +1624,112 @@ void DynamicArrayType::llvmReallocData(LlvmObject* llvmObj, llvm::Value* llvmRef
     );
 }
 void DynamicArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    const int DEFAULT_CAPACITY = 50;
     switch (arguments.size()) {
     case 0: {
-        const int DEFAULT_CAPACITY = 50;
         new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmGepSize(llvmObj, leftLlvmRef), llvmObj->block);
         new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), DEFAULT_CAPACITY), llvmGepCapacity(llvmObj, leftLlvmRef), llvmObj->block);
         llvmAllocData(llvmObj, leftLlvmRef, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), DEFAULT_CAPACITY));
         break;
     }
     case 1: {
-        auto capacity = arguments[0]->createLlvm(llvmObj);
-        new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmGepSize(llvmObj, leftLlvmRef), llvmObj->block);
-        new llvm::StoreInst(capacity, llvmGepCapacity(llvmObj, leftLlvmRef), llvmObj->block);
-        llvmAllocData(llvmObj, leftLlvmRef, capacity);
+        auto effType = arguments[0]->type->getEffectiveType();
+        if (effType->kind == Type::Kind::StaticArray) {
+            auto staticArrayType = (StaticArrayType*)effType;
+            auto capacityInt = max(staticArrayType->sizeAsInt, (int64_t)DEFAULT_CAPACITY);
+            llvmStore(llvmObj, llvmInt(llvmObj, staticArrayType->sizeAsInt), llvmGepSize(llvmObj, leftLlvmRef));
+            llvmStore(llvmObj, llvmInt(llvmObj, capacityInt), llvmGepCapacity(llvmObj, leftLlvmRef));
+            llvmAllocData(llvmObj, leftLlvmRef, llvmInt(llvmObj, capacityInt));
+            auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, leftLlvmRef));
+            auto argRef = arguments[0]->getReferenceLlvm(llvmObj);
+            vector<llvm::Value*> indexList;
+            indexList.push_back(llvmInt(llvmObj, 0));
+            indexList.push_back(llvmInt(llvmObj, 0));
+            if (staticArrayType->sizeAsInt <= 50) {
+                for (int i = 0; i < staticArrayType->sizeAsInt; ++i) {
+                    auto gepDynamic = llvmGepDataElement(llvmObj, data, llvmInt(llvmObj, i));
+                    indexList[1] = llvmInt(llvmObj, i);
+                    auto gepStatic = llvm::GetElementPtrInst::Create(
+                        ((llvm::PointerType*)argRef->getType())->getElementType(), argRef, indexList, "", llvmObj->block
+                    );
+                    if (Value::isLvalue(arguments[0])) {
+                        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::DynamicArray || elementType->kind == Type::Kind::MaybeError) {
+                            elementType->createLlvmCopyConstructor(llvmObj, gepDynamic, gepStatic);
+                        } else {
+                            elementType->createLlvmCopyConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
+                        } 
+                    } else {
+                        if (elementType->kind == Type::Kind::Class) {
+                            elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, gepStatic);
+                        } else {
+                            elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
+                        }
+                    }
+                }
+            } else {
+                createLlvmForEachLoop(llvmObj, llvmInt(llvmObj, staticArrayType->sizeAsInt), [&](llvm::Value* index) {
+                    auto indexValue = llvmLoad(llvmObj, index);
+                    auto gepDynamic = llvmGepDataElement(llvmObj, data, indexValue);
+                    indexList[1] = indexValue;
+                    auto gepStatic = llvm::GetElementPtrInst::Create(
+                        ((llvm::PointerType*)argRef->getType())->getElementType(), argRef, indexList, "", llvmObj->block
+                    );
+                    if (Value::isLvalue(arguments[0])) {
+                        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::DynamicArray || elementType->kind == Type::Kind::MaybeError) {
+                            elementType->createLlvmCopyConstructor(llvmObj, gepDynamic, gepStatic);
+                        } else {
+                            elementType->createLlvmCopyConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
+                        } 
+                    } else {
+                        if (elementType->kind == Type::Kind::Class) {
+                            elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, gepStatic);
+                        } else {
+                            elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
+                        }
+                    }
+                });
+            }
+        } else if (effType->kind == Type::Kind::ArrayView) {
+            auto arrayViewType = (ArrayViewType*)effType;
+            llvm::Value* viewSize;
+            llvm::Value* viewData;
+            if (Value::isLvalue(arguments[0])) {
+                auto viewRef = arguments[0]->getReferenceLlvm(llvmObj);
+                viewSize = llvmLoad(llvmObj, arrayViewType->llvmGepSize(llvmObj, viewRef));
+                viewData = llvmLoad(llvmObj, arrayViewType->llvmGepData(llvmObj, viewRef));
+            } else {
+                auto viewVal = arguments[0]->createLlvm(llvmObj);
+                viewSize = arrayViewType->llvmExtractSize(llvmObj, viewVal);
+                viewData = arrayViewType->llvmExtractData(llvmObj, viewVal);
+            }
+            llvmStore(llvmObj, viewSize, llvmGepSize(llvmObj, leftLlvmRef));
+            createLlvmConditional(llvmObj, new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, viewSize, llvmInt(llvmObj, 50), ""), 
+                [&]() {
+                    llvmStore(llvmObj, llvmInt(llvmObj, 50), llvmGepCapacity(llvmObj, leftLlvmRef));
+                    llvmAllocData(llvmObj, leftLlvmRef, llvmInt(llvmObj, 50));
+                },
+                [&]() {
+                    llvmStore(llvmObj, viewSize, llvmGepCapacity(llvmObj, leftLlvmRef));
+                    llvmAllocData(llvmObj, leftLlvmRef, viewSize);
+                }
+            );
+            auto data = llvmLoad(llvmObj, llvmGepData(llvmObj, leftLlvmRef));
+            createLlvmForEachLoop(llvmObj, viewSize, [&](llvm::Value* index) {
+                auto indexValue = llvmLoad(llvmObj, index);
+                auto dynamicGep = llvmGepDataElement(llvmObj, data, indexValue);
+                auto viewGep = arrayViewType->llvmGepDataElement(llvmObj, viewData, indexValue);
+                if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::DynamicArray || elementType->kind == Type::Kind::MaybeError) {
+                    elementType->createLlvmCopyConstructor(llvmObj, dynamicGep, viewGep);
+                } else {
+                    elementType->createLlvmCopyConstructor(llvmObj, dynamicGep, llvmLoad(llvmObj, viewGep));
+                } 
+            });
+        } else {
+            auto capacity = arguments[0]->createLlvm(llvmObj);
+            new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmGepSize(llvmObj, leftLlvmRef), llvmObj->block);
+            new llvm::StoreInst(capacity, llvmGepCapacity(llvmObj, leftLlvmRef), llvmObj->block);
+            llvmAllocData(llvmObj, leftLlvmRef, capacity);
+        }
         break;
     }
     default: {

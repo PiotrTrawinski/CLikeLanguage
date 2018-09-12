@@ -2302,12 +2302,12 @@ optional<Value*> ConstructorOperation::interpret(Scope* scope, bool onlyTry, boo
     if (!type->interpret(scope)) return nullopt;
     if (!interpretAllArguments(scope)) return nullopt;
 
-    if (isHeapAllocation) {
+    if (!onlyTry && isHeapAllocation) {
         typesize = constructorType->typesize(scope);
     } 
     if (arguments.size() == 1 && cmpPtr(constructorType, arguments[0]->type->getEffectiveType())) {
         if (isHeapAllocation) {
-            arguments[0]->wasCaptured = true;
+            if (!onlyTry) arguments[0]->wasCaptured = true;
             return nullptr;
         } else {
             return arguments[0];
@@ -2316,16 +2316,21 @@ optional<Value*> ConstructorOperation::interpret(Scope* scope, bool onlyTry, boo
 
     auto constructorInterpret = constructorType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment || isHeapAllocation, isExplicit);
     if (!constructorInterpret) return nullopt;
-    if (constructorInterpret.value().value) {
-        if (isHeapAllocation || constructorType->kind == Type::Kind::StaticArray) {
-            arguments = {constructorInterpret.value().value};
-        } else {
-            return constructorInterpret.value().value;
+    if (!onlyTry) {
+        if (constructorInterpret.value().argWasCaptured) {
+            arguments[0]->wasCaptured = true;
         }
-    }
-    classConstructor = constructorInterpret.value().classConstructor;
+        if (constructorInterpret.value().value) {
+            if (isHeapAllocation || constructorType->kind == Type::Kind::StaticArray) {
+                arguments = {constructorInterpret.value().value};
+            } else {
+                return constructorInterpret.value().value;
+            }
+        }
+        classConstructor = constructorInterpret.value().classConstructor;
 
-    if (type->needsDestruction()) scope->valuesToDestroyBuffer.push_back(this);
+        if (type->needsDestruction()) scope->valuesToDestroyBuffer.push_back(this);
+    }
     return nullptr;
 }
 void ConstructorOperation::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
