@@ -800,13 +800,12 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     int openSquereBrackets = 1;
                     int j = i+1;
                     while (j < tokens.size() && openSquereBrackets != 0) {
-                        if (isSubArrayIndexing)
-                            if (tokens[j].value == ":" && openSquereBrackets == 1) {
-                                if (isSubArrayIndexing) {
-                                    return errorMessageOpt("unexpected ':' symbol in subarray indexing", tokens[j].codePosition);
-                                }
-                                isSubArrayIndexing = true;
+                        if (tokens[j].value == ":" && openSquereBrackets == 1) {
+                            if (isSubArrayIndexing) {
+                                return errorMessageOpt("unexpected ':' symbol in subarray indexing", tokens[j].codePosition);
                             }
+                            isSubArrayIndexing = true;
+                        }
                         if (tokens[j].value == "[") {
                             openSquereBrackets += 1;
                         } else if (tokens[j].value == "]") {

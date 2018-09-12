@@ -1935,7 +1935,7 @@ pair<llvm::Value*, llvm::Value*> ArrayViewType::createLlvmValue(LlvmObject* llvm
                 nullptr,
                 llvm::InsertValueInst::Create(
                     llvm::ConstantStruct::get((llvm::StructType*)createLlvm(llvmObj), {
-                        llvmInt(llvmObj, argEffType->sizeInBytes()/((StaticArrayType*)argEffType)->elementType->sizeInBytes()),
+                        llvmInt(llvmObj, ((StaticArrayType*)argEffType)->sizeAsInt),
                         llvm::UndefValue::get(RawPointerType::Create(elementType)->createLlvm(llvmObj))
                     }),
                     new llvm::BitCastInst(arrayPtr, RawPointerType::Create(elementType)->createLlvm(llvmObj), "", llvmObj->block),
@@ -2008,7 +2008,7 @@ void ArrayViewType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* left
                 llvmGepData(llvmObj, leftLlvmRef)
             );
             llvmStore(llvmObj, 
-                llvmInt(llvmObj, argEffType->sizeInBytes()/((StaticArrayType*)argEffType)->elementType->sizeInBytes()), 
+                llvmInt(llvmObj, ((StaticArrayType*)argEffType)->sizeAsInt), 
                 llvmGepSize(llvmObj, leftLlvmRef)
             );
         } else if (argEffType->kind == Type::Kind::DynamicArray) {
