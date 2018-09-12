@@ -152,12 +152,15 @@ bool Variable::operator==(const Statement& value) const {
     variable->isConst = isConst;
     return variable;
 }*/
-llvm::Value* Variable::getReferenceLlvm(LlvmObject* llvmObj) {
-    if (type->kind == Type::Kind::Reference) {
+llvm::Value* Variable::getReferenceLlvm(LlvmObject* llvmObj, bool ignoreReference) {
+    if (!ignoreReference && type->kind == Type::Kind::Reference) {
         return new llvm::LoadInst(declaration->llvmVariable, "", llvmObj->block);
     } else {
         return declaration->llvmVariable;
     }
+}
+llvm::Value* Variable::getReferenceLlvm(LlvmObject* llvmObj) {
+    return getReferenceLlvm(llvmObj, false);
 }
 llvm::Value* Variable::createLlvm(LlvmObject* llvmObj) {
     return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
