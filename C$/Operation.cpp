@@ -1312,17 +1312,29 @@ bool ArrayIndexOperation::operator==(const Statement& value) const {
 }*/
 llvm::Value* ArrayIndexOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto effType = arguments[0]->type->getEffectiveType();
-    auto arg = arguments[0]->getReferenceLlvm(llvmObj);
+    llvm::Value* data;
     vector<llvm::Value*> indexList;
     if (effType->kind == Type::Kind::StaticArray) {
+        data = arguments[0]->getReferenceLlvm(llvmObj);
         indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
     } else if (effType->kind == Type::Kind::DynamicArray) {
-        arg = new llvm::LoadInst(((DynamicArrayType*)effType)->llvmGepData(llvmObj, arg), "", llvmObj->block);
+        if (isLvalue(arguments[0])) {
+            data = new llvm::LoadInst(((DynamicArrayType*)effType)->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)), "", llvmObj->block);
+        } else {
+            data = ((DynamicArrayType*)effType)->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+        }
     } else if (effType->kind == Type::Kind::ArrayView) {
-        arg = new llvm::LoadInst(((ArrayViewType*)effType)->llvmGepData(llvmObj, arg), "", llvmObj->block);
+        if (isLvalue(arguments[0])) {
+            data = new llvm::LoadInst(((ArrayViewType*)effType)->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)), "", llvmObj->block);
+        } else {
+            data = ((ArrayViewType*)effType)->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+        }
+    } else {
+        internalError("not array type argument in index operation");
+        return nullptr;
     }
     indexList.push_back(index->createLlvm(llvmObj));
-    return llvm::GetElementPtrInst::Create(((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block);
+    return llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, indexList, "", llvmObj->block);
 }
 llvm::Value* ArrayIndexOperation::createLlvm(LlvmObject* llvmObj) {
     return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
