@@ -196,7 +196,54 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                 return Scope::ReadStatementValue(declaration);
             }
         }
+        else if (tokens[i + 1].value == "class") {
+            // shorthand noration for class declaration
+            i += 2;
+            auto classDeclaration = ClassDeclaration::Create(token.codePosition, token.value);
+            classDeclaration->body = ClassScope::Create(token.codePosition, this);
+            if (!classDeclaration->body->createCodeTree(tokens, i)) {
+                return false;
+            }
+            return Scope::ReadStatementValue(classDeclaration);
+        }
         else {
+            // value or shorthand notation for constexpr function declaration
+            int j = i + 1;
+            if (tokens[j].value == "<") {
+                j += 1;
+                int openTemplate = 1;
+                while (tokens.size() > j && openTemplate > 0) {
+                    if (tokens[j].value == "<") openTemplate += 1;
+                    else if (tokens[j].value == ">") openTemplate -= 1;
+                    j += 1;
+                }
+            }
+            if (tokens[j].value == "(") {
+                j += 1;
+                int openparentheses = 1;
+                while (tokens.size() > j && openparentheses > 0) {
+                    if (tokens[j].value == "(") openparentheses += 1;
+                    else if (tokens[j].value == ")") openparentheses -= 1;
+                    j += 1;
+                }
+                if (tokens.size() > j+2) {
+                    if (tokens[j].value == "{" || tokens[j].value + tokens[j + 1].value == "->") {
+                        // shorthand notation for constexpr function declaration
+                        i += 1;
+                        auto declaration = Declaration::Create(token.codePosition);
+                        declaration->byReference = false;
+                        declaration->variable->isConst = true;
+                        declaration->variable->name = token.value;
+                        declaration->variable->type = nullptr;
+                        declaration->value = getValue(tokens, i, {";", "}"}, true);
+                        if (!declaration->value) {
+                            return false;
+                        }
+                        return Scope::ReadStatementValue(declaration);
+                    }
+                }
+            }
+
             auto value = getValue(tokens, i, {";", "}"}, true);
             if (!value) {
                 return false;
@@ -247,7 +294,7 @@ bool Scope::addConstructorOperation(vector<Value*>& out, const vector<Token>& to
     out.push_back(constructorOp);
     return true;
 }
-optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& tokens, int& i) {
+optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& tokens, int& i, bool canBeFunction) {
     vector<Operation*> stack;
     vector<Value*> out;
     bool endOfExpression = false;
@@ -507,70 +554,67 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             if (expectValue) {
                 if (tokens[i].value == "(") {
                     // either normal opening bracket or function value (lambda)
-                    int openBrackets = 1;
-                    int openSquereBrackets = 0;
-                    bool wasColon = false;
-                    int j = i + 1;
-                    while (j < tokens.size() && openBrackets != 0) {
-                        if (tokens[j].value == "(") {
-                            openBrackets += 1;
-                        } else if (tokens[j].value == ")") {
-                            openBrackets -= 1;
-                        } else if (tokens[j].value == "[") {
-                            openSquereBrackets += 1;
-                        } else if (tokens[j].value == "]") {
-                            openSquereBrackets -= 1;
-                        } else if (tokens[j].value == ":" && openBrackets == 1 && openSquereBrackets == 0) {
-                            wasColon = true;
+                    bool isNormalOpenBracket = false;
+                    if (!canBeFunction && openBracketsCount == 0) {
+                        isNormalOpenBracket = true;
+                    } else {
+                        int j = i + 1;
+                        int openparentheses = 1;
+                        while (tokens.size() > j && openparentheses > 0) {
+                            if (tokens[j].value == "(") openparentheses += 1;
+                            else if (tokens[j].value == ")") openparentheses -= 1;
+                            j += 1;
                         }
-                        j += 1;
-                    }
-                    if ((wasColon || j==i+2) && j+1 < tokens.size() && (tokens[j].value+tokens[j+1].value == "->" || tokens[j].value == "{")) {
-                        // function value (lambda)
-                        auto lambda = FunctionValue::Create(tokens[i].codePosition, nullptr, this);
-                        auto lambdaType = FunctionType::Create();
-                        i += 1;
-                        if (tokens[i].value != ")") {
-                            while (true) {
-                                if (tokens[i].type != Token::Type::Label) {
-                                    return errorMessageOpt("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
-                                }
-                                if (tokens[i+1].value != ":") {
-                                    return errorMessageOpt("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
-                                }
-                                int declarationStart = i;
-                                //lambda->argumentNames.push_back(tokens[i].value);
-                                i += 2;
-                                auto type = getType(tokens, i, {",", ")"});
-                                if (!type) { return nullopt; }
-                                lambdaType->argumentTypes.push_back(type);
-                                lambda->arguments.push_back(Declaration::Create(tokens[declarationStart].codePosition));
-                                lambda->arguments.back()->variable->name = tokens[declarationStart].value;
-                                lambda->arguments.back()->variable->type = type;
-                                if (tokens[i].value == ")") {
-                                    break;
-                                } else {
+                        if (tokens.size() > j+2 && (tokens[j].value == "{" || tokens[j].value + tokens[j + 1].value == "->")) {
+                            // function value (lambda)
+                            auto lambda = FunctionValue::Create(tokens[i].codePosition, nullptr, this);
+                            auto lambdaType = FunctionType::Create();
+                            i += 1;
+                            if (tokens[i].value != ")") {
+                                while (true) {
+                                    if (tokens[i].type != Token::Type::Label) {
+                                        return errorMessageOpt("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
+                                    }
+                                    int declarationStart = i;
+                                    if (tokens[i+1].value == ":") {
+                                        i += 1;
+                                    }
+                                    //lambda->argumentNames.push_back(tokens[i].value);
                                     i += 1;
+                                    auto type = getType(tokens, i, {",", ")"});
+                                    if (!type) { return nullopt; }
+                                    lambdaType->argumentTypes.push_back(type);
+                                    lambda->arguments.push_back(Declaration::Create(tokens[declarationStart].codePosition));
+                                    lambda->arguments.back()->variable->name = tokens[declarationStart].value;
+                                    lambda->arguments.back()->variable->type = type;
+                                    if (tokens[i].value == ")") {
+                                        break;
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                             }
-                        }
-                        i += 1;
-                        if (tokens[i].value + tokens[i + 1].value == "->") {
-                            i += 2;
-                            lambdaType->returnType = getType(tokens, i, {"{"});
-                            if (!lambdaType->returnType) { return nullopt; }
+                            i += 1;
+                            if (tokens[i].value + tokens[i + 1].value == "->") {
+                                i += 2;
+                                lambdaType->returnType = getType(tokens, i, {"{"});
+                                if (!lambdaType->returnType) { return nullopt; }
+                            } else {
+                                lambdaType->returnType = Type::Create(Type::Kind::Void);
+                            }
+                            i += 1;
+                            lambda->type = lambdaType;
+                            if (!lambda->body->createCodeTree(tokens, i)) {
+                                return nullopt;
+                            }
+                            out.push_back(lambda);
+                            lastWasLambda = 1;
+                            expectValue = false;
                         } else {
-                            lambdaType->returnType = Type::Create(Type::Kind::Void);
+                            isNormalOpenBracket = true;
                         }
-                        i += 1;
-                        lambda->type = lambdaType;
-                        if (!lambda->body->createCodeTree(tokens, i)) {
-                            return nullopt;
-                        }
-                        out.push_back(lambda);
-                        lastWasLambda = 1;
-                        expectValue = false;
-                    } else {
+                    }
+                     if (isNormalOpenBracket) {
                         // normal opening bracket
                         stack.push_back(Operation::Create(tokens[i++].codePosition, Operation::Kind::LeftBracket));
                         openBracketsCount += 1;
@@ -635,12 +679,12 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                                 if (tokens[i].type != Token::Type::Label) {
                                     return errorMessageOpt("expected function variable name, got " + tokens[i].value, tokens[i].codePosition);
                                 }
-                                if (tokens[i+1].value != ":") {
-                                    return errorMessageOpt("expected ':', got " + tokens[i+1].value, tokens[i+1].codePosition);
-                                }
                                 int declarationStart = i;
+                                if (tokens[i+1].value == ":") {
+                                    i += 1;
+                                }
                                 //templateFunction->argumentNames.push_back(tokens[i].value);
-                                i += 2;
+                                i += 1;
                                 auto type = getType(tokens, i, {",", ")"});
                                 if (!type) { return nullopt; }
                                 templateFunctionType->argumentTypes.push_back(type);
@@ -994,8 +1038,8 @@ Value* solveReversePolishNotation(vector<Value*>& values) {
     }
     return stack.back();
 }
-Value* Scope::getValue(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool skipOnGoodDelimiter) {
-    auto reversePolishNotation = getReversePolishNotation(tokens, i);
+Value* Scope::getValue(const vector<Token>& tokens, int& i, const vector<string>& delimiters, bool skipOnGoodDelimiter, bool canBeFunction) {
+    auto reversePolishNotation = getReversePolishNotation(tokens, i, canBeFunction);
     if (!reversePolishNotation) {
         return nullptr;
     }
@@ -2015,7 +2059,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     // 2. for _array_ {}
     // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
     // 4. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
-    auto firstValue = getValue(tokens, i, {"{", ":", "&", ","});
+    auto firstValue = getValue(tokens, i, {"{", ":", "&", ","}, false, false);
     if (!firstValue) { return false; }
     if (tokens[i].value == "{") {
         // 2. for _array_ {}
@@ -2040,7 +2084,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return errorMessageBool("unexpected end of a file (tried to interpret a for loop)", tokens[tokens.size()-1].codePosition);
         }
         i += 1; // now is on the start of var2
-        auto var2Value = getValue(tokens, i, {":", "&"});
+        auto var2Value = getValue(tokens, i, {":", "&"}, false, false);
         auto var2 = (Variable*)var2Value;
         if (!var2) {
             return errorMessageBool("expected a new index variable name", tokens[i-1].codePosition);
@@ -2051,7 +2095,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return false;
         }
         auto declarationType = declarationTypeOpt.value();
-        auto arrayValue = getValue(tokens, i, {"{"}, true);
+        auto arrayValue = getValue(tokens, i, {"{"}, true, false);
         if (!arrayValue) { return false; }
 
         ForEachData forEachData;
@@ -2074,7 +2118,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         if (!declarationTypeOpt) { return false; }
         auto declarationType = declarationTypeOpt.value();
 
-        auto secondValue = getValue(tokens, i, {":", "{"});
+        auto secondValue = getValue(tokens, i, {":", "{"}, false, false);
         if (!secondValue) { return false; }
         if (tokens[i].value == "{") {
             // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
@@ -2092,7 +2136,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         else if (tokens[i].value == ":") {
             // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
             i += 1;
-            auto thirdValue = getValue(tokens, i, {":", "{"});
+            auto thirdValue = getValue(tokens, i, {":", "{"}, false, false);
             if (!thirdValue) { return false; }
             ForIterData forIterData;
             forIterData.iterVariable = var1;
@@ -2104,7 +2148,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             } else {
                 i += 1;
                 forIterData.step = thirdValue;
-                forIterData.lastValue = getValue(tokens, i, {"{"});
+                forIterData.lastValue = getValue(tokens, i, {"{"}, false, false);
                 if (!forIterData.lastValue) { return false; }
             }
             data = forIterData;
@@ -2285,7 +2329,7 @@ bool WhileScope::operator==(const Statement& scope) const {
     }
 }
 bool WhileScope::createCodeTree(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(tokens, i, {"{"}, true);
+    this->conditionExpression = getValue(tokens, i, {"{"}, true, false);
     if (!this->conditionExpression) {
         return false;
     }
@@ -2357,7 +2401,7 @@ bool IfScope::operator==(const Statement& scope) const {
     }
 }
 bool IfScope::createCodeTree(const vector<Token>& tokens, int& i) {
-    this->conditionExpression = getValue(tokens, i, {"{", "then"});
+    this->conditionExpression = getValue(tokens, i, {"{", "then"}, false, false);
     if (!this->conditionExpression) {
         return false;
     }
