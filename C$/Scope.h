@@ -172,6 +172,8 @@ struct ForEachData {
     Value* arrayValue = nullptr;
     Variable* it = nullptr;
     Variable* index = nullptr;
+    Declaration* itDeclaration = nullptr;
+    Declaration* indexDeclaration = nullptr;
 };
 struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope);

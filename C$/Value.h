@@ -48,6 +48,7 @@ struct Variable : Value {
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj, bool ignoreReference);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
 
     std::string name;

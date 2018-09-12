@@ -2068,10 +2068,10 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         forEachData.arrayValue = firstValue;
         forEachData.it = Variable::Create(tokens[i].codePosition);
         forEachData.it->name = "it";
-        forEachData.it->isConst = true;
+        forEachData.it->isConst = false;
         forEachData.index = Variable::Create(tokens[i].codePosition);
         forEachData.index->name = "index";
-        forEachData.index->isConst = true;
+        forEachData.index->isConst = false;
         forEachData.index->type = IntegerType::Create(IntegerType::Size::I64);
         data = forEachData;
         i += 1;
@@ -2247,26 +2247,34 @@ bool ForScope::interpret() {
         if (!arrayValue) return false;
         if (arrayValue.value()) forEachData.arrayValue = arrayValue.value();
 
-        auto itDeclaration = Declaration::Create(position);
-        if (forEachData.arrayValue->type->kind == Type::Kind::StaticArray) {
-            forEachData.it->type = ((StaticArrayType*)forEachData.arrayValue->type)->elementType;
-        } else if (forEachData.arrayValue->type->kind == Type::Kind::DynamicArray) {
-            forEachData.it->type = ((DynamicArrayType*)forEachData.arrayValue->type)->elementType;
-        } else if (forEachData.arrayValue->type->kind == Type::Kind::ArrayView) {
-            forEachData.it->type = ((ArrayViewType*)forEachData.arrayValue->type)->elementType;
+        forEachData.itDeclaration = Declaration::Create(position);
+        forEachData.itDeclaration->scope = this;
+        auto arrayEffectiveType = forEachData.arrayValue->type->getEffectiveType();
+        if (arrayEffectiveType->kind == Type::Kind::StaticArray) {
+            forEachData.it->type = ReferenceType::Create(((StaticArrayType*)arrayEffectiveType)->elementType);
+        } else if (arrayEffectiveType->kind == Type::Kind::DynamicArray) {
+            forEachData.it->type = ReferenceType::Create(((DynamicArrayType*)arrayEffectiveType)->elementType);
+        } else if (arrayEffectiveType->kind == Type::Kind::ArrayView) {
+            forEachData.it->type = ReferenceType::Create(((ArrayViewType*)arrayEffectiveType)->elementType);
         }
-        itDeclaration->variable = forEachData.it;
-        itDeclaration->status = Declaration::Status::Completed;
-        declarationMap.addVariableDeclaration(itDeclaration);
-        declarationsInitState.insert({itDeclaration, true});
-        declarationsOrder.push_back(itDeclaration);
+        forEachData.it->type->interpret(this);
+        forEachData.itDeclaration->variable = forEachData.it;
+        forEachData.it->declaration = forEachData.itDeclaration;
+        forEachData.itDeclaration->status = Declaration::Status::Completed;
+        declarationMap.addVariableDeclaration(forEachData.itDeclaration);
+        declarationsInitState.insert({forEachData.itDeclaration, true});
+        declarationsOrder.push_back(forEachData.itDeclaration);
 
-        auto indexDeclaration = Declaration::Create(position);
-        indexDeclaration->variable = forEachData.index;
-        indexDeclaration->status = Declaration::Status::Completed;
-        declarationMap.addVariableDeclaration(indexDeclaration);
-        declarationsInitState.insert({indexDeclaration, true});
-        declarationsOrder.push_back(indexDeclaration);
+        forEachData.indexDeclaration = Declaration::Create(position);
+        forEachData.indexDeclaration->scope = this;
+        forEachData.index->type == IntegerType::Create(IntegerType::Size::I64);
+        forEachData.index->type->interpret(this);
+        forEachData.index->declaration = forEachData.indexDeclaration;
+        forEachData.indexDeclaration->variable = forEachData.index;
+        forEachData.indexDeclaration->status = Declaration::Status::Completed;
+        declarationMap.addVariableDeclaration(forEachData.indexDeclaration);
+        declarationsInitState.insert({forEachData.indexDeclaration, true});
+        declarationsOrder.push_back(forEachData.indexDeclaration);
     }
     return interpretNoUnitializedDeclarationsSet();
 }
@@ -2291,6 +2299,10 @@ void ForScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
     if (holds_alternative<ForIterData>(data)) {
         auto& forIterData = get<ForIterData>(data);
         forIterData.iterDeclaration->createAllocaLlvmIfNeeded(llvmObj);
+    } else {
+        auto& forEachData = get<ForEachData>(data);
+        forEachData.indexDeclaration->createAllocaLlvmIfNeeded(llvmObj);
+        forEachData.itDeclaration->createAllocaLlvmIfNeeded(llvmObj);
     }
 }
 void ForScope::createLlvm(LlvmObject* llvmObj) {
@@ -2325,6 +2337,108 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
         llvmObj->block = forConditionBlock;
         llvm::BranchInst::Create(forBodyBlock, afterForBlock, forIterData.conditionOperation->createLlvm(llvmObj), forConditionBlock);
         
+        llvmObj->block = afterForBlock;
+    } else {
+        auto& forEachData = get<ForEachData>(data);
+        
+        auto forStartBlock     = llvm::BasicBlock::Create(llvmObj->context, "forEachStart",     llvmObj->function);
+        auto forStepBlock      = llvm::BasicBlock::Create(llvmObj->context, "forEachStep",      llvmObj->function);
+        auto forConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "forEachCondition", llvmObj->function);
+        auto forBodyBlock      = llvm::BasicBlock::Create(llvmObj->context, "forEach",          llvmObj->function);
+        auto afterForBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterForEach",     llvmObj->function);
+
+        // start block
+        llvm::BranchInst::Create(forStartBlock, llvmObj->block);
+        llvmObj->block = forStartBlock;
+        
+        forEachData.indexDeclaration->createLlvm(llvmObj);
+        auto llvmIndexRef = forEachData.index->getReferenceLlvm(llvmObj);
+        new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmIndexRef, llvmObj->block);
+        forEachData.itDeclaration->createLlvm(llvmObj);
+        auto llvmItRef = forEachData.it->getReferenceLlvm(llvmObj, true);
+        llvm::Value* itOffset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), ((ReferenceType*)forEachData.it->type)->underlyingType->sizeInBytes());
+        llvm::Value* size = nullptr;
+        llvm::Value* dynArrayRef = nullptr;
+        auto arrayEffType = forEachData.arrayValue->type->getEffectiveType();
+        if (arrayEffType->kind == Type::Kind::StaticArray) {
+            auto staticArrayType = (StaticArrayType*)arrayEffType;
+            auto arrayRef = forEachData.arrayValue->getReferenceLlvm(llvmObj);
+            new llvm::StoreInst(
+                new llvm::BitCastInst(arrayRef, forEachData.it->type->createLlvm(llvmObj), "", llvmObj->block),
+                llvmItRef,
+                llvmObj->block
+            );
+            size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), staticArrayType->sizeAsInt);
+        } else if (arrayEffType->kind == Type::Kind::DynamicArray) {
+            auto dynamicArrayType = (DynamicArrayType*)arrayEffType;
+            if (Value::isLvalue(forEachData.arrayValue)) {
+                dynArrayRef = forEachData.arrayValue->getReferenceLlvm(llvmObj);
+                new llvm::StoreInst(new llvm::LoadInst(dynamicArrayType->llvmGepData(llvmObj, dynArrayRef), "", llvmObj->block), llvmItRef, llvmObj->block);
+            } else {
+                auto arrayVal = forEachData.arrayValue->createLlvm(llvmObj);
+                new llvm::StoreInst(dynamicArrayType->llvmExtractData(llvmObj, arrayVal), llvmItRef, llvmObj->block);
+                size = dynamicArrayType->llvmExtractSize(llvmObj, arrayVal);
+            }
+        } else if (arrayEffType->kind == Type::Kind::ArrayView) {
+            auto arrayViewType = (ArrayViewType*)arrayEffType;
+            if (Value::isLvalue(forEachData.arrayValue)) {
+                auto arrayRef = forEachData.arrayValue->getReferenceLlvm(llvmObj);
+                new llvm::StoreInst(new llvm::LoadInst(arrayViewType->llvmGepData(llvmObj, arrayRef), "", llvmObj->block), llvmItRef, llvmObj->block);
+                size = new llvm::LoadInst(arrayViewType->llvmGepSize(llvmObj, arrayRef), "", llvmObj->block);
+            } else {
+                auto arrayVal = forEachData.arrayValue->createLlvm(llvmObj);
+                new llvm::StoreInst(arrayViewType->llvmExtractData(llvmObj, arrayVal), llvmItRef, llvmObj->block);
+                size = arrayViewType->llvmExtractSize(llvmObj, arrayVal);
+            }
+        }
+        llvm::BranchInst::Create(forConditionBlock, forStartBlock);
+
+        // body block
+        llvmObj->block = forBodyBlock;
+        CodeScope::createLlvm(llvmObj);
+
+        // after block
+        if (!hasReturnStatement) llvm::BranchInst::Create(forStepBlock, llvmObj->block);
+
+        // step block
+        llvmObj->block = forStepBlock;
+        new llvm::StoreInst(
+            llvm::BinaryOperator::CreateAdd(
+                new llvm::LoadInst(llvmIndexRef, "", llvmObj->block),
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 1),
+                "", llvmObj->block
+            ),
+            llvmIndexRef, 
+            llvmObj->block
+        );
+        new llvm::StoreInst(
+            new llvm::IntToPtrInst(
+                llvm::BinaryOperator::CreateAdd(
+                    new llvm::PtrToIntInst(
+                        new llvm::LoadInst(llvmItRef, "", llvmObj->block), 
+                        IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj),
+                        "", llvmObj->block
+                    ),
+                    itOffset,
+                    "", llvmObj->block
+                ),
+                forEachData.it->type->createLlvm(llvmObj),
+                "", llvmObj->block
+            ),
+            llvmItRef, 
+            llvmObj->block
+        );
+        llvm::BranchInst::Create(forConditionBlock, forStepBlock);
+
+        // condition block
+        llvmObj->block = forConditionBlock;
+        if (dynArrayRef) {
+            auto dynamicArrayType = (DynamicArrayType*)arrayEffType;
+            size = new llvm::LoadInst(dynamicArrayType->llvmGepSize(llvmObj, dynArrayRef), "", llvmObj->block);
+        }
+        auto condition = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, new llvm::LoadInst(llvmIndexRef, "", llvmObj->block), size, "");
+        llvm::BranchInst::Create(forBodyBlock, afterForBlock, condition, forConditionBlock);
+
         llvmObj->block = afterForBlock;
     }
 }
