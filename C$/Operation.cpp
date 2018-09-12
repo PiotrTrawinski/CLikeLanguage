@@ -1258,48 +1258,18 @@ optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
     if (!interpretAllArguments(scope)) {
         return nullopt;
     }
+    index = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {index});
     auto indexInterpret = index->interpret(scope);
     if (!indexInterpret) return nullopt;
     if (indexInterpret.value()) index = indexInterpret.value();
 
-    if (index->type->kind != Type::Kind::Integer) {
-        return errorMessageOpt("array index must be an integer value, got " 
-            + DeclarationMap::toString(index->type), position
-        );
-    }
-
     if (index->isConstexpr && arguments[0]->isConstexpr && arguments[0]->valueKind == Value::ValueKind::StaticArray) {
         auto& staticArrayValues = ((StaticArrayValue*)arguments[0])->values;
-        if (index->valueKind == Value::ValueKind::Integer) {
-            auto indexValue = ((IntegerValue*)index)->value;
-            switch (((IntegerType*)index->type)->size) {
-            case IntegerType::Size::I8:
-                return evaluateConstexprIntegerIndex<int8_t>(staticArrayValues, indexValue);
-            case IntegerType::Size::I16:
-                return evaluateConstexprIntegerIndex<int16_t>(staticArrayValues, indexValue);
-            case IntegerType::Size::I32:
-                return evaluateConstexprIntegerIndex<int32_t>(staticArrayValues, indexValue);
-            case IntegerType::Size::I64:
-                return evaluateConstexprIntegerIndex<int64_t>(staticArrayValues, indexValue);
-            case IntegerType::Size::U8:
-                return evaluateConstexprIntegerIndex<uint8_t>(staticArrayValues, indexValue);
-            case IntegerType::Size::U16:
-                return evaluateConstexprIntegerIndex<uint16_t>(staticArrayValues, indexValue);
-            case IntegerType::Size::U32:
-                return evaluateConstexprIntegerIndex<uint32_t>(staticArrayValues, indexValue);
-            case IntegerType::Size::U64:
-                return evaluateConstexprIntegerIndex<uint64_t>(staticArrayValues, indexValue);
-            }
+        auto indexValue = ((IntegerValue*)index)->value;
+        if (indexValue >= staticArrayValues.size()) {
+            return errorMessageOpt("array index outside the bounds of an array", position);
         }
-        else if (index->valueKind == Value::ValueKind::Char) {
-            auto indexValue = ((CharValue*)index)->value;
-            if (indexValue >= staticArrayValues.size()) {
-                return errorMessageOpt("array index outside the bounds of an array", position);
-            }
-            return staticArrayValues[indexValue];
-        } else {
-            internalError("expected constexpr integer or char in array index", position);
-        }
+        return staticArrayValues[indexValue];
     }
 
     switch (arguments[0]->type->getEffectiveType()->kind) {
@@ -1373,6 +1343,58 @@ ArraySubArrayOperation* ArraySubArrayOperation::Create(const CodePosition& posit
     return objects.back().get();
 }
 optional<Value*> ArraySubArrayOperation::interpret(Scope* scope) {
+    if (!interpretAllArguments(scope)) {
+        return nullopt;
+    }
+    firstIndex = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {firstIndex});
+    auto indexInterpret = firstIndex->interpret(scope);
+    if (!indexInterpret) return nullopt;
+    if (indexInterpret.value()) firstIndex = indexInterpret.value();
+    secondIndex = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {secondIndex});
+    indexInterpret = secondIndex->interpret(scope);
+    if (!indexInterpret) return nullopt;
+    if (indexInterpret.value()) secondIndex = indexInterpret.value();
+
+    if (firstIndex->type->kind != Type::Kind::Integer) {
+        return errorMessageOpt("array sub-array first index must be an integer value, got " 
+            + DeclarationMap::toString(firstIndex->type), position
+        );
+    }
+    if (secondIndex->type->kind != Type::Kind::Integer) {
+        return errorMessageOpt("array sub-array second index must be an integer value, got " 
+            + DeclarationMap::toString(secondIndex->type), position
+        );
+    }
+
+    Value* firstIndexMinus1 = Operation::Create(position, Operation::Kind::Sub);
+    ((Operation*)firstIndexMinus1)->arguments = {firstIndex, IntegerValue::Create(position, 1)};
+    auto firstIndexMinus1OperInterpret = firstIndexMinus1->interpret(scope);
+    if (!firstIndexMinus1OperInterpret) return nullopt;
+    if (firstIndexMinus1OperInterpret.value()) firstIndexMinus1 = firstIndexMinus1OperInterpret.value();
+
+    size = Operation::Create(position, Operation::Kind::Sub);
+    ((Operation*)size)->arguments = {secondIndex, firstIndexMinus1};
+    auto sizeInterpret = size->interpret(scope);
+    if (!sizeInterpret) return nullopt;
+    if (sizeInterpret.value()) size = sizeInterpret.value();
+
+    switch (arguments[0]->type->getEffectiveType()->kind) {
+    case Type::Kind::StaticArray:
+        type = ArrayViewType::Create(((StaticArrayType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    case Type::Kind::DynamicArray:
+        type = ArrayViewType::Create(((DynamicArrayType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    case Type::Kind::ArrayView:
+        type = ArrayViewType::Create(((ArrayViewType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    default:
+        break;
+    }
+    if (!type) {
+        return errorMessageOpt("cannot sub-array value of type " + DeclarationMap::toString(arguments[0]->type), position);
+    }
+
     return nullptr;
 }
 bool ArraySubArrayOperation::operator==(const Statement& value) const {
@@ -1395,6 +1417,96 @@ bool ArraySubArrayOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+llvm::Value* ArraySubArrayOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    auto effType = arguments[0]->type->getEffectiveType();
+    auto thisViewType = (ArrayViewType*)type;
+    auto viewRef = thisViewType->allocaLlvm(llvmObj, "");
+    auto firstIndexValue = firstIndex->createLlvm(llvmObj);
+    auto sizeValue = size->createLlvm(llvmObj);
+    new llvm::StoreInst(sizeValue, thisViewType->llvmGepSize(llvmObj, viewRef), llvmObj->block);
+    if (effType->kind == Type::Kind::StaticArray) {
+        auto staticArrayType = (StaticArrayType*)effType;
+        auto arg = arguments[0]->getReferenceLlvm(llvmObj);
+        vector<llvm::Value*> indexList;
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+        indexList.push_back(firstIndexValue);
+        auto firstElementPtr = llvm::GetElementPtrInst::Create(((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block);
+        new llvm::StoreInst(
+            new llvm::BitCastInst(firstElementPtr, RawPointerType::Create(thisViewType->elementType)->createLlvm(llvmObj), "", llvmObj->block), 
+            thisViewType->llvmGepData(llvmObj, viewRef),
+            llvmObj->block
+        );
+    } else if (effType->kind == Type::Kind::DynamicArray) {
+        auto dynamicArrayType = (DynamicArrayType*)effType;
+        llvm::Value* data;
+        if (Value::isLvalue(arguments[0])) {
+            data = dynamicArrayType->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        } else {
+            data = dynamicArrayType->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+        }
+        auto firstElementPtr = llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, firstIndexValue, "", llvmObj->block);
+        new llvm::StoreInst(firstElementPtr, thisViewType->llvmGepData(llvmObj, viewRef), llvmObj->block);
+    } else if (effType->kind == Type::Kind::ArrayView) {
+        auto arrayViewType = (ArrayViewType*)effType;
+        llvm::Value* data;
+        if (Value::isLvalue(arguments[0])) {
+            data = arrayViewType->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
+        } else {
+            data = arrayViewType->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+        }
+        auto firstElementPtr = llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, firstIndexValue, "", llvmObj->block);
+        new llvm::StoreInst(firstElementPtr, thisViewType->llvmGepData(llvmObj, viewRef), llvmObj->block);
+    }
+
+    return viewRef;
+}
+llvm::Value* ArraySubArrayOperation::createLlvm(LlvmObject* llvmObj) {
+    auto effType = arguments[0]->type->getEffectiveType();
+    auto thisViewType = (ArrayViewType*)type;
+    auto firstIndexValue = firstIndex->createLlvm(llvmObj);
+    auto sizeValue = size->createLlvm(llvmObj);
+    llvm::Value* viewValue = llvm::ConstantStruct::get((llvm::StructType*)thisViewType->createLlvm(llvmObj), {
+        llvm::UndefValue::get(IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj)),
+        llvm::UndefValue::get(RawPointerType::Create(thisViewType->elementType)->createLlvm(llvmObj))
+    });
+    viewValue = llvm::InsertValueInst::Create(viewValue, sizeValue, 0, "", llvmObj->block);
+    if (effType->kind == Type::Kind::StaticArray) {
+        auto staticArrayType = (StaticArrayType*)effType;
+        auto arg = arguments[0]->getReferenceLlvm(llvmObj);
+        vector<llvm::Value*> indexList;
+        indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
+        indexList.push_back(firstIndexValue);
+        auto firstElementPtr = llvm::GetElementPtrInst::Create(((llvm::PointerType*)arg->getType())->getElementType(), arg, indexList, "", llvmObj->block);
+        viewValue = llvm::InsertValueInst::Create(
+            viewValue, 
+            new llvm::BitCastInst(firstElementPtr, RawPointerType::Create(thisViewType->elementType)->createLlvm(llvmObj), "", llvmObj->block),
+            1, "", llvmObj->block
+        );
+    } else if (effType->kind == Type::Kind::DynamicArray) {
+        auto dynamicArrayType = (DynamicArrayType*)effType;
+        llvm::Value* data;
+        if (Value::isLvalue(arguments[0])) {
+            data = new llvm::LoadInst(dynamicArrayType->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)), "", llvmObj->block);
+        } else {
+            data = dynamicArrayType->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+        }
+        auto firstElementPtr = llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, firstIndexValue, "", llvmObj->block);
+        viewValue = llvm::InsertValueInst::Create(viewValue, firstElementPtr, 1, "", llvmObj->block);
+    } else if (effType->kind == Type::Kind::ArrayView) {
+        auto arrayViewType = (ArrayViewType*)effType;
+        llvm::Value* data;
+        if (Value::isLvalue(arguments[0])) {
+            data = new llvm::LoadInst(arrayViewType->llvmGepData(llvmObj, arguments[0]->getReferenceLlvm(llvmObj)), "", llvmObj->block);
+        } else {
+            data = arrayViewType->llvmExtractData(llvmObj, arguments[0]->createLlvm(llvmObj));
+        }
+        auto firstElementPtr = llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, firstIndexValue, "", llvmObj->block);
+        viewValue = llvm::InsertValueInst::Create(viewValue, firstElementPtr, 1, "", llvmObj->block);
+    }
+
+    return viewValue;
+}
+
 
 
 /*
