@@ -40,7 +40,6 @@ string DeclarationMap::toString(Type* type) {
     switch (type->kind) {
     case Type::Kind::Void: return "void";
     case Type::Kind::Bool: return "bool";
-    case Type::Kind::String: return "string";
     case Type::Kind::Integer:
         switch (((IntegerType*)type)->size) {
         case IntegerType::Size::I8:  return "i8";

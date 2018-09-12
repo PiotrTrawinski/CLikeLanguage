@@ -1229,7 +1229,7 @@ Type* Scope::getType(const vector<Token>& tokens, int& i, const vector<string>& 
             case TypeKeyword::Value::Bool:
                 type = Type::Create(Type::Kind::Bool); break;
             case TypeKeyword::Value::String:
-                type = Type::Create(Type::Kind::String); break;
+                type = DynamicArrayType::Create(IntegerType::Create(IntegerType::Size::U8)); break;
             case TypeKeyword::Value::Void:
                 type = Type::Create(Type::Kind::Void); break;
             default:

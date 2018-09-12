@@ -321,8 +321,8 @@ StringValue::StringValue(const CodePosition& position, const string& value) :
     Value(position, Value::ValueKind::String),
     value(value)
 {
-    isConstexpr = true;
-    type = Type::Create(Type::Kind::String);
+    isConstexpr = false;
+    type = DynamicArrayType::Create(IntegerType::Create(IntegerType::Size::U8));
 }
 vector<unique_ptr<StringValue>> StringValue::objects;
 StringValue* StringValue::Create(const CodePosition& position, const string& value) {
@@ -330,8 +330,17 @@ StringValue* StringValue::Create(const CodePosition& position, const string& val
     return objects.back().get();
 }
 optional<Value*> StringValue::interpret(Scope* scope) {
-    isConstexpr = true;
-    return nullptr;
+    Value* staticArrayValue = StaticArrayValue::Create(position);
+    for (char c : value) {
+        ((StaticArrayValue*)staticArrayValue)->values.push_back(CharValue::Create(position, c));
+    }
+    Value* dynArray = ConstructorOperation::Create(position, DynamicArrayType::Create(IntegerType::Create(IntegerType::Size::U8)), {staticArrayValue});
+
+    auto dynArrayInterpret = dynArray->interpret(scope);
+    if (!dynArrayInterpret) internalError("failed to interpret string dynamic array constructor", position);
+    if (dynArrayInterpret.value()) dynArray = dynArrayInterpret.value();
+
+    return dynArray;
 }
 bool StringValue::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){

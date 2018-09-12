@@ -31,7 +31,6 @@ struct Type {
         StaticArray,
         DynamicArray,
         ArrayView,
-        String,
         Class,
         Function,
         Bool,
