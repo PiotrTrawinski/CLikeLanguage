@@ -163,34 +163,38 @@ private:
         if (type) {
             auto ctor1 = ConstructorOperation::Create(position, type, {arguments[0]});
             auto ctor1Interpret = ctor1->interpret(scope);
-            if (!ctor1Interpret) {
-                type = nullptr;
-                internalError("casting failed, but shouldn't", position);
-            }
+            if (!ctor1Interpret) internalError("constructing failed, but shouldn't", position);
             if (ctor1Interpret.value()) arguments[0] = ctor1Interpret.value();
             else arguments[0] = ctor1;
 
             auto ctor2 = ConstructorOperation::Create(position, type, {arguments[1]});
             auto ctor2Interpret = ctor2->interpret(scope);
-            if (!ctor2Interpret) {
-                type = nullptr;
-                internalError("casting failed, but shouldn't", position);
-            }
+            if (!ctor2Interpret) internalError("constructing failed, but shouldn't", position);
             if (ctor2Interpret.value()) arguments[1] = ctor2Interpret.value();
             else arguments[1] = ctor2;
         }
         return nullptr;
     }
-    template<typename Function> Value* tryEvaluate2ArgArithmeticBoolTest(Function function) {
+    template<typename Function> Value* tryEvaluate2ArgArithmeticBoolTest(Function function, Scope* scope) {
         auto type1 = arguments[0]->type->getEffectiveType();
         auto type2 = arguments[1]->type->getEffectiveType();
-        if (!Type::getSuitingArithmeticType(type1, type2)) {
-            return nullptr;
-        }
+        auto argType = Type::getSuitingArithmeticType(type1, type2);
+        if (!argType) return nullptr;
         type = Type::Create(Type::Kind::Bool);
         if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
             return BoolValue::Create(position, function(arguments[0], arguments[1]));
         }
+        auto ctor1 = ConstructorOperation::Create(position, argType, {arguments[0]});
+        auto ctor1Interpret = ctor1->interpret(scope);
+        if (!ctor1Interpret) internalError("constructing failed, but shouldn't", position);
+        if (ctor1Interpret.value()) arguments[0] = ctor1Interpret.value();
+        else arguments[0] = ctor1;
+
+        auto ctor2 = ConstructorOperation::Create(position, argType, {arguments[1]});
+        auto ctor2Interpret = ctor2->interpret(scope);
+        if (!ctor2Interpret) internalError("constructing failed, but shouldn't", position);
+        if (ctor2Interpret.value()) arguments[1] = ctor2Interpret.value();
+        else arguments[1] = ctor2;
         return nullptr;
     }
     template<typename Function> Value* tryEvaluate2ArgArithmeticIntegerOnly(Function function, Scope* scope) {
@@ -207,19 +211,13 @@ private:
         if (type) {
             auto ctor1 = ConstructorOperation::Create(position, type, {arguments[0]});
             auto ctor1Interpret = ctor1->interpret(scope);
-            if (!ctor1Interpret) {
-                type = nullptr;
-                internalError("casting failed, but shouldn't", position);
-            }
+            if (!ctor1Interpret) internalError("constructing failed, but shouldn't", position);
             if (ctor1Interpret.value()) arguments[0] = ctor1Interpret.value();
             else arguments[0] = ctor1;
 
             auto ctor2 = ConstructorOperation::Create(position, type, {arguments[1]});
             auto ctor2Interpret = ctor2->interpret(scope);
-            if (!ctor2Interpret) {
-                type = nullptr;
-                internalError("casting failed, but shouldn't", position);
-            }
+            if (!ctor2Interpret) internalError("constructing failed, but shouldn't", position);
             if (ctor2Interpret.value()) arguments[1] = ctor2Interpret.value();
             else arguments[1] = ctor2;
         }
