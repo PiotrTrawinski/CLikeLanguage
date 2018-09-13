@@ -407,35 +407,35 @@ optional<Value*> Operation::interpret(Scope* scope) {
     case Kind::Gt: {
         auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
             return val1 > val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Lt: {
         auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
             return val1 < val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Gte: {
         auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
             return val1 >= val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Lte: {
         auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
             return val1 <= val2;
-        });
+        }, scope);
         if (value) return value;
         break;
     }
     case Kind::Eq: {
         auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
             return val1 == val2;
-        });
+        }, scope);
         if (value) return value;
         if (arguments[0]->type != arguments[1]->type) {
             break;
@@ -453,7 +453,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
     case Kind::Neq:{
         auto value = tryEvaluate2ArgArithmeticBoolTest([](auto val1, auto val2)->bool{
             return val1 != val2;
-        });
+        }, scope);
         if (value) return value;
         if (arguments[0]->type != arguments[1]->type) {
             break;
@@ -912,11 +912,10 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     }
     case Kind::Minus: {
         auto arg = arguments[0]->createLlvm(llvmObj);
-        auto zero = llvm::ConstantInt::get(type->createLlvm(llvmObj), 0);
         if (type->kind == Type::Kind::Integer) {
-            return llvm::BinaryOperator::CreateSub(zero, arg, "", llvmObj->block);
+            return llvm::BinaryOperator::CreateNeg(arg, "", llvmObj->block);
         } else {
-            return llvm::BinaryOperator::CreateFSub(zero, arg, "", llvmObj->block);
+            return llvm::BinaryOperator::CreateFNeg(arg, "", llvmObj->block);
         } 
     }
     case Kind::Mul: {
@@ -1084,11 +1083,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     }
     case Kind::BitNeg: {
         auto arg = arguments[0]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
-            llvm::BinaryOperator::CreateNeg(arg, "", llvmObj->block);
-        } else {
-            llvm::BinaryOperator::CreateFNeg(arg, "", llvmObj->block);
-        }
+        return llvm::BinaryOperator::CreateNot(arg, "", llvmObj->block);
     }
     case Kind::BitAnd: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);

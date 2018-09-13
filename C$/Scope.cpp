@@ -937,19 +937,35 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     expectValue = true;
                 } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "&=") {
                     endOfExpression = true;
-                } else if (i+2 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == "<<=") {
+                } else if (i+2 < tokens.size() && tokens[i].value + tokens[i + 1].value == "<<") {
+                    appendOperator(stack, out, Operation::Kind::Shl, tokens[i].codePosition);
+                    i += 2;
+                    expectValue = true;
+                } else if (i+2 < tokens.size() && tokens[i].value + tokens[i + 1].value == ">>") {
+                    appendOperator(stack, out, Operation::Kind::Shr, tokens[i].codePosition);
+                    i += 2;
+                    expectValue = true;
+                } else if (i+3 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == "<<<") {
+                    appendOperator(stack, out, Operation::Kind::Sal, tokens[i].codePosition);
+                    i += 3;
+                    expectValue = true;
+                } else if (i+3 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == ">>>") {
+                    appendOperator(stack, out, Operation::Kind::Sar, tokens[i].codePosition);
+                    i += 3;
+                    expectValue = true;
+                } else if (i+3 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == "<<=") {
                     appendOperator(stack, out, Operation::Kind::ShlAssign, tokens[i].codePosition);
                     i += 3;
                     expectValue = true;
-                } else if (i+2 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == ">>=") {
+                } else if (i+3 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == ">>=") {
                     appendOperator(stack, out, Operation::Kind::ShrAssign, tokens[i].codePosition);
                     i += 3;
                     expectValue = true;
-                } else if (i+3 < tokens.size() && tokens[i].value+tokens[i+1].value+tokens[i+2].value+tokens[i+3].value == "<<<=") {
+                } else if (i+4 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value + tokens[i + 3].value == "<<<=") {
                     appendOperator(stack, out, Operation::Kind::SalAssign, tokens[i].codePosition);
                     i += 4;
                     expectValue = true;
-                } else if (i+3 < tokens.size() && tokens[i].value+tokens[i+1].value+tokens[i+2].value+tokens[i+3].value == ">>>=") {
+                } else if (i+4 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value + tokens[i + 3].value == ">>>=") {
                     appendOperator(stack, out, Operation::Kind::SarAssign, tokens[i].codePosition);
                     i += 4;
                     expectValue = true;
