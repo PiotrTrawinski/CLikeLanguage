@@ -2116,6 +2116,16 @@ optional<ForScopeDeclarationType> readForScopeDeclarationType(const vector<Token
 
     return declarationType;
 }
+bool ForScope::setForLoopDirection(const vector<Token>& tokens, int& i) {
+    if (tokens[i-1].value == "forward" || tokens[i-1].value == "backwards") {
+        loopForward = tokens[i-1].value == "forward";
+        if (tokens[i].value != "{" && tokens[i].value != "do") {
+            return errorMessageBool("expected for loop opening ('{' or 'do'), got " + tokens[i].value, tokens[i].codePosition);
+        }
+        i += 1;
+    }
+    return true;
+}
 bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     /// Possible legal uses of a for loop:
     // 1. for _range_ {}
@@ -2123,9 +2133,9 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     // 3. for _array_ {}
     // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
     // 5. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
-    auto firstValue = getValue(tokens, i, {"{", ":", "&", ",", "do"}, false, false);
+    auto firstValue = getValue(tokens, i, {"{", ":", "&", ",", "do", "forward", "backwards"}, false, false);
     if (!firstValue) { return false; }
-    if (tokens[i].value == "{" || tokens[i].value == "do") {
+    if (tokens[i].value == "{" || tokens[i].value == "do" || tokens[i].value == "forward" || tokens[i].value == "backwards") {
         // 3. for _array_ {}
         ForEachData forEachData;
         forEachData.arrayValue = firstValue;
@@ -2159,7 +2169,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return false;
         }
         auto declarationType = declarationTypeOpt.value();
-        auto arrayValue = getValue(tokens, i, {"{", "do"}, true, false);
+        auto arrayValue = getValue(tokens, i, {"{", "do", "forward", "backwards"}, true, false);
         if (!arrayValue) { return false; }
 
         ForEachData forEachData;
@@ -2178,15 +2188,15 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
 
         forIterData.firstValue = firstValue;
         i += 1;
-        auto secondValue = getValue(tokens, i, {":", "{", "do"}, false, false);
+        auto secondValue = getValue(tokens, i, {":", "{", "do", "forward", "backwards"}, false, false);
         if (!secondValue) return false;
-        if (tokens[i].value == "{" || tokens[i].value == "do") {
+        if (tokens[i].value == "{" || tokens[i].value == "do" || tokens[i].value == "forward" || tokens[i].value == "backwards") {
             forIterData.step = IntegerValue::Create(tokens[i].codePosition, 1);
             forIterData.lastValue = secondValue;
         } else {
             i += 1;
             forIterData.step = secondValue;
-            forIterData.lastValue = getValue(tokens, i, {"{", "do"}, false, false);
+            forIterData.lastValue = getValue(tokens, i, {"{", "do", "forward", "backwards"}, false, false);
             if (!forIterData.lastValue) return false;
         }
         data = forIterData;
@@ -2203,9 +2213,9 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         if (!declarationTypeOpt) { return false; }
         auto declarationType = declarationTypeOpt.value();
 
-        auto secondValue = getValue(tokens, i, {":", "{", "do"}, false, false);
+        auto secondValue = getValue(tokens, i, {":", "{", "do", "forward", "backwards"}, false, false);
         if (!secondValue) { return false; }
-        if (tokens[i].value == "{" || tokens[i].value == "do") {
+        if (tokens[i].value == "{" || tokens[i].value == "do" || tokens[i].value == "forward" || tokens[i].value == "backwards") {
             // 3. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
             ForEachData forEachData;
             forEachData.arrayValue = secondValue;
@@ -2221,25 +2231,27 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         else if (tokens[i].value == ":") {
             // 1. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
             i += 1;
-            auto thirdValue = getValue(tokens, i, {":", "{", "do"}, false, false);
+            auto thirdValue = getValue(tokens, i, {":", "{", "do", "forward", "backwards"}, false, false);
             if (!thirdValue) { return false; }
             ForIterData forIterData;
             forIterData.iterVariable = var1;
             forIterData.iterVariable->isConst = declarationType.isConst;
             forIterData.firstValue = secondValue;
-            if (tokens[i].value == "{" || tokens[i].value == "do") {
+            if (tokens[i].value == "{" || tokens[i].value == "do" || tokens[i].value == "forward" || tokens[i].value == "backwards") {
                 forIterData.step = IntegerValue::Create(tokens[i].codePosition, 1);
                 forIterData.lastValue = thirdValue;
             } else {
                 i += 1;
                 forIterData.step = thirdValue;
-                forIterData.lastValue = getValue(tokens, i, {"{", "do"}, false, false);
+                forIterData.lastValue = getValue(tokens, i, {"{", "do", "forward", "backwards"}, false, false);
                 if (!forIterData.lastValue) { return false; }
             }
             data = forIterData;
             i += 1; // skip '{'
         }
     }
+
+    if (!setForLoopDirection(tokens, i)) return false;
 
     if (tokens[i-1].value == "{") {
         return CodeScope::createCodeTree(tokens, i);
@@ -2300,15 +2312,25 @@ bool ForScope::interpret() {
         declarationsInitState.insert({forIterData.iterDeclaration, true});
         declarationsOrder.push_back(forIterData.iterDeclaration);
 
-        auto stepAddOperation = Operation::Create(position, Operation::Kind::AddAssign);
-        stepAddOperation->arguments.push_back(forIterData.iterVariable);
-        stepAddOperation->arguments.push_back(forIterData.step);
-        auto addInterpret = stepAddOperation->interpret(this);
+        Operation* stepOperation;
+        if (loopForward) {
+            stepOperation = Operation::Create(position, Operation::Kind::AddAssign);
+        } else {
+            stepOperation = Operation::Create(position, Operation::Kind::SubAssign);
+        }
+        stepOperation->arguments.push_back(forIterData.iterVariable);
+        stepOperation->arguments.push_back(forIterData.step);
+        auto addInterpret = stepOperation->interpret(this);
         if (!addInterpret) internalError("couldn't create for-scope step operation", position);
-        if (addInterpret.value()) forIterData.stepAddOperation = addInterpret.value();
-        else forIterData.stepAddOperation = stepAddOperation;
+        if (addInterpret.value()) forIterData.stepOperation = addInterpret.value();
+        else forIterData.stepOperation = stepOperation;
 
-        auto conditionOperation = Operation::Create(position, Operation::Kind::Lte);
+        Operation* conditionOperation;
+        if (loopForward) {
+            conditionOperation = Operation::Create(position, Operation::Kind::Lte);
+        } else {
+            conditionOperation = Operation::Create(position, Operation::Kind::Gte);
+        }
         conditionOperation->arguments.push_back(forIterData.iterVariable);
         conditionOperation->arguments.push_back(forIterData.lastValue);
         auto conditionInterpret = conditionOperation->interpret(this);
@@ -2407,7 +2429,7 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
 
         // step block
         llvmObj->block = forStepBlock;
-        forIterData.stepAddOperation->createLlvm(llvmObj);
+        forIterData.stepOperation->createLlvm(llvmObj);
         llvm::BranchInst::Create(forConditionBlock, forStepBlock);
 
         // condition block
@@ -2429,44 +2451,72 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
         llvmObj->block = forStartBlock;
         
         forEachData.indexDeclaration->createLlvm(llvmObj);
-        auto llvmIndexRef = forEachData.index->getReferenceLlvm(llvmObj);
-        new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmIndexRef, llvmObj->block);
         forEachData.itDeclaration->createLlvm(llvmObj);
         auto llvmItRef = forEachData.it->getReferenceLlvm(llvmObj, true);
         llvm::Value* itOffset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), ((ReferenceType*)forEachData.it->type)->underlyingType->sizeInBytes());
         llvm::Value* size = nullptr;
+        llvm::Value* data = nullptr;
         llvm::Value* dynArrayRef = nullptr;
         auto arrayEffType = forEachData.arrayValue->type->getEffectiveType();
         if (arrayEffType->kind == Type::Kind::StaticArray) {
             auto staticArrayType = (StaticArrayType*)arrayEffType;
             auto arrayRef = forEachData.arrayValue->getReferenceLlvm(llvmObj);
-            new llvm::StoreInst(
-                new llvm::BitCastInst(arrayRef, forEachData.it->type->createLlvm(llvmObj), "", llvmObj->block),
-                llvmItRef,
-                llvmObj->block
-            );
+            data = new llvm::BitCastInst(arrayRef, forEachData.it->type->createLlvm(llvmObj), "", llvmObj->block);
             size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), staticArrayType->sizeAsInt);
         } else if (arrayEffType->kind == Type::Kind::DynamicArray) {
             auto dynamicArrayType = (DynamicArrayType*)arrayEffType;
             if (Value::isLvalue(forEachData.arrayValue)) {
                 dynArrayRef = forEachData.arrayValue->getReferenceLlvm(llvmObj);
-                new llvm::StoreInst(new llvm::LoadInst(dynamicArrayType->llvmGepData(llvmObj, dynArrayRef), "", llvmObj->block), llvmItRef, llvmObj->block);
+                data = new llvm::LoadInst(dynamicArrayType->llvmGepData(llvmObj, dynArrayRef), "", llvmObj->block);
             } else {
                 auto arrayVal = forEachData.arrayValue->createLlvm(llvmObj);
-                new llvm::StoreInst(dynamicArrayType->llvmExtractData(llvmObj, arrayVal), llvmItRef, llvmObj->block);
+                data = dynamicArrayType->llvmExtractData(llvmObj, arrayVal);
                 size = dynamicArrayType->llvmExtractSize(llvmObj, arrayVal);
             }
         } else if (arrayEffType->kind == Type::Kind::ArrayView) {
             auto arrayViewType = (ArrayViewType*)arrayEffType;
             if (Value::isLvalue(forEachData.arrayValue)) {
                 auto arrayRef = forEachData.arrayValue->getReferenceLlvm(llvmObj);
-                new llvm::StoreInst(new llvm::LoadInst(arrayViewType->llvmGepData(llvmObj, arrayRef), "", llvmObj->block), llvmItRef, llvmObj->block);
+                data = new llvm::LoadInst(arrayViewType->llvmGepData(llvmObj, arrayRef), "", llvmObj->block);
                 size = new llvm::LoadInst(arrayViewType->llvmGepSize(llvmObj, arrayRef), "", llvmObj->block);
             } else {
                 auto arrayVal = forEachData.arrayValue->createLlvm(llvmObj);
-                new llvm::StoreInst(arrayViewType->llvmExtractData(llvmObj, arrayVal), llvmItRef, llvmObj->block);
+                data = arrayViewType->llvmExtractData(llvmObj, arrayVal);
                 size = arrayViewType->llvmExtractSize(llvmObj, arrayVal);
             }
+        }
+        auto llvmIndexRef = forEachData.index->getReferenceLlvm(llvmObj);
+        if (loopForward) {
+            new llvm::StoreInst(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmIndexRef, llvmObj->block);
+            new llvm::StoreInst(data, llvmItRef, llvmObj->block);
+        } else {
+            if (dynArrayRef) {
+                auto dynamicArrayType = (DynamicArrayType*)arrayEffType;
+                size = new llvm::LoadInst(dynamicArrayType->llvmGepSize(llvmObj, dynArrayRef), "", llvmObj->block);
+            }
+            auto sizeMinus1 = llvm::BinaryOperator::CreateSub(
+                size, 
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 1), 
+                "", llvmObj->block
+            );
+            new llvm::StoreInst(sizeMinus1, llvmIndexRef, llvmObj->block);
+            new llvm::StoreInst(
+                new llvm::IntToPtrInst(
+                    llvm::BinaryOperator::CreateAdd(
+                        new llvm::PtrToIntInst(
+                            data,
+                            IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj),
+                            "", llvmObj->block
+                        ),
+                        llvm::BinaryOperator::CreateMul(itOffset, sizeMinus1, "", llvmObj->block),
+                        "", llvmObj->block
+                    ),
+                    forEachData.it->type->createLlvm(llvmObj),
+                    "", llvmObj->block
+                ),
+                llvmItRef, 
+                llvmObj->block
+            );
         }
         llvm::BranchInst::Create(forConditionBlock, forStartBlock);
 
@@ -2479,32 +2529,61 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
 
         // step block
         llvmObj->block = forStepBlock;
-        new llvm::StoreInst(
-            llvm::BinaryOperator::CreateAdd(
-                new llvm::LoadInst(llvmIndexRef, "", llvmObj->block),
-                llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 1),
-                "", llvmObj->block
-            ),
-            llvmIndexRef, 
-            llvmObj->block
-        );
-        new llvm::StoreInst(
-            new llvm::IntToPtrInst(
+        if (loopForward) {
+            new llvm::StoreInst(
                 llvm::BinaryOperator::CreateAdd(
-                    new llvm::PtrToIntInst(
-                        new llvm::LoadInst(llvmItRef, "", llvmObj->block), 
-                        IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj),
-                        "", llvmObj->block
-                    ),
-                    itOffset,
+                    new llvm::LoadInst(llvmIndexRef, "", llvmObj->block),
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 1),
                     "", llvmObj->block
                 ),
-                forEachData.it->type->createLlvm(llvmObj),
-                "", llvmObj->block
-            ),
-            llvmItRef, 
-            llvmObj->block
-        );
+                llvmIndexRef, 
+                llvmObj->block
+            );
+            new llvm::StoreInst(
+                new llvm::IntToPtrInst(
+                    llvm::BinaryOperator::CreateAdd(
+                        new llvm::PtrToIntInst(
+                            new llvm::LoadInst(llvmItRef, "", llvmObj->block), 
+                            IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj),
+                            "", llvmObj->block
+                        ),
+                        itOffset,
+                        "", llvmObj->block
+                    ),
+                    forEachData.it->type->createLlvm(llvmObj),
+                    "", llvmObj->block
+                ),
+                llvmItRef, 
+                llvmObj->block
+            );
+        } else {
+            new llvm::StoreInst(
+                llvm::BinaryOperator::CreateSub(
+                    new llvm::LoadInst(llvmIndexRef, "", llvmObj->block),
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 1),
+                    "", llvmObj->block
+                ),
+                llvmIndexRef, 
+                llvmObj->block
+            );
+            new llvm::StoreInst(
+                new llvm::IntToPtrInst(
+                    llvm::BinaryOperator::CreateSub(
+                        new llvm::PtrToIntInst(
+                            new llvm::LoadInst(llvmItRef, "", llvmObj->block), 
+                            IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj),
+                            "", llvmObj->block
+                        ),
+                        itOffset,
+                        "", llvmObj->block
+                    ),
+                    forEachData.it->type->createLlvm(llvmObj),
+                    "", llvmObj->block
+                ),
+                llvmItRef, 
+                llvmObj->block
+            );
+        }
         llvm::BranchInst::Create(forConditionBlock, forStepBlock);
 
         // condition block
@@ -2513,7 +2592,20 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
             auto dynamicArrayType = (DynamicArrayType*)arrayEffType;
             size = new llvm::LoadInst(dynamicArrayType->llvmGepSize(llvmObj, dynArrayRef), "", llvmObj->block);
         }
-        auto condition = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, new llvm::LoadInst(llvmIndexRef, "", llvmObj->block), size, "");
+        llvm::Value* condition;
+        if (loopForward) {
+            condition = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, 
+                new llvm::LoadInst(llvmIndexRef, "", llvmObj->block), 
+                size, 
+                ""
+            );
+        } else {
+            condition = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGE, 
+                new llvm::LoadInst(llvmIndexRef, "", llvmObj->block), 
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), 
+                ""
+            );
+        }
         llvm::BranchInst::Create(forBodyBlock, afterForBlock, condition, forConditionBlock);
 
         llvmObj->block = afterForBlock;
