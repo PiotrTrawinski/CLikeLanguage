@@ -199,7 +199,9 @@ optional<Value*> Operation::interpret(Scope* scope) {
     }
     for (auto argument : arguments) {
         if (argument->valueKind == Value::ValueKind::Operation) {
-            containsErrorResolve |= ((Operation*)argument)->containsErrorResolve;
+            if (((Operation*)argument)->containedErrorResolve) {
+                containedErrorResolve = ((Operation*)argument)->containedErrorResolve;
+            }
         }
     }
 
@@ -851,6 +853,11 @@ bool Operation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+void Operation::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
+    if (containedErrorResolve) {
+        containedErrorResolve->createAllocaLlvmIfNeeded(llvmObj);
+    }
+}
 llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
     switch (kind) {
     case Kind::GetValue: {
@@ -1133,7 +1140,7 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
         return nullopt;
     }
     if (arguments[0]->valueKind == Value::ValueKind::Operation) {
-        containsErrorResolve = ((Operation*)arguments[0])->containsErrorResolve;
+        containedErrorResolve = ((Operation*)arguments[0])->containedErrorResolve;
     }
 
     auto effectiveType = arguments[0]->type->getEffectiveType();
@@ -1901,6 +1908,10 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         return nullopt;
     }
 
+    if (arguments.size() > 0 && arguments[0]->valueKind == Value::ValueKind::Operation) {
+        containedErrorResolve = ((Operation*)arguments[0])->containedErrorResolve;
+    }
+
     switch (kind) {
     case Kind::Remove: {
         type = Type::Create(Type::Kind::Void);
@@ -2144,7 +2155,7 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
 ErrorResolveOperation::ErrorResolveOperation(const CodePosition& position) : 
     Operation(position, Operation::Kind::ErrorResolve)
 {
-    containsErrorResolve = true;
+    containedErrorResolve = this;
 }
 vector<unique_ptr<ErrorResolveOperation>> ErrorResolveOperation::objects;
 ErrorResolveOperation* ErrorResolveOperation::Create(const CodePosition& position) {
@@ -2167,8 +2178,24 @@ optional<Value*> ErrorResolveOperation::interpret(Scope* scope) {
     }
     type = ((MaybeErrorType*)arguments[0]->type)->underlyingType;
 
+    arguments[0]->wasCaptured = true;
+
     if (onErrorScope) {
         scope->onErrorScopeToInterpret = onErrorScope;
+
+        errorValueVariable = Variable::Create(CodePosition(nullptr, 0, 0), "errorvalue");
+        errorValueVariable->isConst = false;
+        errorValueVariable->type = MaybeErrorType::Create(Type::Create(Type::Kind::Void));
+        errorValueVariable->type->interpret(onErrorScope);
+
+        errorValueDeclaration = Declaration::Create(position);
+        errorValueDeclaration->scope = onErrorScope;
+        errorValueDeclaration->variable = errorValueVariable;
+        errorValueDeclaration->status = Declaration::Status::Completed;
+        onErrorScope->declarationMap.addVariableDeclaration(errorValueDeclaration);
+        onErrorScope->declarationsInitState.insert({errorValueDeclaration, true});
+        onErrorScope->declarationsOrder.push_back(errorValueDeclaration);
+        errorValueVariable->declaration = errorValueDeclaration;
     }
     if (onSuccessScope) {
         scope->onSuccessScopeToInterpret = onSuccessScope;
@@ -2187,8 +2214,48 @@ bool ErrorResolveOperation::operator==(const Statement& value) const {
         return false;
     }
 }
+void ErrorResolveOperation::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
+    errorValueDeclaration->createAllocaLlvmIfNeeded(llvmObj);
+    if (onErrorScope) onErrorScope->allocaAllDeclarationsLlvm(llvmObj);
+    if (onSuccessScope) onSuccessScope->allocaAllDeclarationsLlvm(llvmObj);
+}
+llvm::Value* ErrorResolveOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
+    auto maybeErrorRef = arguments[0]->getReferenceLlvm(llvmObj);
+    llvmErrorValue = new llvm::LoadInst(maybeErrorType->llvmGepError(llvmObj, maybeErrorRef), "", llvmObj->block);
+    auto errorEq0 = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, llvmErrorValue, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), "");
+    llvmSuccessBlock = llvm::BasicBlock::Create(llvmObj->context, "onsuccess", llvmObj->function);
+    llvmErrorBlock   = llvm::BasicBlock::Create(llvmObj->context, "onerror", llvmObj->function);
+    llvm::BranchInst::Create(llvmSuccessBlock, llvmErrorBlock, errorEq0, llvmObj->block);
+    if (onErrorScope) new llvm::StoreInst(llvmErrorValue, errorValueVariable->getReferenceLlvm(llvmObj), llvmErrorBlock);
+    llvmObj->block = llvmSuccessBlock;
+    llvmRef = maybeErrorType->llvmGepValue(llvmObj, maybeErrorRef);
+    return llvmRef;
+}
 llvm::Value* ErrorResolveOperation::createLlvm(LlvmObject* llvmObj) {
-    return nullptr;
+    auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
+    if (maybeErrorType->needsReference()) {
+        return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
+    }
+    auto maybeErrorVal = arguments[0]->createLlvm(llvmObj);
+    llvmErrorValue = maybeErrorType->llvmExtractError(llvmObj, maybeErrorVal);
+    auto errorEq0 = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, llvmErrorValue, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), "");
+    llvmSuccessBlock = llvm::BasicBlock::Create(llvmObj->context, "onsuccess", llvmObj->function);
+    llvmErrorBlock   = llvm::BasicBlock::Create(llvmObj->context, "onerror", llvmObj->function);
+    llvm::BranchInst::Create(llvmSuccessBlock, llvmErrorBlock, errorEq0, llvmObj->block);
+    if (onErrorScope) new llvm::StoreInst(llvmErrorValue, errorValueVariable->getReferenceLlvm(llvmObj), llvmErrorBlock);
+    llvmObj->block = llvmSuccessBlock;
+    llvmValue = maybeErrorType->llvmExtractValue(llvmObj, maybeErrorVal);
+    return llvmValue;
+}
+void ErrorResolveOperation::createLlvmSuccessDestructor(LlvmObject* llvmObj) {
+    if (!wasCaptured) {
+        if (llvmRef) {
+            type->createLlvmDestructorRef(llvmObj, llvmRef);
+        } else {
+            type->createLlvmDestructorRef(llvmObj, llvmValue);
+        }
+    }
 }
 
 
@@ -2542,10 +2609,10 @@ optional<Value*> AssignOperation::interpret(Scope* scope) {
     if (!arguments[1]->type->interpret(scope)) return nullopt;
 
     if (arguments[1]->valueKind == Value::ValueKind::Operation) {
-        containsErrorResolve = ((Operation*)arguments[1])->containsErrorResolve;
+        containedErrorResolve = ((Operation*)arguments[1])->containedErrorResolve;
     }
 
-    if (!containsErrorResolve && arguments[0]->valueKind == Value::ValueKind::Variable) {
+    if (!containedErrorResolve && arguments[0]->valueKind == Value::ValueKind::Variable) {
         auto variable = (Variable*)arguments[0];
         if (variable->declaration->scope->owner != Scope::Owner::Class) {
             if (!scope->declarationsInitState.at(variable->declaration)) {

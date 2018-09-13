@@ -122,6 +122,9 @@ void Declaration::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
     if (!value || !variable->isConstexpr || value->valueKind != Value::ValueKind::FunctionValue) {
         llvmVariable = variable->type->allocaLlvm(llvmObj, variable->name);
     }
+    if (value && value->valueKind == Value::ValueKind::Operation) {
+        ((Operation*)value)->createAllocaLlvmIfNeeded(llvmObj);
+    }
 }
 void Declaration::createLlvm(LlvmObject* llvmObj) {
     if (value && variable->isConstexpr && value->valueKind == Value::ValueKind::FunctionValue) {

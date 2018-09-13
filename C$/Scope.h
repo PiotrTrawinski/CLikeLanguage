@@ -16,6 +16,7 @@
 struct Operation;
 struct Variable;
 struct Value;
+struct ErrorResolveOperation;
 
 struct Scope : Statement {
     enum class Owner {
@@ -98,6 +99,7 @@ struct CodeScope : Scope {
     std::vector<Statement*> statements;
 
     std::unordered_map<Statement*, std::vector<Value*>> valuesToDestroyAfterStatement;
+    std::unordered_map<Statement*, ErrorResolveOperation*> errorResolveAfterStatement;
     
 private:
     static std::vector<std::unique_ptr<CodeScope>> objects;
