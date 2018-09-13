@@ -165,7 +165,7 @@ struct ForIterData {
     Value* step = nullptr;
     Value* lastValue = nullptr;
     Declaration* iterDeclaration = nullptr;
-    Value* stepAddOperation = nullptr;
+    Value* stepOperation = nullptr;
     Value* conditionOperation = nullptr;
 };
 struct ForEachData {
@@ -180,6 +180,7 @@ struct ForEachData {
 struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope);
     static ForScope* Create(const CodePosition& position, Scope* parentScope);
+    bool setForLoopDirection(const std::vector<Token>& tokens, int& i);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;
@@ -189,6 +190,7 @@ struct ForScope : CodeScope {
     virtual void createLlvm(LlvmObject* llvmObj);
 
     std::variant<ForIterData, ForEachData> data;
+    bool loopForward = true;
     
 private:
     static std::vector<std::unique_ptr<ForScope>> objects;
