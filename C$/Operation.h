@@ -53,6 +53,7 @@ struct Operation : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual void createAllocaLlvmIfNeeded(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     
@@ -60,7 +61,7 @@ struct Operation : Value {
     Kind kind;
     bool wasInterpreted = false;
     std::vector<Value*> arguments;
-    bool containsErrorResolve = false;
+    ErrorResolveOperation* containedErrorResolve = nullptr;
 
 private:
     static std::vector<std::unique_ptr<Operation>> objects;
@@ -337,10 +338,20 @@ struct ErrorResolveOperation : Operation {
     static ErrorResolveOperation* Create(const CodePosition& position);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
+    virtual void createAllocaLlvmIfNeeded(LlvmObject* llvmObj);
+    virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
+    virtual void createLlvmSuccessDestructor(LlvmObject* llvmObj);
 
     CodeScope* onErrorScope = nullptr;
     CodeScope* onSuccessScope = nullptr;
+    Variable* errorValueVariable = nullptr;
+    Declaration* errorValueDeclaration = nullptr;
+
+    llvm::BasicBlock* llvmErrorBlock = nullptr;
+    llvm::BasicBlock* llvmSuccessBlock = nullptr;
+
+    llvm::Value* llvmErrorValue = nullptr;
 
 private:
     static std::vector<std::unique_ptr<ErrorResolveOperation>> objects;

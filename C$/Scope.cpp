@@ -365,11 +365,11 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
         }
         case Token::Type::Label:{
             if (!expectValue) {
-                if (tokens[i].value == "onError" || tokens[i].value == "onSuccess") {
+                if (tokens[i].value == "onerror" || tokens[i].value == "onsuccess") {
                     auto operation = ErrorResolveOperation::Create(tokens[i].codePosition);
-                    while (tokens[i].value == "onError" || tokens[i].value == "onSuccess") {
+                    while (tokens[i].value == "onerror" || tokens[i].value == "onsuccess") {
                         CodeScope* codeScope = nullptr;
-                        if (tokens[i].value == "onError") {
+                        if (tokens[i].value == "onerror") {
                             if (operation->onErrorScope) {
                                 return errorMessageOpt("multiple onError scopes", tokens[i].codePosition);
                             }
@@ -1418,7 +1418,8 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             if (!declaration->value) {
                 maybeUninitializedDeclarations.insert(declaration);
             } else if (declaration->value->valueKind == Value::ValueKind::Operation) {
-                if (((Operation*)declaration->value)->containsErrorResolve) {
+                if (((Operation*)declaration->value)->containedErrorResolve) {
+                    errorResolveAfterStatement[declaration] = ((Operation*)declaration->value)->containedErrorResolve;
                     maybeUninitializedDeclarations.insert(declaration);
                     declarationDependingOnErrorScope = declaration;
                 }
@@ -1470,6 +1471,11 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
                     statement->isReachable = false;
                 }
             }
+            if (((Value*)statement)->valueKind == Value::ValueKind::Operation) {
+                if (((Operation*)statement)->containedErrorResolve) {
+                    errorResolveAfterStatement[statement] = ((Operation*)statement)->containedErrorResolve;
+                }
+            }
             break;
         }
         }
@@ -1482,27 +1488,30 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             onErrorScopeToInterpret->hasReturnStatement = hasReturnStatement;
             onErrorScopeToInterpret->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
             onErrorScopeToInterpret->declarationsInitState = declarationsInitState;
-            onErrorScopeToInterpret->declarationsInitState.at(declarationDependingOnErrorScope) = false;
+            if (declarationDependingOnErrorScope) onErrorScopeToInterpret->declarationsInitState.at(declarationDependingOnErrorScope) = false;
             if (!onErrorScopeToInterpret->interpret()) {
                 wereErrors = true;
             }
             if (!onSuccessScopeToInterpret) {
                 declarationsInitState = onErrorScopeToInterpret->getDeclarationsInitState();
+                if (declarationDependingOnErrorScope) declarationsInitState.at(declarationDependingOnErrorScope) = true;
             }
 
-            if (onErrorScopeToInterpret->hasReturnStatement) {
-                maybeUninitializedDeclarations.erase(declarationDependingOnErrorScope);
-            } else {
-                if (onErrorScopeToInterpret->maybeUninitializedDeclarations.find(declarationDependingOnErrorScope) == onErrorScopeToInterpret->maybeUninitializedDeclarations.end()) {
+            if (declarationDependingOnErrorScope) {
+                if (onErrorScopeToInterpret->hasReturnStatement) {
                     maybeUninitializedDeclarations.erase(declarationDependingOnErrorScope);
+                } else {
+                    if (onErrorScopeToInterpret->maybeUninitializedDeclarations.find(declarationDependingOnErrorScope) == onErrorScopeToInterpret->maybeUninitializedDeclarations.end()) {
+                        maybeUninitializedDeclarations.erase(declarationDependingOnErrorScope);
+                    }
                 }
             }
         }
-        
+
         if (onSuccessScopeToInterpret) {
             onSuccessScopeToInterpret->hasReturnStatement = hasReturnStatement;
             onSuccessScopeToInterpret->parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
-            onSuccessScopeToInterpret->parentMaybeUninitializedDeclarations.erase(declarationDependingOnErrorScope);
+            if (declarationDependingOnErrorScope) onSuccessScopeToInterpret->parentMaybeUninitializedDeclarations.erase(declarationDependingOnErrorScope);
             onSuccessScopeToInterpret->declarationsInitState = declarationsInitState;
             if (!onSuccessScopeToInterpret->interpret()) {
                 wereErrors = true;
@@ -1521,7 +1530,7 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             auto newDeclarationsInitState = onErrorScopeToInterpret->declarationsInitState;
             for (auto declaration : declarationsOrder) {
                 if ((onSuccessScopeToInterpret->declarationsInitState.find(declaration) != onSuccessScopeToInterpret->declarationsInitState.end()
-                    && onSuccessScopeToInterpret->declarationsInitState.at(declaration))){
+                    && onSuccessScopeToInterpret->declarationsInitState.at(declaration))) {
                     newDeclarationsInitState.at(declaration) = true;
                 }
             }
@@ -1538,11 +1547,11 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
     }
 
     if (!hasReturnStatement) {
-        for (int i = declarationsOrder.size()-1; i >= 0; --i) {
+        for (int i = declarationsOrder.size() - 1; i >= 0; --i) {
             auto& declaration = declarationsOrder[i];
             auto& variable = declaration->variable;
             if (variable->type->needsDestruction() && declarationsInitState.at(declaration)) {
-                if (maybeUninitializedDeclarations.find(declaration) != maybeUninitializedDeclarations.end()){
+                if (maybeUninitializedDeclarations.find(declaration) != maybeUninitializedDeclarations.end()) {
                     warningMessage("end of scope destruction of maybe uninitialized variable " + variable->name, position);
                 }
                 auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
@@ -1592,6 +1601,8 @@ void CodeScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
     for (auto statement : statements) {
         if (statement->kind == Statement::Kind::Declaration) {
             ((Declaration*)statement)->createAllocaLlvmIfNeeded(llvmObj);
+        } else if (statement->kind == Statement::Kind::Value && ((Value*)statement)->valueKind == Value::ValueKind::Operation) {
+            ((Operation*)statement)->createAllocaLlvmIfNeeded(llvmObj);
         }
         else if (statement->kind == Statement::Kind::Scope) {
             ((Scope*)statement)->allocaAllDeclarationsLlvm(llvmObj);
@@ -1640,11 +1651,63 @@ void CodeScope::createLlvm(LlvmObject* llvmObj) {
             break;
         }
         }
-        auto iter = valuesToDestroyAfterStatement.find(statement);
-        if (iter != valuesToDestroyAfterStatement.end()) {
-            for (auto value : iter->second) {
-                if (!value->wasCaptured) {
-                    value->createDestructorLlvm(llvmObj);
+        auto errorResolve = errorResolveAfterStatement.find(statement);
+        if (errorResolve != errorResolveAfterStatement.end()) {
+            // onsuccess block
+            errorResolve->second->createLlvmSuccessDestructor(llvmObj);
+            auto iter = valuesToDestroyAfterStatement.find(statement);
+            if (iter != valuesToDestroyAfterStatement.end()) {
+                for (auto value : iter->second) {
+                    if (!value->wasCaptured) {
+                        value->createDestructorLlvm(llvmObj);
+                    }
+                }
+            }
+
+            if (errorResolve->second->onSuccessScope) {
+                errorResolve->second->onSuccessScope->createLlvm(llvmObj);
+            }
+            auto lastOnSuccessBlock = llvmObj->block;
+
+            // onerror block
+            llvmObj->block = errorResolve->second->llvmErrorBlock;
+
+            if (iter != valuesToDestroyAfterStatement.end()) {
+                for (auto value : iter->second) {
+                    if (!value->wasCaptured) {
+                        value->createDestructorLlvm(llvmObj);
+                    }
+                }
+            }
+
+            auto afterErrorResolveBlock = llvm::BasicBlock::Create(llvmObj->context, "afterErrorResolve", llvmObj->function);
+
+            if (errorResolve->second->onErrorScope) {
+                errorResolve->second->onErrorScope->createLlvm(llvmObj);
+                if (!errorResolve->second->onErrorScope->getHasReturnStatement()) {
+                    llvm::BranchInst::Create(afterErrorResolveBlock, llvmObj->block);
+                }
+            } else {
+                llvm::BranchInst::Create(afterErrorResolveBlock, llvmObj->block);
+            }
+
+            if (errorResolve->second->onSuccessScope) {
+                if (!errorResolve->second->onSuccessScope->getHasReturnStatement()) {
+                    llvm::BranchInst::Create(afterErrorResolveBlock, lastOnSuccessBlock);
+                }
+            } else {
+                llvm::BranchInst::Create(afterErrorResolveBlock, lastOnSuccessBlock);
+            }
+
+            llvmObj->block = afterErrorResolveBlock;
+
+        } else {
+            auto iter = valuesToDestroyAfterStatement.find(statement);
+            if (iter != valuesToDestroyAfterStatement.end()) {
+                for (auto value : iter->second) {
+                    if (!value->wasCaptured) {
+                        value->createDestructorLlvm(llvmObj);
+                    }
                 }
             }
         }
@@ -2280,7 +2343,7 @@ bool ForScope::interpret() {
 
         forEachData.indexDeclaration = Declaration::Create(position);
         forEachData.indexDeclaration->scope = this;
-        forEachData.index->type == IntegerType::Create(IntegerType::Size::I64);
+        forEachData.index->type = IntegerType::Create(IntegerType::Size::I64);
         forEachData.index->type->interpret(this);
         forEachData.index->declaration = forEachData.indexDeclaration;
         forEachData.indexDeclaration->variable = forEachData.index;
@@ -2317,6 +2380,7 @@ void ForScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
         forEachData.indexDeclaration->createAllocaLlvmIfNeeded(llvmObj);
         forEachData.itDeclaration->createAllocaLlvmIfNeeded(llvmObj);
     }
+    CodeScope::allocaAllDeclarationsLlvm(llvmObj);
 }
 void ForScope::createLlvm(LlvmObject* llvmObj) {
     if (holds_alternative<ForIterData>(data)) {
