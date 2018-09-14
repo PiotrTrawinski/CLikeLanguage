@@ -861,7 +861,7 @@ void Operation::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
 llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
     switch (kind) {
     case Kind::GetValue: {
-        switch (arguments[0]->type->kind) {
+        switch (arguments[0]->type->getEffectiveType()->kind) {
         case Type::Kind::RawPointer: {
             return arguments[0]->createLlvm(llvmObj);
         }
@@ -891,7 +891,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         return arguments[0]->getReferenceLlvm(llvmObj);
     }
     case Kind::GetValue: {
-        switch (arguments[0]->type->kind) {
+        switch (arguments[0]->type->getEffectiveType()->kind) {
         case Type::Kind::MaybeError: {
             return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
         }
@@ -912,7 +912,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     }
     case Kind::Minus: {
         auto arg = arguments[0]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (type->getEffectiveType()->kind == Type::Kind::Integer) {
             return llvm::BinaryOperator::CreateNeg(arg, "", llvmObj->block);
         } else {
             return llvm::BinaryOperator::CreateFNeg(arg, "", llvmObj->block);
@@ -921,7 +921,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Mul: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (type->getEffectiveType()->kind == Type::Kind::Integer) {
             return llvm::BinaryOperator::CreateMul(arg1, arg2, "", llvmObj->block);
         } else {
             return llvm::BinaryOperator::CreateFMul(arg1, arg2, "", llvmObj->block);
@@ -930,7 +930,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Div: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (type->getEffectiveType()->kind == Type::Kind::Integer) {
             if (((IntegerType*)type)->isSigned()) {
                 return llvm::BinaryOperator::CreateSDiv(arg1, arg2, "", llvmObj->block);
             } else {
@@ -943,7 +943,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Mod: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (type->getEffectiveType()->kind == Type::Kind::Integer) {
             if (((IntegerType*)type)->isSigned()) {
                 return llvm::BinaryOperator::CreateSRem(arg1, arg2, "", llvmObj->block);
             } else {
@@ -956,7 +956,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Add: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (type->getEffectiveType()->kind == Type::Kind::Integer) {
             return llvm::BinaryOperator::CreateAdd(arg1, arg2, "", llvmObj->block);
         } else {
             return llvm::BinaryOperator::CreateFAdd(arg1, arg2, "", llvmObj->block);
@@ -965,7 +965,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Sub: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (type->kind == Type::Kind::Integer) {
+        if (type->getEffectiveType()->kind == Type::Kind::Integer) {
             return llvm::BinaryOperator::CreateSub(arg1, arg2, "", llvmObj->block);
         } else {
             return llvm::BinaryOperator::CreateFSub(arg1, arg2, "", llvmObj->block);
@@ -994,92 +994,168 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Gt: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Integer) {
             if (((IntegerType*)arguments[0]->type)->isSigned()) {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGT, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGT, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             } else {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGT, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGT, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             }
             
         } else {
-            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UGT, arg1, arg2, "");
+            return new llvm::SExtInst(
+                new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UGT, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
         }
     }
     case Kind::Lt: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Integer) {
             if (((IntegerType*)arguments[0]->type)->isSigned()) {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLT, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             } else {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULT, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULT, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             }
 
         } else {
-            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_ULT, arg1, arg2, "");
+            return new llvm::SExtInst(
+                new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_ULT, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
         }
     }
     case Kind::Gte: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Integer) {
             if (((IntegerType*)arguments[0]->type)->isSigned()) {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGE, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SGE, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             } else {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGE, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_UGE, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             }
 
         } else {
-            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UGE, arg1, arg2, "");
+            return new llvm::SExtInst(
+                new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UGE, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
         }
     }
     case Kind::Lte: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
+        if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Integer) {
             if (((IntegerType*)arguments[0]->type)->isSigned()) {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_SLE, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             } else {
-                return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULE, arg1, arg2, "");
+                return new llvm::SExtInst(
+                    new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_ULE, arg1, arg2, ""),
+                    Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                    "", llvmObj->block
+                );
             }
 
         } else {
-            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_ULE, arg1, arg2, "");
+            return new llvm::SExtInst(
+                new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_ULE, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
         }
     }
     case Kind::Eq: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
-            return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, arg1, arg2, "");
+        if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Integer) {
+            return new llvm::SExtInst(
+                new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
         } else {
-            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UEQ, arg1, arg2, "");
+            return new llvm::SExtInst(
+                new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UEQ, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
         }
     }
     case Kind::Neq: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        if (arguments[0]->type->kind == Type::Kind::Integer) {
-            return new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_NE, arg1, arg2, "");
-        } else if (arguments[0]->type->kind == Type::Kind::Float) {
-            return new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UNE, arg1, arg2, "");
+        if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Integer) {
+            return new llvm::SExtInst(
+                new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_NE, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
+        } else if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Float) {
+            return new llvm::SExtInst(
+                new llvm::FCmpInst(*llvmObj->block, llvm::FCmpInst::FCMP_UNE, arg1, arg2, ""),
+                Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+                "", llvmObj->block
+            );
         } else {
             internalError("!= operation expects integer and float types only in llvm creating, got " + DeclarationMap::toString(arguments[0]->type), position);
         }
     }
     case Kind::LogicalNot: {
         auto arg = arguments[0]->createLlvm(llvmObj);
-        return llvm::BinaryOperator::CreateNot(arg, "", llvmObj->block);
+        return new llvm::SExtInst(
+            new llvm::TruncInst(llvm::BinaryOperator::CreateNot(arg, "", llvmObj->block), llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block),
+            Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+            "", llvmObj->block
+        );
     }
     case Kind::LogicalAnd: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        return llvm::BinaryOperator::CreateAnd(arg1, arg2, "", llvmObj->block);
+        return new llvm::SExtInst(
+            new llvm::TruncInst(llvm::BinaryOperator::CreateAnd(arg1, arg2, "", llvmObj->block), llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block),
+            Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+            "", llvmObj->block
+        );
     }
     case Kind::LogicalOr: {  
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
-        return llvm::BinaryOperator::CreateOr(arg1, arg2, "", llvmObj->block);
+        return new llvm::SExtInst(
+            new llvm::TruncInst(llvm::BinaryOperator::CreateOr(arg1, arg2, "", llvmObj->block), llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block),
+            Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+            "", llvmObj->block
+        );
     }
     case Kind::BitNeg: {
         auto arg = arguments[0]->createLlvm(llvmObj);
@@ -2430,7 +2506,7 @@ void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, function
 
     auto ifFalseBlock = llvm::BasicBlock::Create(llvmObj->context, "ifFalse", llvmObj->function);
     llvmObj->block = oldBlock;
-    llvm::BranchInst::Create(ifTrueBlock, ifFalseBlock, condition, llvmObj->block);
+    llvm::BranchInst::Create(ifTrueBlock, ifFalseBlock, new llvm::TruncInst(condition, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), llvmObj->block);
 
     llvmObj->block = ifFalseBlock;
     ifFalseFunction();
@@ -2448,7 +2524,7 @@ void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, function
     auto afterIfTrueBlock = llvm::BasicBlock::Create(llvmObj->context, "afterConditional", llvmObj->function);
     llvm::BranchInst::Create(afterIfTrueBlock, llvmObj->block);
     llvmObj->block = oldBlock;
-    llvm::BranchInst::Create(ifTrueBlock, afterIfTrueBlock, condition, llvmObj->block);
+    llvm::BranchInst::Create(ifTrueBlock, afterIfTrueBlock, new llvm::TruncInst(condition, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), llvmObj->block);
     llvmObj->block = afterIfTrueBlock;
 }
 
