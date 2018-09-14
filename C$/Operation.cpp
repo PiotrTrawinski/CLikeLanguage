@@ -1842,7 +1842,12 @@ llvm::Value* FunctionCallOperation::createLlvmCall(LlvmObject* llvmObj) {
         if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
             args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
         } else {
-            args.push_back(arguments[i]->createLlvm(llvmObj));
+            if (isLvalue(arguments[i])) {
+                args.push_back(arguments[i]->type->createLlvmCopy(llvmObj, arguments[i]));
+            } else {
+                arguments[i]->wasCaptured = true;
+                args.push_back(arguments[i]->createLlvm(llvmObj));
+            }
         }
     }
     return llvm::CallInst::Create(function->createLlvm(llvmObj), args, "", llvmObj->block);
@@ -2506,7 +2511,7 @@ void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, function
 
     auto ifFalseBlock = llvm::BasicBlock::Create(llvmObj->context, "ifFalse", llvmObj->function);
     llvmObj->block = oldBlock;
-    llvm::BranchInst::Create(ifTrueBlock, ifFalseBlock, new llvm::TruncInst(condition, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), llvmObj->block);
+    llvm::BranchInst::Create(ifTrueBlock, ifFalseBlock, condition, llvmObj->block);
 
     llvmObj->block = ifFalseBlock;
     ifFalseFunction();
@@ -2524,7 +2529,7 @@ void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, function
     auto afterIfTrueBlock = llvm::BasicBlock::Create(llvmObj->context, "afterConditional", llvmObj->function);
     llvm::BranchInst::Create(afterIfTrueBlock, llvmObj->block);
     llvmObj->block = oldBlock;
-    llvm::BranchInst::Create(ifTrueBlock, afterIfTrueBlock, new llvm::TruncInst(condition, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), llvmObj->block);
+    llvm::BranchInst::Create(ifTrueBlock, afterIfTrueBlock,condition, llvmObj->block);
     llvmObj->block = afterIfTrueBlock;
 }
 
