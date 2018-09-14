@@ -12,6 +12,7 @@ struct Value : Statement {
         Integer,
         Float,
         Char,
+        Bool,
         String,
         StaticArray,
         FunctionValue,

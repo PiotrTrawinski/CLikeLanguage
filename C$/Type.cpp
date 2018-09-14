@@ -124,7 +124,7 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
 llvm::Type* Type::createLlvm(LlvmObject* llvmObj) {
     switch (kind) {
     case Kind::Bool:
-        return llvm::Type::getInt1Ty(llvmObj->context);
+        return llvm::Type::getInt8Ty(llvmObj->context);
     case Kind::Void:
         return llvm::Type::getVoidTy(llvmObj->context);
     }

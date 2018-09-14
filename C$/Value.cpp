@@ -284,7 +284,7 @@ llvm::Value* FloatValue::createLlvm(LlvmObject* llvmObj) {
     BoolValue
 */
 BoolValue::BoolValue(const CodePosition& position, bool value) : 
-    Value(position, Value::ValueKind::Char),
+    Value(position, Value::ValueKind::Bool),
     value(value)
 {
     isConstexpr = true;
@@ -296,7 +296,6 @@ BoolValue* BoolValue::Create(const CodePosition& position, bool value) {
     return objects.back().get();
 }
 optional<Value*> BoolValue::interpret(Scope* scope) {
-    isConstexpr = true;
     return nullptr;
 }
 bool BoolValue::operator==(const Statement& value) const {
