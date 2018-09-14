@@ -1998,17 +1998,16 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         scopePtr = scope;
         while (scopePtr) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
-                auto declaration = scopePtr->declarationsOrder[i];
-                if (declaration->variable->type->kind == Type::Kind::Class
-                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
-                {
-                    if (scope->declarationsInitState.at(declaration)) {
-                        variablesToDestroy.push_back(declaration);
-                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
-                            scope->maybeUninitializedDeclarations.end()) {
-                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on remove statement ", position);
-                        }
+                auto& declaration = scopePtr->declarationsOrder[i];
+                auto& variable = declaration->variable;
+                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
+                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                        warningMessage("destruction of maybe uninitialized variable " + variable->name + " on remove statement", position);
                     }
+                    auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
+                    destroyOp->arguments.push_back(variable);
+                    if (!destroyOp->interpret(scope)) return nullopt;
+                    variablesDestructors.push_back(destroyOp);
                 }
             }
             if (scopePtr->owner == Scope::Owner::For) {
@@ -2041,17 +2040,16 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         }
         while (scopePtr) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
-                auto declaration = scopePtr->declarationsOrder[i];
-                if (declaration->variable->type->kind == Type::Kind::Class
-                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
-                {
-                    if (scope->declarationsInitState.at(declaration)) {
-                        variablesToDestroy.push_back(declaration);
-                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
-                            scope->maybeUninitializedDeclarations.end()) {
-                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on continue statement ", position);
-                        }
+                auto& declaration = scopePtr->declarationsOrder[i];
+                auto& variable = declaration->variable;
+                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
+                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                        warningMessage("destruction of maybe uninitialized variable " + variable->name + " on continue statement", position);
                     }
+                    auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
+                    destroyOp->arguments.push_back(variable);
+                    if (!destroyOp->interpret(scope)) return nullopt;
+                    variablesDestructors.push_back(destroyOp);
                 }
             }
             if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
@@ -2097,17 +2095,16 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         }
         while (scopePtr) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
-                auto declaration = scopePtr->declarationsOrder[i];
-                if (declaration->variable->type->kind == Type::Kind::Class
-                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
-                {
-                    if (scope->declarationsInitState.at(declaration)) {
-                        variablesToDestroy.push_back(declaration);
-                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
-                            scope->maybeUninitializedDeclarations.end()) {
-                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on break statement ", position);
-                        }
+                auto& declaration = scopePtr->declarationsOrder[i];
+                auto& variable = declaration->variable;
+                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
+                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                        warningMessage("destruction of maybe uninitialized variable " + variable->name + " on break statement", position);
                     }
+                    auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
+                    destroyOp->arguments.push_back(variable);
+                    if (!destroyOp->interpret(scope)) return nullopt;
+                    variablesDestructors.push_back(destroyOp);
                 }
             }
             if (arguments.size() == 0 && scopePtr->owner == Scope::Owner::While) {
@@ -2151,16 +2148,17 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         scopePtr = scope;
         while (scopePtr) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
-                auto declaration = scopePtr->declarationsOrder[i];
-                if (declaration->variable->type->kind == Type::Kind::Class
-                    || declaration->variable->type->kind == Type::Kind::OwnerPointer) 
-                {
-                    if (scope->declarationsInitState.at(declaration)) {
-                        variablesToDestroy.push_back(declaration);
-                        if (scope->maybeUninitializedDeclarations.find(declaration) !=
-                            scope->maybeUninitializedDeclarations.end()) {
-                            warningMessage("destruction of maybe uninitialized variable " + declaration->variable->name + " on return statement ", position);
-                        }
+                auto& declaration = scopePtr->declarationsOrder[i];
+                auto& variable = declaration->variable;
+                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
+                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                        warningMessage("destruction of maybe uninitialized variable " + variable->name + " on return statement", position);
+                    }
+                    auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
+                    destroyOp->arguments.push_back(variable);
+                    if (!destroyOp->interpret(scope)) return nullopt;
+                    if (arguments.empty() || arguments[0]->valueKind != ValueKind::Variable || ((Variable*)arguments[0])->declaration != variable->declaration) {
+                        variablesDestructors.push_back(destroyOp);
                     }
                 }
             }
@@ -2189,11 +2187,8 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         if (!scopePtr) {
             internalError("return statement found outside function", position);
         }
-        if (!arguments.empty() && arguments[0]->type->needsDestruction()) {
-            if (scope->valuesToDestroyBuffer.empty()) {
-                internalError("return statement captures destructable value, but no value in the scope buffer", position);
-            }
-            scope->valuesToDestroyBuffer.pop_back();
+        if (!arguments.empty()) {
+            arguments[0]->wasCaptured = true;
         }
         break;
     }
@@ -2212,6 +2207,9 @@ bool FlowOperation::operator==(const Statement& value) const {
     }
 }
 llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
+    for (auto& destructor : variablesDestructors) {
+        destructor->createLlvm(llvmObj);
+    }
     if (kind == Kind::Return) {
         if (arguments.size() == 0) {
             return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
