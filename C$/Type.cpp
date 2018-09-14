@@ -139,6 +139,9 @@ pair<llvm::Value*, llvm::Value*> Type::createLlvmValue(LlvmObject* llvmObj, cons
 llvm::Value* Type::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     return nullptr;
 }
+llvm::Value* Type::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    return lValue->createLlvm(llvmObj);
+}
 void Type::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {}
 bool Type::hasLlvmConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (kind) {
@@ -264,6 +267,11 @@ llvm::Type* OwnerPointerType::createLlvm(LlvmObject* llvmObj) {
     } else {
         return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
     }
+}
+llvm::Value* OwnerPointerType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    auto copy = allocaLlvm(llvmObj);
+    createLlvmCopyConstructor(llvmObj, copy, lValue->createLlvm(llvmObj));
+    return new llvm::LoadInst(copy, "", llvmObj->block);
 }
 void OwnerPointerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     if (Value::isLvalue(arguments[0])) {
@@ -541,6 +549,11 @@ llvm::Value* MaybeErrorType::createLlvmReference(LlvmObject* llvmObj, const std:
     auto llvmRef = allocaLlvm(llvmObj);
     createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
     return llvmRef;
+}
+llvm::Value* MaybeErrorType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    auto copy = allocaLlvm(llvmObj);
+    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(copy, "", llvmObj->block);
 }
 llvm::Value* MaybeErrorType::llvmGepError(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     vector<llvm::Value*> indexList;
@@ -857,6 +870,11 @@ llvm::Value* StaticArrayType::createLlvmReference(LlvmObject* llvmObj, const std
     auto llvmRef = allocaLlvm(llvmObj);
     createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
     return llvmRef;
+}
+llvm::Value* StaticArrayType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    auto copy = allocaLlvm(llvmObj);
+    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(copy, "", llvmObj->block);
 }
 void StaticArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     if (elementType->hasLlvmConstructor(llvmObj, arguments, classConstructor)) {
@@ -1541,6 +1559,11 @@ llvm::Value* DynamicArrayType::createLlvmReference(LlvmObject* llvmObj, const st
     createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
     return llvmRef;
 }
+llvm::Value* DynamicArrayType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    auto copy = allocaLlvm(llvmObj);
+    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(copy, "", llvmObj->block);
+}
 llvm::Value* DynamicArrayType::llvmGepSize(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     vector<llvm::Value*> indexList;
     indexList.push_back(llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0));
@@ -2210,6 +2233,11 @@ llvm::Value* ClassType::createLlvmReference(LlvmObject* llvmObj, const std::vect
     auto llvmRef = allocaLlvm(llvmObj);
     createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
     return llvmRef;
+}
+llvm::Value* ClassType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    auto copy = allocaLlvm(llvmObj);
+    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(copy, "", llvmObj->block);
 }
 void ClassType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     vector<llvm::Value*> args;

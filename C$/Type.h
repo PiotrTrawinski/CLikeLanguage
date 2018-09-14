@@ -58,6 +58,7 @@ struct Type {
     virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
     virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmCopy(LlvmObject* llvmObj, Value* lValue);
     virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual bool hasLlvmConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
@@ -87,6 +88,7 @@ struct OwnerPointerType : Type {
     virtual bool needsDestruction();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
+    virtual llvm::Value* createLlvmCopy(LlvmObject* llvmObj, Value* lValue);
     virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
@@ -129,6 +131,7 @@ struct MaybeErrorType : Type {
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmCopy(LlvmObject* llvmObj, Value* lValue);
     llvm::Value* llvmGepError(LlvmObject* llvmObj, llvm::Value* llvmRef);
     llvm::Value* llvmGepValue(LlvmObject* llvmObj, llvm::Value* llvmRef);
     llvm::Value* llvmExtractError(LlvmObject* llvmObj, llvm::Value* llvmValue);
@@ -177,6 +180,7 @@ struct StaticArrayType : Type {
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmCopy(LlvmObject* llvmObj, Value* lValue);
     virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual bool hasLlvmConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
@@ -209,6 +213,7 @@ struct DynamicArrayType : Type {
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmCopy(LlvmObject* llvmObj, Value* lValue);
     llvm::Value* llvmGepSize(LlvmObject* llvmObj, llvm::Value* llvmRef);
     llvm::Value* llvmGepCapacity(LlvmObject* llvmObj, llvm::Value* llvmRef);
     llvm::Value* llvmGepData(LlvmObject* llvmObj, llvm::Value* llvmRef);
@@ -268,6 +273,7 @@ struct ClassType : Type {
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual llvm::Value* createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
+    virtual llvm::Value* createLlvmCopy(LlvmObject* llvmObj, Value* lValue);
     virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
