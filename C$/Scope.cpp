@@ -2116,17 +2116,20 @@ struct ForScopeDeclarationType {
     bool byValue;
 };
 optional<ForScopeDeclarationType> readForScopeDeclarationType(const vector<Token>& tokens, int& i) {
-    if ((tokens[i].value != ":" && tokens[i].value != "&") || (tokens[i].value == "&" && (tokens[i+1].value != ":" && tokens[i+1].value != "="))) {
-        return errorMessageOpt("expected declaration of for-each array element (:: or := or &: or &= or :)", tokens[i].codePosition);
-    }
-
     ForScopeDeclarationType declarationType;
-    declarationType.isConst = tokens[i+1].value != "=";
-    declarationType.byValue = tokens[i].value == ":" && (tokens[i+1].value == ":" || tokens[i+1].value == "=");
 
-    if (tokens[i].value == ":" && (tokens[i].value != ":" && tokens[i].value != "=")) {
+    if (tokens[i].value == "in") {
+        declarationType.isConst = false;
+        declarationType.byValue = true;
         i += 1;
     } else {
+        if ((tokens[i].value == "&" && (tokens[i+1].value != ":" && tokens[i+1].value != "="))) {
+            return errorMessageOpt("expected declaration of for-each array element (:: or := or &: or &= or :)", tokens[i].codePosition);
+        }
+
+        declarationType.isConst = tokens[i+1].value == ":";
+        declarationType.byValue = tokens[i].value == ":";
+
         i += 2;
     }
 
@@ -2145,11 +2148,11 @@ bool ForScope::setForLoopDirection(const vector<Token>& tokens, int& i) {
 bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
     /// Possible legal uses of a for loop:
     // 1. for _range_ {}
-    // 2. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
+    // 2. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: := in})
     // 3. for _array_ {}
-    // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+    // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= in})
     // 5. for var1, var2 _declarationType_ _array_ {} (var2 is index of element var1)
-    auto firstValue = getValue(tokens, i, {"{", ":", "&", ",", "do", "forward", "backwards"}, false, false);
+    auto firstValue = getValue(tokens, i, {"{", ":", "&", ",", "in", "do", "forward", "backwards"}, false, false);
     if (!firstValue) { return false; }
     if (tokens[i].value == "{" || tokens[i].value == "do" || tokens[i].value == "forward" || tokens[i].value == "backwards") {
         // 3. for _array_ {}
@@ -2174,7 +2177,7 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
             return errorMessageBool("unexpected end of a file (tried to interpret a for loop)", tokens[tokens.size()-1].codePosition);
         }
         i += 1; // now is on the start of var2
-        auto var2Value = getValue(tokens, i, {":", "&"}, false, false);
+        auto var2Value = getValue(tokens, i, {":", "&", "in"}, false, false);
         if (var2Value->valueKind != Value::ValueKind::Variable) {
             return errorMessageBool("expected a new index variable name", tokens[i-1].codePosition);
         }
@@ -2218,8 +2221,8 @@ bool ForScope::createCodeTree(const vector<Token>& tokens, int& i) {
         data = forIterData;
         i += 1; // skip '{'
     } else {
-        // 2. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: :=})
-        // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= :})
+        // 2. for var1 _declarationType_ _range_ {} (var1 is int; _declarationType_ is one of {:: := in})
+        // 4. for var1 _declarationType_ _array_ {} (var1 is element of array; _declarationType_ is one of {:: := &: &= in})
         if (firstValue->valueKind != Value::ValueKind::Variable) {
             return errorMessageBool("expected a new for loop iterator variable name", tokens[i-1].codePosition);
         }
