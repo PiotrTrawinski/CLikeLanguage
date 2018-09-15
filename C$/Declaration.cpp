@@ -42,7 +42,7 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
         if (value && value->type && !value->type->interpret(scope)) {
             return errorMessageBool("unknown type: " + DeclarationMap::toString(value->type), position);
         }
-        if (isFunctionDeclaration()) {
+        if (isFunctionDeclaration() && variable->isConst && value) {
             addToMapStatus = scope->declarationMap.addFunctionDeclaration(this);
         } else {
             addToMapStatus = scope->declarationMap.addVariableDeclaration(this);
