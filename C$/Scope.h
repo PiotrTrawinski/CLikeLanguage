@@ -191,6 +191,9 @@ struct ForScope : CodeScope {
 
     std::variant<ForIterData, ForEachData> data;
     bool loopForward = true;
+
+    llvm::BasicBlock* llvmStepBlock = nullptr;
+    llvm::BasicBlock* llvmAfterBlock = nullptr;
     
 private:
     static std::vector<std::unique_ptr<ForScope>> objects;
@@ -207,6 +210,9 @@ struct WhileScope : CodeScope {
     virtual void createLlvm(LlvmObject* llvmObj);
 
     Value* conditionExpression = nullptr;
+
+    llvm::BasicBlock* llvmConditionBlock = nullptr;
+    llvm::BasicBlock* llvmAfterBlock = nullptr;
     
 private:
     static std::vector<std::unique_ptr<WhileScope>> objects;

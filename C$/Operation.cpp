@@ -1988,6 +1988,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         containedErrorResolve = ((Operation*)arguments[0])->containedErrorResolve;
     }
 
+    scope->hasReturnStatement = true;
     switch (kind) {
     case Kind::Remove: {
         type = Type::Create(Type::Kind::Void);
@@ -2014,7 +2015,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                 auto forScope = (ForScope*)scopePtr;
                 if (holds_alternative<ForEachData>(forScope->data)) {
                     auto& forIterData = get<ForEachData>(forScope->data);
-                    if (forIterData.it->name == varName) {
+                    if (forIterData.it->name == varName || forIterData.index->name == varName) {
                         break;
                     } else {
                         scopePtr = scopePtr->parentScope;
@@ -2070,7 +2071,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                         }
                     } else if (holds_alternative<ForEachData>(forScope->data)) {
                         auto& forIterData = get<ForEachData>(forScope->data);
-                        if (forIterData.it->name == varName) {
+                        if (forIterData.it->name == varName || forIterData.index->name == varName) {
                             break;
                         } else {
                             scopePtr = scopePtr->parentScope;
@@ -2125,7 +2126,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                         }
                     } else if (holds_alternative<ForEachData>(forScope->data)) {
                         auto& forIterData = get<ForEachData>(forScope->data);
-                        if (forIterData.it->name == varName) {
+                        if (forIterData.it->name == varName || forIterData.index->name == varName) {
                             break;
                         } else {
                             scopePtr = scopePtr->parentScope;
@@ -2143,7 +2144,6 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         break;
     }
     case Kind::Return: {
-        scope->hasReturnStatement = true;
         type = Type::Create(Type::Kind::Void);
         scopePtr = scope;
         while (scopePtr) {
@@ -2220,6 +2220,20 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
             } else {
                 return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->createLlvm(llvmObj), llvmObj->block);
             }
+        }
+    }
+    else if (kind == Kind::Break) {
+        if (scopePtr->owner == Scope::Owner::For) {
+            llvm::BranchInst::Create(((ForScope*)scopePtr)->llvmAfterBlock, llvmObj->block);
+        } else {
+            llvm::BranchInst::Create(((WhileScope*)scopePtr)->llvmAfterBlock, llvmObj->block);
+        }
+    }
+    else if (kind == Kind::Continue) {
+        if (scopePtr->owner == Scope::Owner::For) {
+            llvm::BranchInst::Create(((ForScope*)scopePtr)->llvmStepBlock, llvmObj->block);
+        } else {
+            llvm::BranchInst::Create(((WhileScope*)scopePtr)->llvmConditionBlock, llvmObj->block);
         }
     }
     return nullptr;

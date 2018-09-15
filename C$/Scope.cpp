@@ -2429,6 +2429,8 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
         auto forConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "forCondition", llvmObj->function);
         auto forBodyBlock      = llvm::BasicBlock::Create(llvmObj->context, "for",          llvmObj->function);
         auto afterForBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterFor",     llvmObj->function);
+        llvmStepBlock = forStepBlock;
+        llvmAfterBlock = afterForBlock;
 
         // start block
         llvm::BranchInst::Create(forStartBlock, llvmObj->block);
@@ -2466,6 +2468,8 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
         auto forConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "forEachCondition", llvmObj->function);
         auto forBodyBlock      = llvm::BasicBlock::Create(llvmObj->context, "forEach",          llvmObj->function);
         auto afterForBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterForEach",     llvmObj->function);
+        llvmStepBlock = forStepBlock;
+        llvmAfterBlock = afterForBlock;
 
         // start block
         llvm::BranchInst::Create(forStartBlock, llvmObj->block);
@@ -2703,18 +2707,18 @@ bool WhileScope::findBreakStatement(CodeScope* scope) {
     return false;
 }
 bool WhileScope::getHasReturnStatement() {
-    return conditionExpression->isConstexpr 
-        && ((BoolValue*)conditionExpression)->value
-        && (hasReturnStatement || !findBreakStatement(this));
+    return false;
 }
 void WhileScope::createLlvm(LlvmObject* llvmObj) {
     auto whileConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "whileCondition", llvmObj->function);
     auto whileBlock          = llvm::BasicBlock::Create(llvmObj->context, "while",          llvmObj->function);
+    auto afterWhileBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterWhile",     llvmObj->function);
+    llvmConditionBlock = whileConditionBlock;
+    llvmAfterBlock = afterWhileBlock;
     llvm::BranchInst::Create(whileConditionBlock, llvmObj->block);
     llvmObj->block = whileBlock;
     CodeScope::createLlvm(llvmObj);
     if (!hasReturnStatement) llvm::BranchInst::Create(whileConditionBlock, llvmObj->block);
-    auto afterWhileBlock     = llvm::BasicBlock::Create(llvmObj->context, "afterWhile",     llvmObj->function);
     llvmObj->block = whileConditionBlock;
     llvm::BranchInst::Create(
         whileBlock, 
@@ -2786,12 +2790,12 @@ bool IfScope::interpret() {
     bool elseScopeErrors = false;
     maybeUninitializedDeclarations = parentScope->maybeUninitializedDeclarations;
     parentMaybeUninitializedDeclarations = maybeUninitializedDeclarations;
+    if (elseScope) elseScope->hasReturnStatement = hasReturnStatement;
     if (!interpretNoUnitializedDeclarationsSet()) {
         return false;
     }
     if (elseScope) {
         elseScope->parentMaybeUninitializedDeclarations = parentScope->maybeUninitializedDeclarations;
-        elseScope->hasReturnStatement = conditionExpression->isConstexpr && ((BoolValue*)conditionExpression)->value;
         elseScope->declarationsInitState = parentScope->declarationsInitState;
         if (!elseScope->interpret()) {
             elseScopeErrors = true;
@@ -2854,10 +2858,12 @@ void IfScope::createLlvm(LlvmObject* llvmObj) {
         );
         llvmObj->block = elseBlock;
         elseScope->createLlvm(llvmObj);
-        auto afterIfElseBlock = llvm::BasicBlock::Create(llvmObj->context, "afterIfElse", llvmObj->function);
-        if (!hasReturnStatement) llvm::BranchInst::Create(afterIfElseBlock, afterIfBlock);
-        if (!elseScope->hasReturnStatement) llvm::BranchInst::Create(afterIfElseBlock, llvmObj->block);
-        llvmObj->block = afterIfElseBlock;
+        if (!getHasReturnStatement()) {
+            auto afterIfElseBlock = llvm::BasicBlock::Create(llvmObj->context, "afterIfElse", llvmObj->function);
+            if (!hasReturnStatement) llvm::BranchInst::Create(afterIfElseBlock, afterIfBlock);
+            if (!elseScope->hasReturnStatement) llvm::BranchInst::Create(afterIfElseBlock, llvmObj->block);
+            llvmObj->block = afterIfElseBlock;
+        }
     } else {
         auto ifBlock = llvm::BasicBlock::Create(llvmObj->context, "if", llvmObj->function);
         auto oldBlock = llvmObj->block;
