@@ -2303,17 +2303,6 @@ bool FunctionType::operator==(const Type& type) const {
 int FunctionType::sizeInBytes() {
     return 8;
 }
-optional<InterpretConstructorResult> FunctionType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
-    return nullopt;
-}
-/*unique_ptr<Type> FunctionType::copy() {
-    auto type = make_unique<FunctionType>();
-    type->returnType = returnType->copy();
-    for (auto& argumentType : argumentTypes) {
-        type->argumentTypes.push_back(argumentType->copy());
-    }
-    return type;
-}*/
 llvm::Type* FunctionType::createLlvm(LlvmObject* llvmObj) {
     vector<llvm::Type*> types;
     for (auto argType : argumentTypes) {
@@ -2323,6 +2312,37 @@ llvm::Type* FunctionType::createLlvm(LlvmObject* llvmObj) {
         llvm::FunctionType::get(returnType->createLlvm(llvmObj), types, false), 
         0
     );
+}
+/*unique_ptr<Type> FunctionType::copy() {
+    auto type = make_unique<FunctionType>();
+    type->returnType = returnType->copy();
+    for (auto& argumentType : argumentTypes) {
+        type->argumentTypes.push_back(argumentType->copy());
+    }
+    return type;
+}*/
+optional<InterpretConstructorResult> FunctionType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    switch (arguments.size()) {
+    case 0: 
+        return InterpretConstructorResult(nullptr, nullptr);
+    default: 
+        if (!onlyTry) errorMessageOpt("no fitting raw pointer constructor (too many arguments)", position);
+        return nullopt;
+    }
+}
+void FunctionType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0: 
+        break;
+    case 1: 
+        createLlvmCopyConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
+        break;
+    default: 
+        internalError("incorrect function constructor during llvm creating (> 1 argument)");
+    }
+}
+bool FunctionType::hasLlvmConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return arguments.size() == 1;
 }
 
 
