@@ -1770,6 +1770,21 @@ void GlobalScope::createLlvm(LlvmObject* llvmObj) {
             (llvm::FunctionType*)((llvm::PointerType*)declaration->variable->type->createLlvm(llvmObj))->getElementType()
         ));
     }
+    for (auto& statement : statements) {
+        if (statement->kind == Statement::Kind::Declaration) {
+            auto declaration = (Declaration*)statement;
+            if (!declaration->variable->isConstexpr) {
+                declaration->llvmVariable = new llvm::GlobalVariable(
+                    *llvmObj->module, 
+                    declaration->variable->type->createLlvm(llvmObj), 
+                    false, 
+                    llvm::GlobalValue::LinkageTypes::InternalLinkage, 
+                    llvm::UndefValue::get(declaration->variable->type->createLlvm(llvmObj)), 
+                    declaration->variable->name
+                );
+            }
+        }
+    }
     CodeScope::createLlvm(llvmObj);
 }
 
