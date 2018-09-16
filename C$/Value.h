@@ -143,7 +143,6 @@ struct FunctionValue : Value {
     FunctionValue(const CodePosition& position, Type* type, Scope* parentScope);
     static FunctionValue* Create(const CodePosition& position, Type* type, Scope* parentScope);
     virtual std::optional<Value*> interpret(Scope* scope);
-    std::optional<Value*> interpretNoBody(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     llvm::Value* createLlvm(LlvmObject* llvmObj, const std::string& name);

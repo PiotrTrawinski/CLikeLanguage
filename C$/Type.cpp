@@ -2325,6 +2325,8 @@ optional<InterpretConstructorResult> FunctionType::interpretConstructor(const Co
     switch (arguments.size()) {
     case 0: 
         return InterpretConstructorResult(nullptr, nullptr);
+    case 1:
+        return arguments[0];
     default: 
         if (!onlyTry) errorMessageOpt("no fitting raw pointer constructor (too many arguments)", position);
         return nullopt;
