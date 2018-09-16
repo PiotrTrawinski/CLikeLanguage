@@ -1326,9 +1326,13 @@ Declaration* Scope::findDeclaration(Variable* variable, bool ignoreClassScopes) 
         declarations[0]->scope = this;
         switch (declarations[0]->status) {
         case Declaration::Status::None:
-            internalError("impossible state", variable->position);
+            return declarations[0];
         case Declaration::Status::InEvaluation:
-            return errorMessageNull("recursive variable dependency", variable->position);
+            if (declarations[0]->variable->isConstexpr && declarations[0]->value->type->kind == Type::Kind::Function) {
+                return declarations[0];
+            } else {
+                return errorMessageNull("recursive variable dependency", variable->position);
+            }
         case Declaration::Status::Evaluated:
             if (declarations[0]->variable->isConstexpr) {
                 return declarations[0];
@@ -1416,6 +1420,27 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
 bool CodeScope::interpretNoUnitializedDeclarationsSet() {
     bool wereErrors = false;
     Declaration* declarationDependingOnErrorScope = nullptr;
+    for (int i = 0; i < statements.size(); ++i) {
+        auto statement = statements[i];
+        if (statement->kind == Statement::Kind::Declaration) {
+            auto declaration = (Declaration*)statement;
+            if (declaration->value && declaration->variable->isConst && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
+                if (declaration->variable->type && !declaration->variable->type->interpret(this)) {
+                    errorMessageBool("unknown type: " + DeclarationMap::toString(declaration->variable->type), position);
+                    wereErrors = true;
+                }
+                if (!declaration->value->type->interpret(this)) {
+                    errorMessageBool("unknown type: " + DeclarationMap::toString(declaration->value->type), position);
+                    wereErrors = true;
+                }
+                if (!declarationMap.addFunctionDeclaration(declaration)) {
+                    wereErrors = true;
+                }
+                declaration->variable->type = declaration->value->type;
+                declaration->variable->isConstexpr = true;
+            }
+        }
+    }
     for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
         switch (statement->kind) {

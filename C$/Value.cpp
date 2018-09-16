@@ -545,12 +545,6 @@ FunctionValue* FunctionValue::Create(const CodePosition& position, Type* type, S
     return objects.back().get();
 }
 optional<Value*> FunctionValue::interpret(Scope* scope) {
-    if (!interpretNoBody(scope) || !body->interpret()) {
-        return nullopt;
-    }
-    return nullptr;
-}
-optional<Value*> FunctionValue::interpretNoBody(Scope* scope) {
     if (type && !type->interpret(scope)) {
         return nullopt;
     }
@@ -563,6 +557,9 @@ optional<Value*> FunctionValue::interpretNoBody(Scope* scope) {
         body->declarationMap.addVariableDeclaration(argument);
         body->declarationsInitState.insert({argument, true});
         body->declarationsOrder.push_back(argument);
+    }
+    if (!body->interpret()) {
+        return nullptr;
     }
     return nullptr;
 }

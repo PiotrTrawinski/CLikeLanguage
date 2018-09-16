@@ -43,7 +43,7 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
             return errorMessageBool("unknown type: " + DeclarationMap::toString(value->type), position);
         }
         if (isFunctionDeclaration() && variable->isConst && value) {
-            addToMapStatus = scope->declarationMap.addFunctionDeclaration(this);
+            addToMapStatus = true;
         } else {
             addToMapStatus = scope->declarationMap.addVariableDeclaration(this);
         }
@@ -56,24 +56,18 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
 
         status = Declaration::Status::InEvaluation;
         if (value) {
-            if (variable->type) {
-                if (byReference) {
-                    value = ConstructorOperation::Create(value->position, ReferenceType::Create(variable->type), {value});
-                } else {
-                    value = ConstructorOperation::Create(value->position, variable->type, {value});
-                }
-            }
-            if (!variable->type && isFunctionDeclaration()) {
-                auto valueInterpret = ((FunctionValue*)value)->interpretNoBody(scope);
+            if (variable->isConstexpr) {
+                auto valueInterpret = value->interpret(scope);
                 if (!valueInterpret) return false;
                 if (valueInterpret.value()) value = valueInterpret.value();
-                variable->type = value->type;
-                variable->isConstexpr = true;
-                status = Declaration::Status::Completed;
-                if (!((FunctionValue*)value)->body->interpret()) {
-                    return false;
-                }
             } else {
+                if (variable->type) {
+                    if (byReference) {
+                        value = ConstructorOperation::Create(value->position, ReferenceType::Create(variable->type), {value});
+                    } else {
+                        value = ConstructorOperation::Create(value->position, variable->type, {value});
+                    }
+                }
                 optional<Value*> valueInterpret = nullopt;
                 if (value->valueKind == Value::ValueKind::Operation && ((Operation*)value)->kind == Operation::Kind::Constructor) {
                     valueInterpret = ((ConstructorOperation*)value)->interpret(scope, false, true);
@@ -82,19 +76,19 @@ bool Declaration::interpret(Scope* scope, bool outOfOrder) {
                 }
                 if (!valueInterpret) return false;
                 if (valueInterpret.value()) value = valueInterpret.value();
-            }
-            if (!variable->type) {
-                if (byReference) {
-                    value = ConstructorOperation::Create(value->position, ReferenceType::Create(value->type), {value});
-                    auto valueInterpret = value->interpret(scope);
-                    if (!valueInterpret) return false;
-                    if (valueInterpret.value()) value = valueInterpret.value();
-                    variable->type = ReferenceType::Create(value->type->getEffectiveType());
-                } else {
-                    variable->type = value->type->getEffectiveType();
+                if (!variable->type) {
+                    if (byReference) {
+                        value = ConstructorOperation::Create(value->position, ReferenceType::Create(value->type), {value});
+                        auto valueInterpret = value->interpret(scope);
+                        if (!valueInterpret) return false;
+                        if (valueInterpret.value()) value = valueInterpret.value();
+                        variable->type = ReferenceType::Create(value->type->getEffectiveType());
+                    } else {
+                        variable->type = value->type->getEffectiveType();
+                    }
                 }
+                variable->isConstexpr = variable->isConst && value->isConstexpr;
             }
-            variable->isConstexpr = variable->isConst && value->isConstexpr;
         } else if (variable->type && variable->type->kind == Type::Kind::Reference) {
             return errorMessageBool("cannot declare reference type variable without value", position);
         }
