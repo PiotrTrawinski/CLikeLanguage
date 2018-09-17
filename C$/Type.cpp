@@ -35,6 +35,9 @@ MatchTemplateResult Type::matchTemplate(TemplateFunctionType* templateFunctionTy
     if (kind == type->kind) return MatchTemplateResult::Perfect;
     else return MatchTemplateResult::Viable;
 }
+Type* Type::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return this;
+}
 int Type::compareTemplateDepth(Type* type) {
     return 0;
 }
@@ -258,7 +261,10 @@ bool OwnerPointerType::operator==(const Type& type) const {
 }
 MatchTemplateResult OwnerPointerType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((OwnerPointerType*)type)->underlyingType);
-    else return MatchTemplateResult::Viable;
+    else return MatchTemplateResult::Fail;
+}
+Type* OwnerPointerType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return Create(underlyingType->substituteTemplate(templateFunctionType));
 }
 int OwnerPointerType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::OwnerPointer) return -1;
@@ -429,7 +435,10 @@ bool RawPointerType::operator==(const Type& type) const {
 }
 MatchTemplateResult RawPointerType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((RawPointerType*)type)->underlyingType);
-    else return MatchTemplateResult::Viable;
+    else return MatchTemplateResult::Fail;
+}
+Type* RawPointerType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return Create(underlyingType->substituteTemplate(templateFunctionType));
 }
 int RawPointerType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::RawPointer) return -1;
@@ -514,7 +523,10 @@ bool MaybeErrorType::operator==(const Type& type) const {
 }
 MatchTemplateResult MaybeErrorType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((MaybeErrorType*)type)->underlyingType);
-    else return MatchTemplateResult::Viable;
+    else return MatchTemplateResult::Fail;
+}
+Type* MaybeErrorType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return Create(underlyingType->substituteTemplate(templateFunctionType));
 }
 int MaybeErrorType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::MaybeError) return -1;
@@ -828,7 +840,10 @@ bool ReferenceType::operator==(const Type& type) const {
 }
 MatchTemplateResult ReferenceType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((ReferenceType*)type)->underlyingType);
-    else return MatchTemplateResult::Viable;
+    else return MatchTemplateResult::Fail;
+}
+Type* ReferenceType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return Create(underlyingType->substituteTemplate(templateFunctionType));
 }
 int ReferenceType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::Reference) return -1;
@@ -927,7 +942,10 @@ MatchTemplateResult StaticArrayType::matchTemplate(TemplateFunctionType* templat
     if (kind == type->kind && sizeAsInt == ((StaticArrayType*)type)->sizeAsInt) {
         return elementType->matchTemplate(templateFunctionType, ((StaticArrayType*)type)->elementType);
     }
-    else return MatchTemplateResult::Viable;
+    else return MatchTemplateResult::Fail;
+}
+Type* StaticArrayType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return Create(elementType->substituteTemplate(templateFunctionType), sizeAsInt);
 }
 int StaticArrayType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::StaticArray) return -1;
@@ -1084,8 +1102,23 @@ bool DynamicArrayType::operator==(const Type& type) const {
     }
 }
 MatchTemplateResult DynamicArrayType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
-    if (kind == type->kind) return elementType->matchTemplate(templateFunctionType, ((DynamicArrayType*)type)->elementType);
-    else return MatchTemplateResult::Viable;
+    if (kind == type->kind) {
+        return elementType->matchTemplate(templateFunctionType, ((DynamicArrayType*)type)->elementType);
+    }
+    MatchTemplateResult matchResult = MatchTemplateResult::Fail;
+    if (type->kind == Type::Kind::ArrayView) {
+        auto matchResult = elementType->matchTemplate(templateFunctionType, ((ArrayViewType*)type)->elementType);
+    } else if (type->kind == Type::Kind::StaticArray) {
+        auto matchResult = elementType->matchTemplate(templateFunctionType, ((StaticArrayType*)type)->elementType);
+    }
+    if (matchResult == MatchTemplateResult::Perfect) {
+        return MatchTemplateResult::Viable;
+    } else {
+        return MatchTemplateResult::Fail;
+    }
+}
+Type* DynamicArrayType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return Create(elementType->substituteTemplate(templateFunctionType));
 }
 int DynamicArrayType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::DynamicArray) return -1;
@@ -2018,8 +2051,23 @@ bool ArrayViewType::operator==(const Type& type) const {
     }
 }
 MatchTemplateResult ArrayViewType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
-    if (kind == type->kind) return elementType->matchTemplate(templateFunctionType, ((ArrayViewType*)type)->elementType);
-    else return MatchTemplateResult::Viable;
+    if (kind == type->kind) {
+        return elementType->matchTemplate(templateFunctionType, ((ArrayViewType*)type)->elementType);
+    }
+    MatchTemplateResult matchResult = MatchTemplateResult::Fail;
+    if (type->kind == Type::Kind::DynamicArray) {
+        matchResult = elementType->matchTemplate(templateFunctionType, ((DynamicArrayType*)type)->elementType);
+    } else if (type->kind == Type::Kind::StaticArray) {
+        matchResult = elementType->matchTemplate(templateFunctionType, ((StaticArrayType*)type)->elementType);
+    }
+    if (matchResult == MatchTemplateResult::Perfect) {
+        return MatchTemplateResult::Viable;
+    } else {
+        return MatchTemplateResult::Fail;
+    }
+}
+Type* ArrayViewType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return Create(elementType->substituteTemplate(templateFunctionType));
 }
 int ArrayViewType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::ArrayView) return -1;
@@ -2233,6 +2281,12 @@ MatchTemplateResult ClassType::matchTemplate(TemplateFunctionType* templateFunct
     } else {
         return MatchTemplateResult::Viable;
     }
+}
+Type* ClassType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    auto classType = Create(name);
+    classType->declaration = declaration;
+    classType->templateTypes = templateTypes;
+    return classType;
 }
 int ClassType::sizeInBytes() {
     int sum = 0;
@@ -2484,6 +2538,14 @@ MatchTemplateResult FunctionType::matchTemplate(TemplateFunctionType* templateFu
         return MatchTemplateResult::Viable;
     }
 }
+Type* FunctionType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    auto funType = Create();
+    for (auto argType : argumentTypes) {
+        funType->argumentTypes.push_back(argType->substituteTemplate(templateFunctionType));
+    }
+    funType->returnType = returnType->substituteTemplate(templateFunctionType);
+    return funType;
+}
 int FunctionType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::Function) return -1;
     auto funType = (FunctionType*)type;
@@ -2722,6 +2784,9 @@ MatchTemplateResult IntegerType::matchTemplate(TemplateFunctionType* templateFun
     if (kind == type->kind && size == ((IntegerType*)type)->size) return MatchTemplateResult::Perfect;
     else return MatchTemplateResult::Viable;
 }
+Type* IntegerType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return this;
+}
 /*unique_ptr<Type> IntegerType::copy() {
     return make_unique<IntegerType>(size);
 }*/
@@ -2766,6 +2831,9 @@ bool FloatType::operator==(const Type& type) const {
 MatchTemplateResult FloatType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind && size == ((FloatType*)type)->size) return MatchTemplateResult::Perfect;
     else return MatchTemplateResult::Viable;
+}
+Type* FloatType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    return this;
 }
 Type* FloatType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(size);
@@ -2915,6 +2983,13 @@ MatchTemplateResult TemplateType::matchTemplate(TemplateFunctionType* templateFu
         }
     }
     return MatchTemplateResult::Fail;
+}
+Type* TemplateType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
+    for (int i = 0; i < templateFunctionType->templateTypes.size(); ++i) {
+        if (name == templateFunctionType->templateTypes[i]->name) {
+            return templateFunctionType->implementationTypes[i];
+        }
+    }
 }
 int TemplateType::compareTemplateDepth(Type* type) {
     if (type->kind == Type::Kind::Template) return 0;

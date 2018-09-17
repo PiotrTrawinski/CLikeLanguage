@@ -1664,6 +1664,7 @@ bool FunctionCallOperation::createTemplateFunctionCall(Scope* scope, Declaration
     type = ((FunctionType*)implementation->type)->returnType;
 }
 FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName) {
+    // try to perfect find perfect non-template function
     const auto& declarations = searchScope->declarationMap.getDeclarations(functionName);
     vector<Declaration*> viableDeclarations;
     vector<Declaration*> perfectMatches;
@@ -1693,6 +1694,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         function = perfectMatches.back()->value;
         idName = searchScope->declarationMap.getIdName(perfectMatches.back());
         type = ((FunctionType*)perfectMatches.back()->variable->type)->returnType;
+        return FindFunctionStatus::Success;
     } else if (perfectMatches.size() > 1) {
         string message = "ambogous function call. ";
         message += "Possible functions at lines: ";
@@ -1704,157 +1706,194 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         }
         errorMessageBool(message, position);
         return FindFunctionStatus::Error;
-    } else {
-        // no perfect non-template function. try to find perfect template function
-        for (const auto declaration : declarations) {
-            if (declaration->variable->type->kind != Type::Kind::TemplateFunction) {
-                continue;
+    }
+
+    // no perfect non-template function. try to find perfect template function
+    for (const auto declaration : declarations) {
+        if (declaration->variable->type->kind != Type::Kind::TemplateFunction) {
+            continue;
+        }
+        auto functionType = (TemplateFunctionType*)declaration->variable->type;
+        functionType->implementationTypes.clear();
+        functionType->implementationTypes.resize(functionType->templateTypes.size(), nullptr);
+        if (functionType->argumentTypes.size() == arguments.size()) {
+            bool allMatch = true;
+            bool fail = false;
+            for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
+                if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
+                    allMatch = false;
+                }
+                auto matchResult = functionType->argumentTypes[i]->getEffectiveType()->matchTemplate(functionType, arguments[i]->type->getEffectiveType());
+                if (matchResult == MatchTemplateResult::Viable) {
+                    allMatch = false;
+                } else if (matchResult == MatchTemplateResult::Fail) {
+                    allMatch = false;
+                    fail = true;
+                    break;
+                }
             }
-            auto functionType = (TemplateFunctionType*)declaration->variable->type;
-            functionType->implementationTypes.clear();
-            functionType->implementationTypes.resize(functionType->templateTypes.size(), nullptr);
-            if (functionType->argumentTypes.size() == arguments.size()) {
-                bool allMatch = true;
-                bool fail = false;
-                for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
-                    if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
-                        allMatch = false;
-                    }
-                    auto matchResult = functionType->argumentTypes[i]->getEffectiveType()->matchTemplate(functionType, arguments[i]->type->getEffectiveType());
-                    if (matchResult == MatchTemplateResult::Viable) {
-                        allMatch = false;
-                    } else if (matchResult == MatchTemplateResult::Fail) {
-                        fail = true;
+            for (auto implementationType : functionType->implementationTypes) {
+                if (!implementationType) fail = true;
+            }
+            if (allMatch) {
+                perfectMatches.push_back(declaration);
+            } else if (!fail) {
+                viableDeclarations.push_back(declaration);
+            }
+        }
+    }
+    if (perfectMatches.size() == 1) {
+        if (createTemplateFunctionCall(searchScope, perfectMatches.back())) {
+            return FindFunctionStatus::Success;
+        } else {
+            return FindFunctionStatus::Error;
+        }
+    } else if (perfectMatches.size() > 1) {
+        int minTemplateArgsCount = ((TemplateFunctionType*)perfectMatches[0]->variable->type)->templateTypes.size();
+        for (int i = 1; i < perfectMatches.size(); ++i) {
+            minTemplateArgsCount = min(minTemplateArgsCount, (int)((TemplateFunctionType*)perfectMatches[i]->variable->type)->templateTypes.size());
+        }
+        perfectMatches.erase(remove_if(perfectMatches.begin(), perfectMatches.end(), [&](Declaration* decl){
+            return ((TemplateFunctionType*)decl->variable->type)->templateTypes.size() > minTemplateArgsCount;
+        }), perfectMatches.end());
+        int argCount = ((TemplateFunctionType*)perfectMatches[0]->variable->type)->argumentTypes.size();
+        for (int i = perfectMatches.size() - 1; i >= 1; --i) {
+            int winner = 0;
+            auto funType1 = ((TemplateFunctionType*)perfectMatches[i]->variable->type);
+            auto funType2 = ((TemplateFunctionType*)perfectMatches[i-1]->variable->type);
+            for (int j = 0; j < argCount; ++j) {
+                auto cmpResult = funType1->argumentTypes[j]->getEffectiveType()->compareTemplateDepth(funType2->argumentTypes[j]->getEffectiveType());
+                if (cmpResult == -2) {
+                    winner = -2;
+                    break;
+                } else if (cmpResult == -1) {
+                    if (winner == 1) {
+                        winner = -2;
                         break;
                     }
+                    winner = -1;
+                } else if (cmpResult == 1) {
+                    if (winner == -1) {
+                        winner = -2;
+                        break;
+                    }
+                    winner = 1;
                 }
-                for (auto implementationType : functionType->implementationTypes) {
-                    if (!implementationType) fail = true;
-                }
-                if (allMatch) {
-                    perfectMatches.push_back(declaration);
-                } else if (!fail) {
-                    viableDeclarations.push_back(declaration);
-                }
+            }
+            if (winner == -1) {
+                perfectMatches.pop_back();
+            }
+            else if (winner == 1) {
+                perfectMatches.erase(perfectMatches.end()-2);
             }
         }
         if (perfectMatches.size() == 1) {
-            if (!createTemplateFunctionCall(searchScope, perfectMatches.back())) return FindFunctionStatus::Error;
-        } else if (perfectMatches.size() > 1) {
-            int minTemplateArgsCount = ((TemplateFunctionType*)perfectMatches[0]->variable->type)->templateTypes.size();
-            for (int i = 1; i < perfectMatches.size(); ++i) {
-                minTemplateArgsCount = min(minTemplateArgsCount, (int)((TemplateFunctionType*)perfectMatches[i]->variable->type)->templateTypes.size());
-            }
-            perfectMatches.erase(remove_if(perfectMatches.begin(), perfectMatches.end(), [&](Declaration* decl){
-                return ((TemplateFunctionType*)decl->variable->type)->templateTypes.size() > minTemplateArgsCount;
-            }), perfectMatches.end());
-            int argCount = ((TemplateFunctionType*)perfectMatches[0]->variable->type)->argumentTypes.size();
-            for (int i = perfectMatches.size() - 1; i >= 1; --i) {
-                int winner = 0;
-                auto funType1 = ((TemplateFunctionType*)perfectMatches[i]->variable->type);
-                auto funType2 = ((TemplateFunctionType*)perfectMatches[i-1]->variable->type);
-                for (int j = 0; j < argCount; ++j) {
-                    auto cmpResult = funType1->argumentTypes[j]->getEffectiveType()->compareTemplateDepth(funType2->argumentTypes[j]->getEffectiveType());
-                    if (cmpResult == -2) {
-                        winner = -2;
-                        break;
-                    } else if (cmpResult == -1) {
-                        if (winner == 1) {
-                            winner = -2;
-                            break;
-                        }
-                        winner = -1;
-                    } else if (cmpResult == 1) {
-                        if (winner == -1) {
-                            winner = -2;
-                            break;
-                        }
-                        winner = 1;
-                    }
-                }
-                if (winner == -1) {
-                    perfectMatches.pop_back();
-                }
-                else if (winner == 1) {
-                    perfectMatches.erase(perfectMatches.end()-2);
-                }
-            }
-            if (perfectMatches.size() == 1) {
-                if (!createTemplateFunctionCall(searchScope, perfectMatches.back())) return FindFunctionStatus::Error;
+            if (createTemplateFunctionCall(searchScope, perfectMatches.back())) {
+                return FindFunctionStatus::Success;
             } else {
-                string message = "ambogous function call. ";
-                message += "Possible functions at lines: ";
-                for (int i = 0; i < perfectMatches.size(); ++i) {
-                    message += to_string(perfectMatches[i]->position.lineNumber);
-                    if (i != perfectMatches.size() - 1) {
-                        message += ", ";
-                    }
-                }
-                errorMessageBool(message, position);
                 return FindFunctionStatus::Error;
             }
         } else {
-            vector<optional<vector<ConstructorOperation*>>> neededCtors;
-            for (Declaration* declaration : viableDeclarations) {
-                neededCtors.push_back(vector<ConstructorOperation*>());
-                auto argumentTypes = ((FunctionType*)declaration->variable->type)->argumentTypes;
-                for (int i = 0; i < argumentTypes.size(); ++i) {
-                    if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
-                        auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
-                        auto castInterpret = ctor->interpret(scope, true);
-                        if (castInterpret) {
-                            neededCtors.back().value().push_back(ctor);
-                        } else {
-                            neededCtors.back() = nullopt;
-                            break;
-                        }
-                    } else {
-                        neededCtors.back().value().push_back(nullptr);
-                    }
+            string message = "ambogous function call. ";
+            message += "Possible functions at lines: ";
+            for (int i = 0; i < perfectMatches.size(); ++i) {
+                message += to_string(perfectMatches[i]->position.lineNumber);
+                if (i != perfectMatches.size() - 1) {
+                    message += ", ";
                 }
             }
+            errorMessageBool(message, position);
+            return FindFunctionStatus::Error;
+        }
+    } 
 
-            int matchId = -1;
-            vector<Declaration*> possibleDeclarations;
-            for (int i = 0; i < neededCtors.size(); ++i) {
-                if (neededCtors[i]) {
-                    matchId = i;
-                    possibleDeclarations.push_back(viableDeclarations[i]);
-                }
+    // no perfect functions
+    vector<optional<vector<ConstructorOperation*>>> neededCtors;
+    for (Declaration* declaration : viableDeclarations) {
+        neededCtors.push_back(vector<ConstructorOperation*>());
+        vector<Type*> argumentTypes;
+        if (declaration->variable->type->kind == Type::Kind::Function) {
+            argumentTypes = ((FunctionType*)declaration->variable->type)->argumentTypes;
+        } else {
+            auto templateType = (TemplateFunctionType*)declaration->variable->type;
+            for (auto argType : templateType->argumentTypes) {
+                argumentTypes.push_back(argType->substituteTemplate(templateType));
             }
-
-            if (matchId == -1) {
-                return FindFunctionStatus::Fail;
-            } 
-            if (possibleDeclarations.size() > 1) {
-                string message = "ambogous function call. ";
-                message += "Possible functions at lines: ";
-                for (int i = 0; i < possibleDeclarations.size(); ++i) {
-                    message += to_string(possibleDeclarations[i]->position.lineNumber);
-                    if (i != possibleDeclarations.size() - 1) {
-                        message += ", ";
-                    }
+        }
+        for (int i = 0; i < argumentTypes.size(); ++i) {
+            if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
+                auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
+                auto castInterpret = ctor->interpret(scope, true);
+                if (castInterpret) {
+                    neededCtors.back().value().push_back(ctor);
+                } else {
+                    neededCtors.back() = nullopt;
+                    break;
                 }
-                errorMessageBool(message, position);
-                return FindFunctionStatus::Error;
+            } else {
+                neededCtors.back().value().push_back(nullptr);
             }
-
-            for (int i = 0; i < arguments.size(); ++i) {
-                auto ctor = neededCtors[matchId].value()[i];
-                if (ctor) {
-                    auto ctorInterpret = ctor->interpret(scope);
-                    if (ctorInterpret.value()) {
-                        arguments[i] = ctorInterpret.value();
-                    } else {
-                        arguments[i] = ctor;
-                    }
-                }
-            }
-            function = viableDeclarations[matchId]->value;
-            type = ((FunctionType*)viableDeclarations[matchId]->variable->type)->returnType;
-            idName = searchScope->declarationMap.getIdName(viableDeclarations[matchId]);
         }
     }
+
+    vector<pair<Declaration*, vector<ConstructorOperation*>>> possibleDeclarations;
+    for (int i = 0; i < neededCtors.size(); ++i) {
+        if (neededCtors[i]) {
+            possibleDeclarations.push_back({viableDeclarations[i], neededCtors[i].value()});
+        }
+    }
+
+    if (possibleDeclarations.empty()) {
+        return FindFunctionStatus::Fail;
+    } 
+    if (possibleDeclarations.size() > 1) {
+        int minTemplateArgsCount = INT_MAX;
+        for (int i = 0; i < possibleDeclarations.size(); ++i) {
+            if (possibleDeclarations[0].first->variable->type->kind == Type::Kind::Function) {
+                minTemplateArgsCount = 0;
+                break;
+            } else {
+                minTemplateArgsCount = min(minTemplateArgsCount, (int)((TemplateFunctionType*)possibleDeclarations[0].first->variable->type)->templateTypes.size());
+            }
+        }
+        possibleDeclarations.erase(remove_if(possibleDeclarations.begin(), possibleDeclarations.end(), [&](pair<Declaration*, vector<ConstructorOperation*>> decl){
+            return decl.first->variable->type->kind == Type::Kind::TemplateFunction && ((TemplateFunctionType*)decl.first->variable->type)->templateTypes.size() > minTemplateArgsCount;
+        }), possibleDeclarations.end());
+    }
+    if (possibleDeclarations.size() > 1) {
+        string message = "ambogous function call. ";
+        message += "Possible functions at lines: ";
+        for (int i = 0; i < possibleDeclarations.size(); ++i) {
+            message += to_string(possibleDeclarations[i].first->position.lineNumber);
+            if (i != possibleDeclarations.size() - 1) {
+                message += ", ";
+            }
+        }
+        errorMessageBool(message, position);
+        return FindFunctionStatus::Error;
+    }
+
+    for (int i = 0; i < arguments.size(); ++i) {
+        auto ctor = possibleDeclarations[0].second[i];
+        if (ctor) {
+            auto ctorInterpret = ctor->interpret(scope);
+            if (ctorInterpret.value()) {
+                arguments[i] = ctorInterpret.value();
+            } else {
+                arguments[i] = ctor;
+            }
+        }
+    }
+    if (possibleDeclarations[0].first->variable->type->kind == Type::Kind::Function) {
+        function = possibleDeclarations[0].first->value;
+        type = ((FunctionType*)possibleDeclarations[0].first->variable->type)->returnType;
+        idName = searchScope->declarationMap.getIdName(possibleDeclarations[0].first);
+    } else {
+        if (!createTemplateFunctionCall(searchScope, possibleDeclarations[0].first)) {
+            return FindFunctionStatus::Error;
+        }
+    }
+    
     return FindFunctionStatus::Success;
 }
 Type* stringToBasicType(const std::string& str) {
