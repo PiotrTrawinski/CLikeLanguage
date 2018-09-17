@@ -22,6 +22,8 @@ struct Value : Statement {
 
     Value(const CodePosition& position, ValueKind valueKind);
     static Value* Create(const CodePosition& position, ValueKind valueKind);
+    void templateCopy(Value* value, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     static bool isLvalue(Value* value);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
@@ -44,6 +46,8 @@ private:
 struct Variable : Value {
     Variable(const CodePosition& position, const std::string& name="");
     static Variable* Create(const CodePosition& position, const std::string& name="");
+    void templateCopy(Variable* value, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     bool interpretTypeAndDeclaration(Scope* scope);
     virtual bool operator==(const Statement& value) const;
@@ -63,6 +67,8 @@ private:
 struct IntegerValue : Value {
     IntegerValue(const CodePosition& position, uint64_t value);
     static IntegerValue* Create(const CodePosition& position, uint64_t value);
+    void templateCopy(IntegerValue* intValue, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -76,6 +82,8 @@ private:
 struct CharValue : Value {
     CharValue(const CodePosition& position, uint8_t value);
     static CharValue* Create(const CodePosition& position, uint8_t value);
+    void templateCopy(CharValue* charValue, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -89,6 +97,8 @@ private:
 struct FloatValue : Value {
     FloatValue(const CodePosition& position, double value);
     static FloatValue* Create(const CodePosition& position, double value);
+    void templateCopy(FloatValue* floatValue, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -102,6 +112,8 @@ private:
 struct BoolValue : Value {
     BoolValue(const CodePosition& position, bool value);
     static BoolValue* Create(const CodePosition& position, bool value);
+    void templateCopy(BoolValue* boolValue, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     llvm::Value* createLlvm(LlvmObject* llvmObj);
@@ -114,6 +126,8 @@ private:
 struct StringValue : Value {
     StringValue(const CodePosition& position, const std::string& value);
     static StringValue* Create(const CodePosition& position, const std::string& value);
+    void templateCopy(StringValue* stringValue, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -126,6 +140,8 @@ private:
 struct StaticArrayValue : Value {
     StaticArrayValue(const CodePosition& position);
     static StaticArrayValue* Create(const CodePosition& position);
+    void templateCopy(StaticArrayValue* staticValue, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -142,6 +158,8 @@ private:
 struct FunctionValue : Value {
     FunctionValue(const CodePosition& position, Type* type, Scope* parentScope);
     static FunctionValue* Create(const CodePosition& position, Type* type, Scope* parentScope);
+    void templateCopy(FunctionValue* value, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
@@ -160,6 +178,8 @@ private:
 struct NullValue : Value {
     NullValue(const CodePosition& position, Type* type);
     static NullValue* Create(const CodePosition& position, Type* type);
+    void templateCopy(NullValue* value, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     llvm::Value* createLlvm(LlvmObject* llvmObj);
 

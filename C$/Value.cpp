@@ -18,6 +18,21 @@ Value* Value::Create(const CodePosition& position, ValueKind valueKind) {
     objects.emplace_back(make_unique<Value>(position, valueKind));
     return objects.back().get();
 }
+void Value::templateCopy(Value* value, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    value->valueKind = valueKind;
+    if (type) {
+        value->type = type->templateCopy(parentScope, templateToType);
+    } else {
+        value->type = nullptr;
+    }
+    value->isConstexpr = isConstexpr;
+    Statement::templateCopy(value, parentScope, templateToType);
+}
+Statement* Value::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, valueKind);
+    templateCopy(value, parentScope, templateToType);
+    return value;
+}
 optional<Value*> Value::interpret(Scope* scope) {
     if (type && !type->interpret(scope)) {
         return nullopt;
@@ -62,6 +77,21 @@ vector<unique_ptr<Variable>> Variable::objects;
 Variable* Variable::Create(const CodePosition& position, const string& name) {
     objects.emplace_back(make_unique<Variable>(position, name));
     return objects.back().get();
+}
+void Variable::templateCopy(Variable* value, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto foundType = templateToType.find(name);
+    if (foundType != templateToType.end()) {
+        value->name = DeclarationMap::toString(foundType->second);
+    } else {
+        value->name = name;
+    }
+    value->isConst = isConst;
+    Value::templateCopy(value, parentScope, templateToType);
+}
+Statement* Variable::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, name);
+    templateCopy(value, parentScope, templateToType);
+    return value;
 }
 bool Value::isLvalue(Value* value) {
     if (value->type->kind == Type::Kind::Reference) {
@@ -129,7 +159,7 @@ optional<Value*> Variable::interpret(Scope* scope) {
         warningMessage("use of possibly unitialized variable " + name, position);
     }
 
-    if (type->kind != Type::Kind::Function && isConstexpr) {
+    if (type->kind != Type::Kind::Function && type->kind != Type::Kind::TemplateFunction && isConstexpr) {
         return declaration->value;
     }
 
@@ -181,6 +211,15 @@ IntegerValue* IntegerValue::Create(const CodePosition& position, uint64_t value)
     objects.emplace_back(make_unique<IntegerValue>(position, value));
     return objects.back().get();
 }
+void IntegerValue::templateCopy(IntegerValue* intValue, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    intValue->value = value;
+    Value::templateCopy(intValue, parentScope, templateToType);
+}
+Statement* IntegerValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto intValue = Create(position, value);
+    templateCopy(intValue, parentScope, templateToType);
+    return intValue;
+}
 optional<Value*> IntegerValue::interpret(Scope* scope) {
     isConstexpr = true;
     return nullptr;
@@ -218,6 +257,15 @@ vector<unique_ptr<CharValue>> CharValue::objects;
 CharValue* CharValue::Create(const CodePosition& position, uint8_t value) {
     objects.emplace_back(make_unique<CharValue>(position, value));
     return objects.back().get();
+}
+void CharValue::templateCopy(CharValue* charValue, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    charValue->value = value;
+    Value::templateCopy(charValue, parentScope, templateToType);
+}
+Statement* CharValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto charValue = Create(position, value);
+    templateCopy(charValue, parentScope, templateToType);
+    return charValue;
 }
 optional<Value*> CharValue::interpret(Scope* scope) {
     isConstexpr = true;
@@ -257,6 +305,15 @@ FloatValue* FloatValue::Create(const CodePosition& position, double value) {
     objects.emplace_back(make_unique<FloatValue>(position, value));
     return objects.back().get();
 }
+void FloatValue::templateCopy(FloatValue* floatValue, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    floatValue->value = value;
+    Value::templateCopy(floatValue, parentScope, templateToType);
+}
+Statement* FloatValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto floatValue = Create(position, value);
+    templateCopy(floatValue, parentScope, templateToType);
+    return floatValue;
+}
 optional<Value*> FloatValue::interpret(Scope* scope) {
     isConstexpr = true;
     return nullptr;
@@ -295,6 +352,15 @@ BoolValue* BoolValue::Create(const CodePosition& position, bool value) {
     objects.emplace_back(make_unique<BoolValue>(position, value));
     return objects.back().get();
 }
+void BoolValue::templateCopy(BoolValue* boolValue, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    boolValue->value = value;
+    Value::templateCopy(boolValue, parentScope, templateToType);
+}
+Statement* BoolValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto boolValue = Create(position, value);
+    templateCopy(boolValue, parentScope, templateToType);
+    return boolValue;
+}
 optional<Value*> BoolValue::interpret(Scope* scope) {
     return nullptr;
 }
@@ -327,6 +393,15 @@ vector<unique_ptr<StringValue>> StringValue::objects;
 StringValue* StringValue::Create(const CodePosition& position, const string& value) {
     objects.emplace_back(make_unique<StringValue>(position, value));
     return objects.back().get();
+}
+void StringValue::templateCopy(StringValue* stringValue, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    stringValue->value = value;
+    Value::templateCopy(stringValue, parentScope, templateToType);
+}
+Statement* StringValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto stringValue = Create(position, value);
+    templateCopy(stringValue, parentScope, templateToType);
+    return stringValue;
 }
 optional<Value*> StringValue::interpret(Scope* scope) {
     Value* staticArrayValue = StaticArrayValue::Create(position);
@@ -369,6 +444,17 @@ vector<unique_ptr<StaticArrayValue>> StaticArrayValue::objects;
 StaticArrayValue* StaticArrayValue::Create(const CodePosition& position) {
     objects.emplace_back(make_unique<StaticArrayValue>(position));
     return objects.back().get();
+}
+void StaticArrayValue::templateCopy(StaticArrayValue* staticValue, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    for (auto value : values) {
+        staticValue->values.push_back((Value*)value->templateCopy(parentScope, templateToType));
+    }
+    Value::templateCopy(staticValue, parentScope, templateToType);
+}
+Statement* StaticArrayValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position);
+    templateCopy(value, parentScope, templateToType);
+    return value;
 }
 optional<Value*> StaticArrayValue::interpret(Scope* scope) {
     if (wasInterpreted) {
@@ -544,6 +630,19 @@ FunctionValue* FunctionValue::Create(const CodePosition& position, Type* type, S
     objects.emplace_back(make_unique<FunctionValue>(position, type, parentScope));
     return objects.back().get();
 }
+void FunctionValue::templateCopy(FunctionValue* value, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    for (auto argument : arguments) {
+        value->arguments.push_back((Declaration*)argument->templateCopy(parentScope, templateToType));
+    }
+    value->body = (FunctionScope*)body->templateCopy(parentScope, templateToType);
+    value->body->function = value;
+    Value::templateCopy(value, parentScope, templateToType);
+}
+Statement* FunctionValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, nullptr, parentScope);
+    templateCopy(value, parentScope, templateToType);
+    return value;
+}
 optional<Value*> FunctionValue::interpret(Scope* scope) {
     if (type && !type->interpret(scope)) {
         return nullopt;
@@ -559,7 +658,7 @@ optional<Value*> FunctionValue::interpret(Scope* scope) {
         body->declarationsOrder.push_back(argument);
     }
     if (!body->interpret()) {
-        return nullptr;
+        return nullopt;
     }
     return nullptr;
 }
@@ -634,6 +733,14 @@ vector<unique_ptr<NullValue>> NullValue::objects;
 NullValue* NullValue::Create(const CodePosition& position, Type* type) {
     objects.emplace_back(make_unique<NullValue>(position, type));
     return objects.back().get();
+}
+void NullValue::templateCopy(NullValue* value, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    Value::templateCopy(value, parentScope, templateToType);
+}
+Statement* NullValue::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, nullptr);
+    templateCopy(value, parentScope, templateToType);
+    return value;
 }
 optional<Value*> NullValue::interpret(Scope* scope) {
     if (!type->interpret(scope)) {

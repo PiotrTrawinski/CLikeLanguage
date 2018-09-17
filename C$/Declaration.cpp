@@ -12,6 +12,22 @@ Declaration* Declaration::Create(const CodePosition& position) {
     objects.emplace_back(make_unique<Declaration>(position));
     return objects.back().get();
 }
+void Declaration::templateCopy(Declaration* declaration, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    declaration->isTemplateFunctionDeclaration = isTemplateFunctionDeclaration;
+    declaration->variable = (Variable*)variable->templateCopy(parentScope, templateToType);
+    if (value) {
+        declaration->value = (Value*)value->templateCopy(parentScope, templateToType);
+    } else {
+        declaration->value = nullptr;
+    }
+    declaration->byReference = byReference;
+    Statement::templateCopy(declaration, parentScope, templateToType);
+}
+Statement* Declaration::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto declaration = Create(position);
+    templateCopy(declaration, parentScope, templateToType);
+    return declaration;
+}
 
 bool Declaration::isFunctionDeclaration() {
     if (!value) {
