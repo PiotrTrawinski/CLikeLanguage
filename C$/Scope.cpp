@@ -299,6 +299,31 @@ bool Scope::addConstructorOperation(vector<Value*>& out, const vector<Token>& to
     out.push_back(constructorOp);
     return true;
 }
+optional<Value*> getInteger(const string& str, const CodePosition& position) {
+    uint64_t value;
+    bool isSigned = false;
+    if (str[0] == '-') {
+        isSigned = true;
+        try {
+            value = stoll(str);
+        }
+        catch (...) {
+            return errorMessageOpt("integer literal is too big (> max i64 value)", position);
+        }
+    } else {
+        try {
+            value = stoull(str);
+        }
+        catch (...) {
+            return errorMessageOpt("integer literal is too big (> max u64 value)", position);
+        }
+    }
+    auto intValue = IntegerValue::Create(position, value);
+    if (value > (uint64_t)numeric_limits<int64_t>::max()) {
+        intValue->type = IntegerType::Create(IntegerType::Size::U64);
+    }
+    return intValue;
+}
 optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& tokens, int& i, bool canBeFunction) {
     vector<Operation*> stack;
     vector<Value*> out;
@@ -318,15 +343,18 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
             return errorMessageOpt("unexpected end of file", tokens[i-1].codePosition);
         }
         switch (tokens[i].type) {
-        case Token::Type::Integer:
+        case Token::Type::Integer: {
             if (!expectValue) {
                 endOfExpression = true;
                 break;
             }
-            out.push_back(IntegerValue::Create(tokens[i].codePosition, stoi(tokens[i].value)));
+            auto getIntegerResult = getInteger(tokens[i].value, tokens[i].codePosition);
+            if (!getIntegerResult) return nullopt;
+            out.push_back(getIntegerResult.value());
             i += 1;
             expectValue = false;
             break;
+        }
         case Token::Type::Float:
             if (!expectValue) {
                 endOfExpression = true;
@@ -791,8 +819,20 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     addConstructorOperation(out, tokens, i);
                     expectValue = false;
                 } else if (tokens[i].value == "-") {
-                    appendOperator(stack, out, Operation::Kind::Minus, tokens[i++].codePosition);
-                    expectValue = true;
+                    if (i + 1 < tokens.size() && tokens[i + 1].type == Token::Type::Integer) {
+                        auto getIntegerResult = getInteger(tokens[i].value + tokens[i+1].value, tokens[i+1].codePosition);
+                        if (!getIntegerResult) return nullopt;
+                        out.push_back(getIntegerResult.value());
+                        i += 2;
+                        expectValue = false;
+                    } else if (i + 1 < tokens.size() && tokens[i + 1].type == Token::Type::Float) {
+                        out.push_back(FloatValue::Create(tokens[i+1].codePosition, stod(tokens[i].value+tokens[i+1].value)));
+                        i += 2;
+                        expectValue = false;
+                    } else {
+                        appendOperator(stack, out, Operation::Kind::Minus, tokens[i++].codePosition);
+                        expectValue = true;
+                    }
                 } else if (tokens[i].value == "!") {
                     appendOperator(stack, out, Operation::Kind::LogicalNot, tokens[i++].codePosition);
                     expectValue = true;
