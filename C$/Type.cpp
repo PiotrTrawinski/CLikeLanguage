@@ -119,6 +119,32 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
                     if (opInterpret.value()) return opInterpret.value();
                     else return op;
                 }
+                if (arguments[0]->type->kind == Type::Kind::MaybeError) {
+                    auto toVoidError = ConstructorOperation::Create(position, MaybeErrorType::Create(Type::Create(Type::Kind::Void)), {arguments[0]});
+                    auto toInt = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {toVoidError});
+                    auto op = Operation::Create(position, Operation::Kind::Neq);
+                    op->arguments.push_back(toInt);
+                    auto integerValue = IntegerValue::Create(position, 0);
+                    integerValue->type = IntegerType::Create(IntegerType::Size::I64);
+                    op->arguments.push_back(integerValue);
+                    auto opInterpret = op->interpret(scope);
+                    if (!opInterpret) return nullopt;
+                    if (opInterpret.value()) return opInterpret.value();
+                    else return op;
+                }
+                if (arguments[0]->type->kind == Type::Kind::RawPointer || arguments[0]->type->kind == Type::Kind::OwnerPointer) {
+                    auto toInt = CastOperation::Create(position, IntegerType::Create(IntegerType::Size::I64));
+                    toInt->arguments.push_back(arguments[0]);
+                    auto op = Operation::Create(position, Operation::Kind::Neq);
+                    op->arguments.push_back(toInt);
+                    auto integerValue = IntegerValue::Create(position, 0);
+                    integerValue->type = IntegerType::Create(IntegerType::Size::I64);
+                    op->arguments.push_back(integerValue);
+                    auto opInterpret = op->interpret(scope);
+                    if (!opInterpret) return nullopt;
+                    if (opInterpret.value()) return opInterpret.value();
+                    else return op;
+                }
             }
             if (!onlyTry) errorMessageOpt("no fitting bool constructor (bad argument type)", position);
             return nullopt;
