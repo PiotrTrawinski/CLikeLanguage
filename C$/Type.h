@@ -50,6 +50,7 @@ struct Type {
     static Type* Create(Kind kind);
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -93,6 +94,7 @@ struct OwnerPointerType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -120,6 +122,7 @@ struct RawPointerType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -141,6 +144,7 @@ struct MaybeErrorType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -177,6 +181,7 @@ struct ReferenceType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -199,6 +204,7 @@ struct StaticArrayType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -233,6 +239,7 @@ struct DynamicArrayType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -274,6 +281,7 @@ struct ArrayViewType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -303,6 +311,7 @@ struct ClassType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
@@ -334,6 +343,7 @@ struct FunctionType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -360,6 +370,7 @@ struct IntegerType : Type {
     int sizeInBytes();
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
@@ -380,6 +391,7 @@ struct FloatType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual int sizeInBytes();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
@@ -399,6 +411,7 @@ struct TemplateType : Type {
     
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
+    virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     //virtual std::unique_ptr<Type> copy();

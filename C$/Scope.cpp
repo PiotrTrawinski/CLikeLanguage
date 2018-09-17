@@ -2866,7 +2866,11 @@ IfScope* IfScope::Create(const CodePosition& position, Scope* parentScope) {
 }
 void IfScope::templateCopy(IfScope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     scope->conditionExpression = (Value*)conditionExpression->templateCopy(parentScope, templateToType);
-    scope->elseScope = (CodeScope*)elseScope->templateCopy(parentScope, templateToType);
+    if (elseScope) {
+        scope->elseScope = (CodeScope*)elseScope->templateCopy(parentScope, templateToType);
+    } else {
+        scope->elseScope = nullptr;
+    }
     CodeScope::templateCopy(scope, parentScope, templateToType);
 }
 Statement* IfScope::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
