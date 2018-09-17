@@ -38,22 +38,22 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                 }
                 tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo);
             }
-            else if (c == '\"') {
+            else if (c == '\`') {
                 string stringLiteral = "";
-                charId++; // skip opening " symbol
-                while (charId < lineStr.size() && lineStr[charId] != '\"') {
+                charId++; // skip opening ` symbol
+                while (charId < lineStr.size() && lineStr[charId] != '\`') {
                     stringLiteral += getCharacter(lineStr, charId);
                 }
-                charId++; // skip closing " symbol
+                charId++; // skip closing ` symbol
                 tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo);
             }
-            else if (c == '`') {
+            else if (c == '"') {
                 string rawStringLiteral = "";
-                charId++; // skip opening ` symbol
-                while (charId < lineStr.size() && lineStr[charId] != '`') {
+                charId++; // skip opening " symbol
+                while (charId < lineStr.size() && lineStr[charId] != '"') {
                     rawStringLiteral += getCharacter(lineStr, charId);
                 }
-                charId++; // skip closing ` symbol
+                charId++; // skip closing " symbol
                 tokens.emplace_back(Token::Type::RawStringLiteral, rawStringLiteral, lineNumber, charNumber, fileInfo);
             }
             else if (c == '\'') {
