@@ -1,4 +1,6 @@
 #include "Statement.h"
+#include "Type.h"
+#include "Scope.h"
 
 using namespace std;
 
@@ -23,4 +25,14 @@ bool Statement::operator==(const Statement& statement) const {
     } else {
         return false;
     }
+}
+void Statement::templateCopy(Statement* statement, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    statement->kind = kind;
+    statement->position = position;
+    statement->isReachable = isReachable;
+}
+Statement* Statement::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto statement = Create(position, kind);
+    statement->isReachable = isReachable;
+    return statement;
 }

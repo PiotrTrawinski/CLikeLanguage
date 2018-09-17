@@ -40,6 +40,8 @@ struct Operation : Value {
 
     Operation(const CodePosition& position, Kind kind);
     static Operation* Create(const CodePosition& position, Kind kind);
+    void templateCopy(Operation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
 
     static int priority(Kind kind);
     static bool isLeftAssociative(Kind kind);
@@ -230,6 +232,8 @@ private:
 struct CastOperation : Operation {
     CastOperation(const CodePosition& position, Type* argType);
     static CastOperation* Create(const CodePosition& position, Type* argType);
+    void templateCopy(CastOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -245,6 +249,8 @@ private:
 struct ArrayIndexOperation : Operation {
     ArrayIndexOperation(const CodePosition& position, Value* index);
     static ArrayIndexOperation* Create(const CodePosition& position, Value* index);
+    void templateCopy(ArrayIndexOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -267,6 +273,8 @@ private:
 struct ArraySubArrayOperation : Operation {
     ArraySubArrayOperation(const CodePosition& position, Value* firstIndex, Value* secondIndex);
     static ArraySubArrayOperation* Create(const CodePosition& position, Value* firstIndex, Value* secondIndex);
+    void templateCopy(ArraySubArrayOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -283,6 +291,8 @@ private:
 struct FunctionCallOperation : Operation {
     FunctionCallOperation(const CodePosition& position);
     static FunctionCallOperation* Create(const CodePosition& position);
+    void templateCopy(FunctionCallOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -301,12 +311,15 @@ private:
         Fail, Success, Error
     };
     FindFunctionStatus findFunction(Scope* scope, Scope* searchScope, std::string functionName);
+    bool createTemplateFunctionCall(Scope* scope, Declaration* declaration);
 
     static std::vector<std::unique_ptr<FunctionCallOperation>> objects;
 };
 struct TemplateFunctionCallOperation : FunctionCallOperation {
     TemplateFunctionCallOperation(const CodePosition& position);
     static TemplateFunctionCallOperation* Create(const CodePosition& position);
+    void templateCopy(TemplateFunctionCallOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
@@ -319,6 +332,8 @@ private:
 struct FlowOperation : Operation {
     FlowOperation(const CodePosition& position, Kind kind);
     static FlowOperation* Create(const CodePosition& position, Kind kind);
+    void templateCopy(FlowOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
 
@@ -334,6 +349,8 @@ private:
 struct ErrorResolveOperation : Operation {
     ErrorResolveOperation(const CodePosition& position);
     static ErrorResolveOperation* Create(const CodePosition& position);
+    void templateCopy(ErrorResolveOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     virtual void createAllocaLlvmIfNeeded(LlvmObject* llvmObj);
@@ -358,6 +375,8 @@ private:
 struct SizeofOperation : Operation {
     SizeofOperation(const CodePosition& position);
     static SizeofOperation* Create(const CodePosition& position);
+    void templateCopy(SizeofOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
 
@@ -376,6 +395,8 @@ void createLlvmConditional(LlvmObject* llvmObj, llvm::Value* condition, std::fun
 struct ConstructorOperation : Operation {
     ConstructorOperation(const CodePosition& position, Type* constructorType, std::vector<Value*> arguments={}, bool isHeapAllocation=false, bool isExplicit=false);
     static ConstructorOperation* Create(const CodePosition& position, Type* constructorType, std::vector<Value*> arguments={}, bool isHeapAllocation=false, bool isExplicit=false);
+    void templateCopy(ConstructorOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     std::optional<Value*> interpret(Scope* scope, bool onlyTry, bool parentIsAssignment=false);
     void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef);
@@ -397,6 +418,8 @@ private:
 struct AssignOperation : Operation {
     AssignOperation(const CodePosition& position);
     static AssignOperation* Create(const CodePosition& position);
+    void templateCopy(AssignOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
@@ -411,6 +434,8 @@ private:
 struct DotOperation : Operation {
     DotOperation(const CodePosition& position);
     static DotOperation* Create(const CodePosition& position);
+    void templateCopy(DotOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);

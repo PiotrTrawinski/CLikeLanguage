@@ -20,6 +20,11 @@ Scope::Scope(const CodePosition& position, Owner owner, Scope* parentScope) :
     id = ID_COUNT;
     ID_COUNT += 1;
 }
+void Scope::templateCopy(Scope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    scope->owner = owner;
+    scope->parentScope = parentScope;
+    Statement::templateCopy(scope, parentScope, templateToType);
+}
 bool Scope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const Scope&>(scope);
@@ -1379,6 +1384,18 @@ CodeScope* CodeScope::Create(const CodePosition& position, Scope::Owner owner, S
     objects.emplace_back(make_unique<CodeScope>(position, owner, parentScope, isGlobalScope));
     return objects.back().get();
 }
+void CodeScope::templateCopy(CodeScope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    scope->isGlobalScope = isGlobalScope;
+    for (auto statement : statements) {
+        scope->statements.push_back(statement->templateCopy(scope, templateToType));
+    }
+    Scope::templateCopy(scope, parentScope, templateToType);
+}
+Statement* CodeScope::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, owner, parentScope);
+    templateCopy(value, parentScope, templateToType);
+    return value;
+}
 bool CodeScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const CodeScope&>(scope);
@@ -1438,6 +1455,9 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
                 }
                 declaration->variable->type = declaration->value->type;
                 declaration->variable->isConstexpr = true;
+                if (declaration->value->type->kind == Type::Kind::TemplateFunction) {
+                    declaration->isTemplateFunctionDeclaration = true;
+                }
             }
         }
     }
@@ -1446,6 +1466,7 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
         switch (statement->kind) {
         case Statement::Kind::Declaration: {
             Declaration* declaration = (Declaration*)statement;
+            if (declaration->isTemplateFunctionDeclaration) break;
             if (!declaration->interpret(this)) {
                 wereErrors = true;
                 break;
@@ -1825,6 +1846,17 @@ ClassScope* ClassScope::Create(const CodePosition& position, Scope* parentScope)
     objects.emplace_back(make_unique<ClassScope>(position, parentScope));
     return objects.back().get();
 }
+void ClassScope::templateCopy(ClassScope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    for (auto declaration : declarations) {
+        scope->declarations.push_back((Declaration*)declaration->templateCopy(scope, templateToType));
+    }
+    Scope::templateCopy(scope, parentScope, templateToType);
+}
+Statement* ClassScope::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, parentScope);
+    templateCopy(value, parentScope, templateToType);
+    return value;
+}
 bool ClassScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const ClassScope&>(scope);
@@ -2080,6 +2112,14 @@ FunctionScope* FunctionScope::Create(const CodePosition& position, Scope* parent
     objects.emplace_back(make_unique<FunctionScope>(position, parentScope, function));
     return objects.back().get();
 }
+void FunctionScope::templateCopy(FunctionScope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    CodeScope::templateCopy(scope, parentScope, templateToType);
+}
+Statement* FunctionScope::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, parentScope, nullptr);
+    templateCopy(value, parentScope, templateToType);
+    return value;
+}
 unordered_set<Declaration*> FunctionScope::getUninitializedDeclarations() {
     return parentMaybeUninitializedDeclarations;
 }
@@ -2141,6 +2181,36 @@ vector<unique_ptr<ForScope>> ForScope::objects;
 ForScope* ForScope::Create(const CodePosition& position, Scope* parentScope) {
     objects.emplace_back(make_unique<ForScope>(position, parentScope));
     return objects.back().get();
+}
+void ForScope::templateCopy(ForScope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    if (holds_alternative<ForIterData>(data)) {
+        auto& forIterData = get<ForIterData>(data);
+        ForIterData thisData;
+        thisData.iterVariable = (Variable*)forIterData.iterVariable->templateCopy(scope, templateToType);
+        thisData.firstValue = (Value*)forIterData.firstValue->templateCopy(scope, templateToType);
+        thisData.step = (Value*)forIterData.step->templateCopy(scope, templateToType);
+        thisData.lastValue = (Value*)forIterData.lastValue->templateCopy(scope, templateToType);
+        thisData.iterDeclaration = nullptr;
+        thisData.stepOperation = nullptr;
+        thisData.conditionOperation = nullptr;
+        scope->data = thisData;
+    } else {
+        auto& forEachData = get<ForEachData>(data);
+        ForEachData thisData;
+        thisData.arrayValue = (Value*)forEachData.arrayValue->templateCopy(scope, templateToType);
+        thisData.it = (Variable*)forEachData.it->templateCopy(scope, templateToType);
+        thisData.index = (Variable*)forEachData.index->templateCopy(scope, templateToType);
+        thisData.itDeclaration = nullptr;
+        thisData.indexDeclaration = nullptr;
+        scope->data = thisData;
+    }
+    scope->loopForward = loopForward;
+    CodeScope::templateCopy(scope, parentScope, templateToType);
+}
+Statement* ForScope::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, parentScope);
+    templateCopy(value, parentScope, templateToType);
+    return value;
 }
 bool ForScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
@@ -2692,6 +2762,15 @@ WhileScope* WhileScope::Create(const CodePosition& position, Scope* parentScope)
     objects.emplace_back(make_unique<WhileScope>(position, parentScope));
     return objects.back().get();
 }
+void WhileScope::templateCopy(WhileScope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    scope->conditionExpression = (Value*)conditionExpression->templateCopy(parentScope, templateToType);
+    CodeScope::templateCopy(scope, parentScope, templateToType);
+}
+Statement* WhileScope::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, parentScope);
+    templateCopy(value, parentScope, templateToType);
+    return value;
+}
 bool WhileScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){
         const auto& other = static_cast<const WhileScope&>(scope);
@@ -2784,6 +2863,16 @@ vector<unique_ptr<IfScope>> IfScope::objects;
 IfScope* IfScope::Create(const CodePosition& position, Scope* parentScope) {
     objects.emplace_back(make_unique<IfScope>(position, parentScope));
     return objects.back().get();
+}
+void IfScope::templateCopy(IfScope* scope, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    scope->conditionExpression = (Value*)conditionExpression->templateCopy(parentScope, templateToType);
+    scope->elseScope = (CodeScope*)elseScope->templateCopy(parentScope, templateToType);
+    CodeScope::templateCopy(scope, parentScope, templateToType);
+}
+Statement* IfScope::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, parentScope);
+    templateCopy(value, parentScope, templateToType);
+    return value;
 }
 bool IfScope::operator==(const Statement& scope) const {
     if(typeid(scope) == typeid(*this)){

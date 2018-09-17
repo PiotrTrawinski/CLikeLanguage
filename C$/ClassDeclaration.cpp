@@ -14,6 +14,19 @@ ClassDeclaration* ClassDeclaration::Create(const CodePosition& position, string 
     objects.emplace_back(make_unique<ClassDeclaration>(position, name));
     return objects.back().get();
 }
+void ClassDeclaration::templateCopy(ClassDeclaration* classDeclaration, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    classDeclaration->name = name;
+    classDeclaration->body = (ClassScope*)body->templateCopy(parentScope, templateToType);
+    for (auto templateType : templateTypes) {
+        classDeclaration->templateTypes.push_back(templateType->templateCopy(parentScope, templateToType));
+    }
+    Statement::templateCopy(classDeclaration, parentScope, templateToType);
+}
+Statement* ClassDeclaration::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto classDeclaration = Create(position, name);
+    templateCopy(classDeclaration, parentScope, templateToType);
+    return classDeclaration;
+}
 bool ClassDeclaration::interpret() {
     if (status == Status::Evaluated) {
         return true;

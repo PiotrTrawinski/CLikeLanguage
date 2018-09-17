@@ -16,6 +16,9 @@ Type* Type::Create(Kind kind) {
     objects.emplace_back(make_unique<Type>(kind));
     return objects.back().get();
 }
+Type* Type::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    return this;
+}
 bool Type::interpret(Scope* scope, bool needFullDeclaration) {
     return true;
 }
@@ -27,6 +30,16 @@ bool Type::operator==(const Type& type) const {
     else {
         return false;
     }
+}
+MatchTemplateResult Type::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind) return MatchTemplateResult::Perfect;
+    else return MatchTemplateResult::Viable;
+}
+int Type::compareTemplateDepth(Type* type) {
+    return 0;
+}
+Type* Type::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(kind);
 }
 Type* Type::getEffectiveType() {
     return this;
@@ -78,7 +91,6 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
                 case Value::ValueKind::Integer:     return BoolValue::Create(position, ((IntegerValue*)arguments[0])->value != 0);
                 case Value::ValueKind::Float:       return BoolValue::Create(position, ((FloatValue*)arguments[0])->value != 0);
                 case Value::ValueKind::String:      return BoolValue::Create(position, ((StringValue*)arguments[0])->value.size() != 0);
-                case Value::ValueKind::StaticArray: return BoolValue::Create(position, ((StaticArrayValue*)arguments[0])->values.size() != 0);
                 }
             } 
             if (arguments[0]->type->getEffectiveType()->kind != Type::Kind::Class) {
@@ -226,6 +238,13 @@ OwnerPointerType* OwnerPointerType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<OwnerPointerType>(underlyingType));
     return objects.back().get();
 }
+Type* OwnerPointerType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    underlyingType = underlyingType->changeClassToTemplate(templateTypes);
+    return this;
+}
+Type* OwnerPointerType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(underlyingType->templateCopy(parentScope, templateToType));
+}
 bool OwnerPointerType::interpret(Scope* scope, bool needFullDeclaration) {
     return underlyingType->interpret(scope, false);
 }
@@ -236,6 +255,14 @@ bool OwnerPointerType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult OwnerPointerType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((OwnerPointerType*)type)->underlyingType);
+    else return MatchTemplateResult::Viable;
+}
+int OwnerPointerType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::OwnerPointer) return -1;
+    return underlyingType->compareTemplateDepth(((OwnerPointerType*)type)->underlyingType);
 }
 int OwnerPointerType::sizeInBytes() {
     return 8;
@@ -382,6 +409,13 @@ RawPointerType* RawPointerType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<RawPointerType>(underlyingType));
     return objects.back().get();
 }
+Type* RawPointerType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    underlyingType = underlyingType->changeClassToTemplate(templateTypes);
+    return this;
+}
+Type* RawPointerType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(underlyingType->templateCopy(parentScope, templateToType));
+}
 bool RawPointerType::interpret(Scope* scope, bool needFullDeclaration) {
     return underlyingType->interpret(scope, false);
 }
@@ -392,6 +426,14 @@ bool RawPointerType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult RawPointerType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((RawPointerType*)type)->underlyingType);
+    else return MatchTemplateResult::Viable;
+}
+int RawPointerType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::RawPointer) return -1;
+    return underlyingType->compareTemplateDepth(((RawPointerType*)type)->underlyingType);
 }
 int RawPointerType::sizeInBytes() {
     return 8;
@@ -452,8 +494,15 @@ MaybeErrorType* MaybeErrorType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<MaybeErrorType>(underlyingType));
     return objects.back().get();
 }
+Type* MaybeErrorType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    underlyingType = underlyingType->changeClassToTemplate(templateTypes);
+    return this;
+}
 bool MaybeErrorType::interpret(Scope* scope, bool needFullDeclaration) {
     return underlyingType->interpret(scope, needFullDeclaration);
+}
+Type* MaybeErrorType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(underlyingType->templateCopy(parentScope, templateToType));
 }
 bool MaybeErrorType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -462,6 +511,14 @@ bool MaybeErrorType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult MaybeErrorType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((MaybeErrorType*)type)->underlyingType);
+    else return MatchTemplateResult::Viable;
+}
+int MaybeErrorType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::MaybeError) return -1;
+    return underlyingType->compareTemplateDepth(((MaybeErrorType*)type)->underlyingType);
 }
 int MaybeErrorType::sizeInBytes() {
     return underlyingType->sizeInBytes() + 8;
@@ -751,6 +808,13 @@ ReferenceType* ReferenceType::Create(Type* underlyingType) {
     objects.emplace_back(make_unique<ReferenceType>(underlyingType));
     return objects.back().get();
 }
+Type* ReferenceType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    underlyingType = underlyingType->changeClassToTemplate(templateTypes);
+    return this;
+}
+Type* ReferenceType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(underlyingType->templateCopy(parentScope, templateToType));
+}
 bool ReferenceType::interpret(Scope* scope, bool needFullDeclaration) {
     return underlyingType->interpret(scope, false);
 }
@@ -761,6 +825,14 @@ bool ReferenceType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult ReferenceType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((ReferenceType*)type)->underlyingType);
+    else return MatchTemplateResult::Viable;
+}
+int ReferenceType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::Reference) return -1;
+    return underlyingType->compareTemplateDepth(((ReferenceType*)type)->underlyingType);
 }
 Type* ReferenceType::getEffectiveType() {
     return underlyingType->getEffectiveType();
@@ -819,6 +891,13 @@ StaticArrayType* StaticArrayType::Create(Type* elementType, int64_t sizeAsInt) {
     objects.emplace_back(make_unique<StaticArrayType>(elementType, sizeAsInt));
     return objects.back().get();
 }
+Type* StaticArrayType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    elementType = elementType->changeClassToTemplate(templateTypes);
+    return this;
+}
+Type* StaticArrayType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(elementType->templateCopy(parentScope, templateToType), (Value*)size->templateCopy(parentScope, templateToType));
+}
 bool StaticArrayType::interpret(Scope* scope, bool needFullDeclaration) {
     if (size) {
         auto sizeInterpret = size->interpret(scope);
@@ -843,6 +922,16 @@ bool StaticArrayType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult StaticArrayType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind && sizeAsInt == ((StaticArrayType*)type)->sizeAsInt) {
+        return elementType->matchTemplate(templateFunctionType, ((StaticArrayType*)type)->elementType);
+    }
+    else return MatchTemplateResult::Viable;
+}
+int StaticArrayType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::StaticArray) return -1;
+    return elementType->compareTemplateDepth(((StaticArrayType*)type)->elementType);
 }
 int StaticArrayType::sizeInBytes() {
     return sizeAsInt * elementType->sizeInBytes();
@@ -976,6 +1065,13 @@ DynamicArrayType* DynamicArrayType::Create(Type* elementType) {
     objects.emplace_back(make_unique<DynamicArrayType>(elementType));
     return objects.back().get();
 }
+Type* DynamicArrayType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    elementType = elementType->changeClassToTemplate(templateTypes);
+    return this;
+}
+Type* DynamicArrayType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(elementType->templateCopy(parentScope, templateToType));
+}
 bool DynamicArrayType::interpret(Scope* scope, bool needFullDeclaration) {
     return elementType ? elementType->interpret(scope, false) : true;
 }
@@ -986,6 +1082,14 @@ bool DynamicArrayType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult DynamicArrayType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind) return elementType->matchTemplate(templateFunctionType, ((DynamicArrayType*)type)->elementType);
+    else return MatchTemplateResult::Viable;
+}
+int DynamicArrayType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::DynamicArray) return -1;
+    return elementType->compareTemplateDepth(((DynamicArrayType*)type)->elementType);
 }
 int DynamicArrayType::sizeInBytes() {
     return 24;
@@ -1895,6 +1999,13 @@ ArrayViewType* ArrayViewType::Create(Type* elementType) {
     objects.emplace_back(make_unique<ArrayViewType>(elementType));
     return objects.back().get();
 }
+Type* ArrayViewType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    elementType = elementType->changeClassToTemplate(templateTypes);
+    return this;
+}
+Type* ArrayViewType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(elementType->templateCopy(parentScope, templateToType));
+}
 bool ArrayViewType::interpret(Scope* scope, bool needFullDeclaration) {
     return elementType ? elementType->interpret(scope, false) : true;
 }
@@ -1905,6 +2016,14 @@ bool ArrayViewType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult ArrayViewType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind) return elementType->matchTemplate(templateFunctionType, ((ArrayViewType*)type)->elementType);
+    else return MatchTemplateResult::Viable;
+}
+int ArrayViewType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::ArrayView) return -1;
+    return elementType->compareTemplateDepth(((ArrayViewType*)type)->elementType);
 }
 int ArrayViewType::sizeInBytes() {
     return 16;
@@ -2067,6 +2186,24 @@ ClassType* ClassType::Create(const string& name) {
     objects.emplace_back(make_unique<ClassType>(name));
     return objects.back().get();
 }
+Type* ClassType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    for (auto templateType : templateTypes) {
+        if (name == templateType->name) {
+            return templateType;
+        }
+    }
+    return this;
+}
+Type* ClassType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto foundType = templateToType.find(name);
+    if (foundType != templateToType.end()) {
+        return foundType->second;
+    } else {
+        auto classType = Create(name);
+        classType->templateTypes = templateTypes;
+        return classType;
+    }
+}
 bool ClassType::interpret(Scope* scope, bool needFullDeclaration) {
     declaration = scope->classDeclarationMap.getDeclaration(name);
     if (!declaration && scope->parentScope) {
@@ -2086,6 +2223,15 @@ bool ClassType::operator==(const Type& type) const {
             && this->templateTypes == other.templateTypes;
     } else {
         return false;
+    }
+}
+MatchTemplateResult ClassType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind != type->kind) return MatchTemplateResult::Viable;
+    auto classType = (ClassType*)type;
+    if (declaration == classType->declaration && templateTypes == classType->templateTypes) {
+        return MatchTemplateResult::Perfect;
+    } else {
+        return MatchTemplateResult::Viable;
     }
 }
 int ClassType::sizeInBytes() {
@@ -2113,9 +2259,10 @@ optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodeP
         if (arguments.size() == 0) {
             return InterpretConstructorResult(nullptr, declaration->body->inlineConstructors);
         } else {
-            return errorMessageOpt("only default (0 argument) constructor exists, got "
+            if (!onlyTry) errorMessageOpt("only default (0 argument) constructor exists, got "
                 + to_string(arguments.size()) + " arguments", position
             );
+            return nullopt;
         }
     } else {
         vector<FunctionValue*> viableDeclarations;
@@ -2150,7 +2297,8 @@ optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodeP
                     message += ", ";
                 }
             }
-            return errorMessageOpt(message, position);
+            if(!onlyTry) errorMessageOpt(message, position);
+            return nullopt;
         } else {
             vector<optional<vector<ConstructorOperation*>>> neededCtors;
             for (auto function : viableDeclarations) {
@@ -2185,7 +2333,8 @@ optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodeP
                 if (arguments.size() == 1 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
                     return InterpretConstructorResult(nullptr, declaration->body->copyConstructor);
                 } else {
-                    return errorMessageOpt("no fitting constructor to call", position);
+                    if (!onlyTry) return errorMessageOpt("no fitting constructor to call", position);
+                    return nullopt;
                 }
             } 
             if (possibleFunctions.size() > 1) {
@@ -2197,7 +2346,8 @@ optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodeP
                         message += ", ";
                     }
                 }
-                return errorMessageOpt(message, position);
+                if (!onlyTry) return errorMessageOpt(message, position);
+                return nullopt;
             }
 
             for (int i = 0; i < arguments.size(); ++i) {
@@ -2283,6 +2433,21 @@ FunctionType* FunctionType::Create() {
     objects.emplace_back(make_unique<FunctionType>());
     return objects.back().get();
 }
+Type* FunctionType::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
+    for (auto& argumentType : argumentTypes) {
+        argumentType = argumentType->changeClassToTemplate(templateTypes);
+    }
+    returnType = returnType->changeClassToTemplate(templateTypes);
+    return this;
+}
+Type* FunctionType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto funType = Create();
+    for (auto argumentType : argumentTypes) {
+        funType->argumentTypes.push_back(argumentType->templateCopy(parentScope, templateToType));
+    }
+    funType->returnType = returnType->templateCopy(parentScope, templateToType);
+    return funType;
+}
 bool FunctionType::interpret(Scope* scope, bool needFullDeclaration) {
     for (auto* argumentType : argumentTypes) {
         if (!argumentType->interpret(scope, false)) {
@@ -2298,6 +2463,61 @@ bool FunctionType::operator==(const Type& type) const {
             && cmpPtr(this->returnType, other.returnType);
     } else {
         return false;
+    }
+}
+MatchTemplateResult FunctionType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind != type->kind) return MatchTemplateResult::Viable;
+    auto funType = (FunctionType*)type;
+    if (argumentTypes.size() != funType->argumentTypes.size()) return MatchTemplateResult::Viable;
+    bool isPerfect = true;
+    for (int i = 0; i < argumentTypes.size(); ++i) {
+        auto matchArgResult = argumentTypes[i]->matchTemplate(templateFunctionType, funType->argumentTypes[i]);
+        if (matchArgResult == MatchTemplateResult::Fail) return MatchTemplateResult::Fail;
+        if (matchArgResult == MatchTemplateResult::Viable) isPerfect = false;
+    }
+    auto matchReturnResult = returnType->matchTemplate(templateFunctionType, funType->returnType);
+    if (matchReturnResult == MatchTemplateResult::Fail) return MatchTemplateResult::Fail;
+    if (matchReturnResult == MatchTemplateResult::Viable) isPerfect = false;
+    if (isPerfect) {
+        return MatchTemplateResult::Perfect;
+    } else {
+        return MatchTemplateResult::Viable;
+    }
+}
+int FunctionType::compareTemplateDepth(Type* type) {
+    if (type->kind != Type::Kind::Function) return -1;
+    auto funType = (FunctionType*)type;
+    int winner = 0;
+    for (int i = 0; i < argumentTypes.size(); ++i) {
+        int cmpResult = argumentTypes[i]->compareTemplateDepth(funType->argumentTypes[i]);
+        if (cmpResult == -2) {
+            winner = -2;
+            break;
+        } else if (cmpResult == -1) {
+            if (winner == 1) {
+                winner = -2;
+                break;
+            }
+            winner = -1;
+        } else if (cmpResult == 1) {
+            if (winner == -1) {
+                winner = -2;
+                break;
+            }
+            winner = 1;
+        }
+    }
+    if (winner == -2) return -2;
+    int cmpResult = returnType->compareTemplateDepth(funType->returnType);
+    if (cmpResult == -2) return -2;
+    else if (cmpResult == -1) {
+        if (winner == 1) return -2;
+        else return -1;
+    } else if (cmpResult == 1) {
+        if (winner == -1) return -2;
+        else return 1;
+    } else {
+        return 0;
     }
 }
 int FunctionType::sizeInBytes() {
@@ -2359,6 +2579,9 @@ vector<unique_ptr<IntegerType>> IntegerType::objects;
 IntegerType* IntegerType::Create(Size size) {
     objects.emplace_back(make_unique<IntegerType>(size));
     return objects.back().get();
+}
+Type* IntegerType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(size);
 }
 bool IntegerType::isSigned() {
     switch (size) {
@@ -2495,6 +2718,10 @@ bool IntegerType::operator==(const Type& type) const {
         return false;
     }
 }
+MatchTemplateResult IntegerType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind && size == ((IntegerType*)type)->size) return MatchTemplateResult::Perfect;
+    else return MatchTemplateResult::Viable;
+}
 /*unique_ptr<Type> IntegerType::copy() {
     return make_unique<IntegerType>(size);
 }*/
@@ -2535,6 +2762,13 @@ bool FloatType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+MatchTemplateResult FloatType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    if (kind == type->kind && size == ((FloatType*)type)->size) return MatchTemplateResult::Perfect;
+    else return MatchTemplateResult::Viable;
+}
+Type* FloatType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    return Create(size);
 }
 int FloatType::sizeInBytes() {
     switch (size) {
@@ -2665,6 +2899,35 @@ bool TemplateType::operator==(const Type& type) const {
         return false;
     }
 }
+MatchTemplateResult TemplateType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
+    for (int i = 0; i < templateFunctionType->templateTypes.size(); ++i) {
+        if (name == templateFunctionType->templateTypes[i]->name) {
+            if (templateFunctionType->implementationTypes[i]) {
+                if (cmpPtr(templateFunctionType->implementationTypes[i], type)) {
+                    return MatchTemplateResult::Perfect;
+                } else {
+                    return MatchTemplateResult::Fail;
+                }
+            } else {
+                templateFunctionType->implementationTypes[i] = type;
+                return MatchTemplateResult::Perfect;
+            }
+        }
+    }
+    return MatchTemplateResult::Fail;
+}
+int TemplateType::compareTemplateDepth(Type* type) {
+    if (type->kind == Type::Kind::Template) return 0;
+    return 1;
+}
+Type* TemplateType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto foundType = templateToType.find(name);
+    if (foundType != templateToType.end()) {
+        return foundType->second;
+    } else {
+        return Create(name);
+    }
+}
 /*unique_ptr<Type> TemplateType::copy() {
     return make_unique<TemplateType>(name);
 }*/
@@ -2680,6 +2943,27 @@ vector<unique_ptr<TemplateFunctionType>> TemplateFunctionType::objects;
 TemplateFunctionType* TemplateFunctionType::Create() {
     objects.emplace_back(make_unique<TemplateFunctionType>());
     return objects.back().get();
+}
+Type* TemplateFunctionType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto funType = Create();
+    for (auto argumentType : argumentTypes) {
+        funType->argumentTypes.push_back(argumentType->templateCopy(parentScope, templateToType));
+    }
+    for (auto templateType : templateTypes) {
+        funType->templateTypes.push_back(TemplateType::Create(templateType->name));
+    }
+    funType->returnType = returnType->templateCopy(parentScope, templateToType);
+    return funType;
+}
+bool TemplateFunctionType::interpret(Scope* scope, bool needFullDeclaration) {
+    for (auto& argumentType : argumentTypes) {
+        argumentType = argumentType->changeClassToTemplate(templateTypes);
+        if (!argumentType->interpret(scope, false)) {
+            return false;
+        }
+    }
+    returnType = returnType->changeClassToTemplate(templateTypes);
+    return returnType->interpret(scope, false);
 }
 bool TemplateFunctionType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){

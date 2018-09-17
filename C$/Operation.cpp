@@ -150,6 +150,18 @@ Operation* Operation::Create(const CodePosition& position, Kind kind) {
     objects.emplace_back(make_unique<Operation>(position, kind));
     return objects.back().get();
 }
+void Operation::templateCopy(Operation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->kind = kind;
+    for (auto arg : arguments) {
+        operation->arguments.push_back((Value*)arg->templateCopy(parentScope, templateToType));
+    }
+    Value::templateCopy(operation, parentScope, templateToType);
+}
+Statement* Operation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position, kind);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
+}
 optional<Value*> Operation::expandAssignOperation(Kind kind, Scope* scope) {
     auto assign = AssignOperation::Create(position);
     auto operation = Operation::Create(position, kind);
@@ -1197,6 +1209,15 @@ CastOperation* CastOperation::Create(const CodePosition& position, Type* argType
     objects.emplace_back(make_unique<CastOperation>(position, argType));
     return objects.back().get();
 }
+void CastOperation::templateCopy(CastOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->argType = argType->templateCopy(parentScope, templateToType);
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* CastOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position, nullptr);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
+}
 optional<Value*> CastOperation::interpret(Scope* scope) {
     if (wasInterpreted) {
         return nullptr;
@@ -1323,6 +1344,15 @@ ArrayIndexOperation* ArrayIndexOperation::Create(const CodePosition& position, V
     objects.emplace_back(make_unique<ArrayIndexOperation>(position, index));
     return objects.back().get();
 }
+void ArrayIndexOperation::templateCopy(ArrayIndexOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->index = (Value*)index->templateCopy(parentScope, templateToType);
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* ArrayIndexOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position, nullptr);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
+}
 optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
     if (!interpretAllArguments(scope)) {
         return nullopt;
@@ -1422,6 +1452,16 @@ vector<unique_ptr<ArraySubArrayOperation>> ArraySubArrayOperation::objects;
 ArraySubArrayOperation* ArraySubArrayOperation::Create(const CodePosition& position, Value* firstIndex, Value* secondIndex) {
     objects.emplace_back(make_unique<ArraySubArrayOperation>(position, firstIndex, secondIndex));
     return objects.back().get();
+}
+void ArraySubArrayOperation::templateCopy(ArraySubArrayOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->firstIndex = (Value*)firstIndex->templateCopy(parentScope, templateToType);
+    operation->secondIndex = (Value*)secondIndex->templateCopy(parentScope, templateToType);
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* ArraySubArrayOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position, nullptr, nullptr);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
 }
 optional<Value*> ArraySubArrayOperation::interpret(Scope* scope) {
     if (!interpretAllArguments(scope)) {
@@ -1601,16 +1641,38 @@ FunctionCallOperation* FunctionCallOperation::Create(const CodePosition& positio
     objects.emplace_back(make_unique<FunctionCallOperation>(position));
     return objects.back().get();
 }
+void FunctionCallOperation::templateCopy(FunctionCallOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->function = (Value*)function->templateCopy(parentScope, templateToType);
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* FunctionCallOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
+}
+bool FunctionCallOperation::createTemplateFunctionCall(Scope* scope, Declaration* declaration) {
+    auto funType = (TemplateFunctionType*)declaration->variable->type;
+    unordered_map<string, Type*> templateToType;
+    for (int i = 0; i < funType->templateTypes.size(); ++i) {
+        templateToType.insert({funType->templateTypes[i]->name, funType->implementationTypes[i]});
+    }
+    auto implementation = (FunctionValue*)declaration->value->templateCopy(scope, templateToType);
+    if (!implementation->interpret(scope)) {
+        return false;
+    }
+    function = implementation;
+    type = ((FunctionType*)implementation->type)->returnType;
+}
 FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName) {
     const auto& declarations = searchScope->declarationMap.getDeclarations(functionName);
     vector<Declaration*> viableDeclarations;
     vector<Declaration*> perfectMatches;
     for (const auto declaration : declarations) {
         auto functionType = (FunctionType*)declaration->variable->type;
-        if (functionType && functionType->kind == Type::Kind::TemplateFunction) {
+        if (functionType->kind == Type::Kind::TemplateFunction) {
             continue;
         }
-        if (functionType && functionType->argumentTypes.size() == arguments.size()) {
+        if (functionType->argumentTypes.size() == arguments.size()) {
             bool allMatch = true;
             for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
                 if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
@@ -1643,76 +1705,176 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         errorMessageBool(message, position);
         return FindFunctionStatus::Error;
     } else {
-        vector<optional<vector<ConstructorOperation*>>> neededCtors;
-        for (Declaration* declaration : viableDeclarations) {
-            neededCtors.push_back(vector<ConstructorOperation*>());
-            auto argumentTypes = ((FunctionType*)declaration->variable->type)->argumentTypes;
-            for (int i = 0; i < argumentTypes.size(); ++i) {
-                if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
-                    auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
-                    auto castInterpret = ctor->interpret(scope, true);
-                    if (castInterpret) {
-                        neededCtors.back().value().push_back(ctor);
-                    } else {
-                        neededCtors.back() = nullopt;
+        // no perfect non-template function. try to find perfect template function
+        for (const auto declaration : declarations) {
+            if (declaration->variable->type->kind != Type::Kind::TemplateFunction) {
+                continue;
+            }
+            auto functionType = (TemplateFunctionType*)declaration->variable->type;
+            functionType->implementationTypes.clear();
+            functionType->implementationTypes.resize(functionType->templateTypes.size(), nullptr);
+            if (functionType->argumentTypes.size() == arguments.size()) {
+                bool allMatch = true;
+                bool fail = false;
+                for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
+                    if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
+                        allMatch = false;
+                    }
+                    auto matchResult = functionType->argumentTypes[i]->getEffectiveType()->matchTemplate(functionType, arguments[i]->type->getEffectiveType());
+                    if (matchResult == MatchTemplateResult::Viable) {
+                        allMatch = false;
+                    } else if (matchResult == MatchTemplateResult::Fail) {
+                        fail = true;
                         break;
                     }
-                } else {
-                    neededCtors.back().value().push_back(nullptr);
+                }
+                for (auto implementationType : functionType->implementationTypes) {
+                    if (!implementationType) fail = true;
+                }
+                if (allMatch) {
+                    perfectMatches.push_back(declaration);
+                } else if (!fail) {
+                    viableDeclarations.push_back(declaration);
                 }
             }
         }
-
-        int matchId = -1;
-        vector<Declaration*> possibleDeclarations;
-        for (int i = 0; i < neededCtors.size(); ++i) {
-            if (neededCtors[i]) {
-                matchId = i;
-                possibleDeclarations.push_back(viableDeclarations[i]);
+        if (perfectMatches.size() == 1) {
+            if (!createTemplateFunctionCall(searchScope, perfectMatches.back())) return FindFunctionStatus::Error;
+        } else if (perfectMatches.size() > 1) {
+            int minTemplateArgsCount = ((TemplateFunctionType*)perfectMatches[0]->variable->type)->templateTypes.size();
+            for (int i = 1; i < perfectMatches.size(); ++i) {
+                minTemplateArgsCount = min(minTemplateArgsCount, (int)((TemplateFunctionType*)perfectMatches[i]->variable->type)->templateTypes.size());
             }
-        }
-
-        if (matchId == -1) {
-            return FindFunctionStatus::Fail;
-        } 
-        if (possibleDeclarations.size() > 1) {
-            string message = "ambogous function call. ";
-            message += "Possible functions at lines: ";
-            for (int i = 0; i < possibleDeclarations.size(); ++i) {
-                message += to_string(possibleDeclarations[i]->position.lineNumber);
-                if (i != possibleDeclarations.size() - 1) {
-                    message += ", ";
+            perfectMatches.erase(remove_if(perfectMatches.begin(), perfectMatches.end(), [&](Declaration* decl){
+                return ((TemplateFunctionType*)decl->variable->type)->templateTypes.size() > minTemplateArgsCount;
+            }), perfectMatches.end());
+            int argCount = ((TemplateFunctionType*)perfectMatches[0]->variable->type)->argumentTypes.size();
+            for (int i = perfectMatches.size() - 1; i >= 1; --i) {
+                int winner = 0;
+                auto funType1 = ((TemplateFunctionType*)perfectMatches[i]->variable->type);
+                auto funType2 = ((TemplateFunctionType*)perfectMatches[i-1]->variable->type);
+                for (int j = 0; j < argCount; ++j) {
+                    auto cmpResult = funType1->argumentTypes[j]->getEffectiveType()->compareTemplateDepth(funType2->argumentTypes[j]->getEffectiveType());
+                    if (cmpResult == -2) {
+                        winner = -2;
+                        break;
+                    } else if (cmpResult == -1) {
+                        if (winner == 1) {
+                            winner = -2;
+                            break;
+                        }
+                        winner = -1;
+                    } else if (cmpResult == 1) {
+                        if (winner == -1) {
+                            winner = -2;
+                            break;
+                        }
+                        winner = 1;
+                    }
+                }
+                if (winner == -1) {
+                    perfectMatches.pop_back();
+                }
+                else if (winner == 1) {
+                    perfectMatches.erase(perfectMatches.end()-2);
                 }
             }
-            errorMessageBool(message, position);
-            return FindFunctionStatus::Error;
-        }
-
-        for (int i = 0; i < arguments.size(); ++i) {
-            auto ctor = neededCtors[matchId].value()[i];
-            if (ctor) {
-                auto ctorInterpret = ctor->interpret(scope);
-                if (ctorInterpret.value()) {
-                    arguments[i] = ctorInterpret.value();
-                } else {
-                    arguments[i] = ctor;
+            if (perfectMatches.size() == 1) {
+                if (!createTemplateFunctionCall(searchScope, perfectMatches.back())) return FindFunctionStatus::Error;
+            } else {
+                string message = "ambogous function call. ";
+                message += "Possible functions at lines: ";
+                for (int i = 0; i < perfectMatches.size(); ++i) {
+                    message += to_string(perfectMatches[i]->position.lineNumber);
+                    if (i != perfectMatches.size() - 1) {
+                        message += ", ";
+                    }
+                }
+                errorMessageBool(message, position);
+                return FindFunctionStatus::Error;
+            }
+        } else {
+            vector<optional<vector<ConstructorOperation*>>> neededCtors;
+            for (Declaration* declaration : viableDeclarations) {
+                neededCtors.push_back(vector<ConstructorOperation*>());
+                auto argumentTypes = ((FunctionType*)declaration->variable->type)->argumentTypes;
+                for (int i = 0; i < argumentTypes.size(); ++i) {
+                    if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
+                        auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
+                        auto castInterpret = ctor->interpret(scope, true);
+                        if (castInterpret) {
+                            neededCtors.back().value().push_back(ctor);
+                        } else {
+                            neededCtors.back() = nullopt;
+                            break;
+                        }
+                    } else {
+                        neededCtors.back().value().push_back(nullptr);
+                    }
                 }
             }
+
+            int matchId = -1;
+            vector<Declaration*> possibleDeclarations;
+            for (int i = 0; i < neededCtors.size(); ++i) {
+                if (neededCtors[i]) {
+                    matchId = i;
+                    possibleDeclarations.push_back(viableDeclarations[i]);
+                }
+            }
+
+            if (matchId == -1) {
+                return FindFunctionStatus::Fail;
+            } 
+            if (possibleDeclarations.size() > 1) {
+                string message = "ambogous function call. ";
+                message += "Possible functions at lines: ";
+                for (int i = 0; i < possibleDeclarations.size(); ++i) {
+                    message += to_string(possibleDeclarations[i]->position.lineNumber);
+                    if (i != possibleDeclarations.size() - 1) {
+                        message += ", ";
+                    }
+                }
+                errorMessageBool(message, position);
+                return FindFunctionStatus::Error;
+            }
+
+            for (int i = 0; i < arguments.size(); ++i) {
+                auto ctor = neededCtors[matchId].value()[i];
+                if (ctor) {
+                    auto ctorInterpret = ctor->interpret(scope);
+                    if (ctorInterpret.value()) {
+                        arguments[i] = ctorInterpret.value();
+                    } else {
+                        arguments[i] = ctor;
+                    }
+                }
+            }
+            function = viableDeclarations[matchId]->value;
+            type = ((FunctionType*)viableDeclarations[matchId]->variable->type)->returnType;
+            idName = searchScope->declarationMap.getIdName(viableDeclarations[matchId]);
         }
-        function = viableDeclarations[matchId]->value;
-        type = ((FunctionType*)viableDeclarations[matchId]->variable->type)->returnType;
-        idName = searchScope->declarationMap.getIdName(viableDeclarations[matchId]);
     }
     return FindFunctionStatus::Success;
-    /*int insertIndex = viableDeclarations.size()-1;
-    for (const auto declaration : declarations) {
-    auto functionType = (TemplateFunctionType*)declaration->variable->type;
-    if (functionType && functionType->argumentTypes.size() == arguments.size()) {
-    //bool hasDecoratedType = false;
-
-    viableDeclarations.push_back(declaration);
-    }
-    }*/
+}
+Type* stringToBasicType(const std::string& str) {
+    if (str == "string") return DynamicArrayType::Create(IntegerType::Create(IntegerType::Size::U8));
+    if (str == "int")    return IntegerType::Create(IntegerType::Size::I64);
+    if (str == "float")  return FloatType::Create(FloatType::Size::F64);
+    if (str == "byte")   return IntegerType::Create(IntegerType::Size::U8);
+    if (str == "bool")   return Type::Create(Type::Kind::Bool);
+    if (str == "void")   return Type::Create(Type::Kind::Void);
+    if (str == "i64")    return IntegerType::Create(IntegerType::Size::I64);
+    if (str == "i32")    return IntegerType::Create(IntegerType::Size::I32);
+    if (str == "i16")    return IntegerType::Create(IntegerType::Size::I16);
+    if (str == "i8")     return IntegerType::Create(IntegerType::Size::I8);
+    if (str == "u64")    return IntegerType::Create(IntegerType::Size::U64);
+    if (str == "u32")    return IntegerType::Create(IntegerType::Size::U32);
+    if (str == "u16")    return IntegerType::Create(IntegerType::Size::U16);
+    if (str == "u8")     return IntegerType::Create(IntegerType::Size::U8);
+    if (str == "f64")    return FloatType::Create(FloatType::Size::F64);
+    if (str == "f32")    return FloatType::Create(FloatType::Size::F32);
+    return nullptr;
 }
 optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     if (wasInterpreted) {
@@ -1723,6 +1885,14 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     // first check if is it class constructor. if yes -> its ConstructorOperation
     if (function->valueKind == Value::ValueKind::Variable) {
         auto functionName = ((Variable*)function)->name;
+        auto basicType = stringToBasicType(functionName);
+        if (basicType) {
+            auto op = ConstructorOperation::Create(position, basicType, arguments);
+            auto opInterpret = op->interpret(scope);
+            if (!opInterpret) return nullopt;
+            if (opInterpret.value()) return opInterpret.value();
+            else return op;
+        }
         Scope* searchScope = scope; 
         auto classDeclaration = searchScope->classDeclarationMap.getDeclaration(functionName);
         while (searchScope->parentScope && !classDeclaration) {
@@ -1936,6 +2106,17 @@ TemplateFunctionCallOperation* TemplateFunctionCallOperation::Create(const CodeP
     objects.emplace_back(make_unique<TemplateFunctionCallOperation>(position));
     return objects.back().get();
 }
+void TemplateFunctionCallOperation::templateCopy(TemplateFunctionCallOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    for (auto templateType : templateTypes) {
+        operation->templateTypes.push_back(templateType->templateCopy(parentScope, templateToType));
+    }
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* TemplateFunctionCallOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
+}
 optional<Value*> TemplateFunctionCallOperation::interpret(Scope* scope) {
     return nullptr;
 }
@@ -1975,6 +2156,14 @@ vector<unique_ptr<FlowOperation>> FlowOperation::objects;
 FlowOperation* FlowOperation::Create(const CodePosition& position, Kind kind) {
     objects.emplace_back(make_unique<FlowOperation>(position, kind));
     return objects.back().get();
+}
+void FlowOperation::templateCopy(FlowOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* FlowOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position, kind);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
 }
 optional<Value*> FlowOperation::interpret(Scope* scope) {
     if (wasInterpreted) {
@@ -2250,6 +2439,16 @@ ErrorResolveOperation* ErrorResolveOperation::Create(const CodePosition& positio
     objects.emplace_back(make_unique<ErrorResolveOperation>(position));
     return objects.back().get();
 }
+void ErrorResolveOperation::templateCopy(ErrorResolveOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->onErrorScope = (CodeScope*)onErrorScope->templateCopy(parentScope, templateToType);
+    operation->onSuccessScope = (CodeScope*)onSuccessScope->templateCopy(parentScope, templateToType);
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* ErrorResolveOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
+}
 optional<Value*> ErrorResolveOperation::interpret(Scope* scope) {
     if (wasInterpreted) {
         return nullptr;
@@ -2354,6 +2553,15 @@ vector<unique_ptr<SizeofOperation>> SizeofOperation::objects;
 SizeofOperation* SizeofOperation::Create(const CodePosition& position) {
     objects.emplace_back(make_unique<SizeofOperation>(position));
     return objects.back().get();
+}
+void SizeofOperation::templateCopy(SizeofOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->argType = argType->templateCopy(parentScope, templateToType);
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* SizeofOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
 }
 optional<Value*> SizeofOperation::interpret(Scope* scope) {
     if (wasInterpreted) {
@@ -2563,6 +2771,17 @@ ConstructorOperation* ConstructorOperation::Create(const CodePosition& position,
     objects.emplace_back(make_unique<ConstructorOperation>(position, constructorType, arguments, isHeapAllocation, isExplicit));
     return objects.back().get();
 }
+void ConstructorOperation::templateCopy(ConstructorOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->constructorType = constructorType->templateCopy(parentScope, templateToType);
+    operation->isHeapAllocation = isHeapAllocation;
+    operation->isExplicit = isExplicit;
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* ConstructorOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position, nullptr);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
+}
 optional<Value*> ConstructorOperation::interpret(Scope* scope) {
     return interpret(scope, false, false);
 }
@@ -2672,6 +2891,15 @@ vector<unique_ptr<AssignOperation>> AssignOperation::objects;
 AssignOperation* AssignOperation::Create(const CodePosition& position) {
     objects.emplace_back(make_unique<AssignOperation>(position));
     return objects.back().get();
+}
+void AssignOperation::templateCopy(AssignOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->isConstruction = isConstruction;
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* AssignOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
 }
 optional<Value*> AssignOperation::interpret(Scope* scope) {
     if (wasInterpreted) {
@@ -2795,6 +3023,15 @@ vector<unique_ptr<DotOperation>> DotOperation::objects;
 DotOperation* DotOperation::Create(const CodePosition& position) {
     objects.emplace_back(make_unique<DotOperation>(position));
     return objects.back().get();
+}
+void DotOperation::templateCopy(DotOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    operation->isBuildInOperation = isBuildInOperation;
+    Operation::templateCopy(operation, parentScope, templateToType);
+}
+Statement* DotOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto operation = Create(position);
+    templateCopy(operation, parentScope, templateToType);
+    return operation;
 }
 optional<Value*> DotOperation::interpret(Scope* scope) {
     if (wasInterpreted) {

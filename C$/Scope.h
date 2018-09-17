@@ -46,6 +46,7 @@ struct Scope : Statement {
     };
 
     Scope(const CodePosition& position, Owner ownmaybeUninitializedDeclarationser, Scope* parentScope);
+    void templateCopy(Scope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     ReadStatementValue readStatement(const std::vector<Token>& tokens, int& i);
     bool addArguments(Operation* operation, const std::vector<Token>& tokens, int& i);
     bool  addConstructorOperation(std::vector<Value*>& out, const std::vector<Token>& tokens, int& i, bool isHeapAllocation=false);
@@ -87,6 +88,8 @@ protected:
 struct CodeScope : Scope {
     CodeScope(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false);
     static CodeScope* Create(const CodePosition& position, Scope::Owner owner, Scope* parentScope, bool isGlobalScope=false);
+    void templateCopy(CodeScope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     bool interpretNoUnitializedDeclarationsSet();
     virtual bool interpret();
@@ -119,6 +122,8 @@ struct FunctionValue;
 struct FunctionScope : CodeScope {
     FunctionScope(const CodePosition& position, Scope* parentScope, FunctionValue* function);
     static FunctionScope* Create(const CodePosition& position, Scope* parentScope, FunctionValue* function);
+    void templateCopy(FunctionScope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool operator==(const Statement& scope) const;
     virtual bool interpret();
     virtual void createLlvm(LlvmObject* llvmObj);
@@ -134,6 +139,8 @@ struct ClassDeclaration;
 struct ClassScope : Scope {
     ClassScope(const CodePosition& position, Scope* parentScope);
     static ClassScope* Create(const CodePosition& position, Scope* parentScope);
+    void templateCopy(ClassScope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
@@ -180,6 +187,8 @@ struct ForEachData {
 struct ForScope : CodeScope {
     ForScope(const CodePosition& position, Scope* parentScope);
     static ForScope* Create(const CodePosition& position, Scope* parentScope);
+    void templateCopy(ForScope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     bool setForLoopDirection(const std::vector<Token>& tokens, int& i);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
@@ -201,6 +210,8 @@ private:
 struct WhileScope : CodeScope {
     WhileScope(const CodePosition& position, Scope* parentScope);
     static WhileScope* Create(const CodePosition& position, Scope* parentScope);
+    void templateCopy(WhileScope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     bool findBreakStatement(CodeScope* scope);
@@ -220,6 +231,8 @@ private:
 struct IfScope : CodeScope {
     IfScope(const CodePosition& position, Scope* parentScope);
     static IfScope* Create(const CodePosition& position, Scope* parentScope);
+    void templateCopy(IfScope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
     virtual bool operator==(const Statement& scope) const;

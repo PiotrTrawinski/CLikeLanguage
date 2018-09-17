@@ -14,6 +14,8 @@ struct ClassDeclaration : Statement {
 
     ClassDeclaration(const CodePosition& position, std::string name);
     static ClassDeclaration* Create(const CodePosition& position, std::string name);
+    void templateCopy(ClassDeclaration* classDeclaration, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     bool interpret();
     virtual bool operator==(const Statement& declaration) const;
 
