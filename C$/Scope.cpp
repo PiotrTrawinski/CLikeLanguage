@@ -508,11 +508,11 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 out.push_back(constructorOp);
                 expectValue = false;
             } else {
-                bool isTemplateFunctionCall = false;
+                bool isTemplatedVariable = false;
                 if (tokens[i + 1].value == "<") {
-                    // either 'less then' operator or function call template arguments
-                    // assume its template arguments and check if it makes sense
-                    isTemplateFunctionCall = true;
+                    // either 'less then' operator or templated variable
+                    // assume its templated variable and check if it makes sense
+                    isTemplatedVariable = true;
                     int openTemplateCount = 1;
                     int j = i + 2;
                     while (j < tokens.size() && openTemplateCount != 0) {
@@ -532,44 +532,22 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                                 templateTypes.push_back(type);
                                 k += 1;
                             } else {
-                                isTemplateFunctionCall = false;
+                                isTemplatedVariable = false;
                                 break;
                             }
                         }
-                        if (isTemplateFunctionCall) {
-                            auto templateCall = TemplateFunctionCallOperation::Create(tokens[i].codePosition);
-                            templateCall->templateTypes = templateTypes;
-                            templateCall->idName = tokens[i].value;
+                        if (isTemplatedVariable) {
+                            auto templateVariable = TemplatedVariable::Create(tokens[i].codePosition, tokens[i].value);
+                            templateVariable->templatedTypes = templateTypes;
+                            out.push_back(templateVariable);
                             i = k;
-                            if (tokens[i].value == "(") {
-                                // read function arguments
-                                i += 1;
-                                if (tokens[i].value == ")") {
-                                    i += 1;
-                                } else {
-                                    bool endOfArguments = false;
-                                    do {
-                                        auto value = getValue(tokens, i, {",", ")"});
-                                        if (!value) return nullopt;
-                                        if (tokens[i].value == ")") {
-                                            endOfArguments = true;
-                                        }
-                                        templateCall->arguments.push_back(value);
-                                        i += 1;
-                                    } while(!endOfArguments);
-                                }
-                                out.push_back(templateCall);
-                                lastWasLambda = 1;
-                                expectValue = false;
-                            } else {
-                                return errorMessageOpt("expected '(' - begining of function call arguments, got" + tokens[i].value, tokens[i].codePosition);
-                            }
+                            expectValue = false;
                         }
                     } else {
-                        isTemplateFunctionCall = false;
+                        isTemplatedVariable = false;
                     }
                 } 
-                if (!isTemplateFunctionCall) {
+                if (!isTemplatedVariable) {
                     // variable
                     auto variable = Variable::Create(tokens[i].codePosition);
                     variable->name = tokens[i].value;

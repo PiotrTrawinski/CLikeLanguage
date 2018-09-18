@@ -17,6 +17,7 @@ struct Value : Statement {
         StaticArray,
         FunctionValue,
         Variable,
+        TemplatedVariable,
         Operation
     };
 
@@ -185,4 +186,18 @@ struct NullValue : Value {
 
 private:
     static std::vector<std::unique_ptr<NullValue>> objects;
+};
+struct TemplatedVariable : Value {
+    TemplatedVariable(const CodePosition& position, const std::string& name="");
+    static TemplatedVariable* Create(const CodePosition& position, const std::string& name="");
+    void templateCopy(TemplatedVariable* value, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    virtual std::optional<Value*> interpret(Scope* scope);
+
+    std::string name;
+    bool wasInterpreted = false;
+    std::vector<Type*> templatedTypes;
+
+private:
+    static std::vector<std::unique_ptr<TemplatedVariable>> objects;
 };
