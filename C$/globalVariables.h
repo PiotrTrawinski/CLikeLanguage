@@ -2,18 +2,19 @@
 #include <unordered_set>
 #include <memory>
 #include <vector>
+#include <unordered_map>
 
+#include "SourceStringLine.h"
 #include "FileInfo.h"
 
-// this variables hold data, that others can point to. 
 struct GlobalVariables {
     std::vector<std::unique_ptr<FileInfo>> fileInfos;
-   // std::unordered_set<std::unique_ptr<Type>> types;
+    std::vector<SourceStringLine> sourceCode;
     
     // for testing only
     void clear() {
         fileInfos.clear();
-        //types.clear();
+        sourceCode.clear();
     }
 };
 extern GlobalVariables GVARS;

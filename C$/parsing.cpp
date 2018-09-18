@@ -18,13 +18,13 @@ char getCharacter(string_view lineStr, int& i) {
     return lineStr[i++];
 }
 
-optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode) {
+optional<vector<Token>> createTokens() {
     vector<Token> tokens;
 
-    for(int lineId = 0; lineId < sourceCode.size(); ++lineId){
-        FileInfo* fileInfo = sourceCode[lineId].file;
-        int lineNumber = sourceCode[lineId].number;
-        string_view lineStr = sourceCode[lineId].value;
+    for(int lineId = 0; lineId < GVARS.sourceCode.size(); ++lineId){
+        FileInfo* fileInfo = GVARS.sourceCode[lineId].file;
+        int lineNumber = GVARS.sourceCode[lineId].number;
+        string_view lineStr = GVARS.sourceCode[lineId].value;
         int charId = 0;
         while (charId < lineStr.size()) {
             int charNumber = charId+1;
@@ -36,7 +36,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                     label += lineStr[charId];
                     charId++;
                 }
-                tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo);
+                tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo, lineId);
             }
             else if (c == '\`') {
                 string stringLiteral = "";
@@ -45,7 +45,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                     stringLiteral += getCharacter(lineStr, charId);
                 }
                 charId++; // skip closing ` symbol
-                tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo);
+                tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo, lineId);
             }
             else if (c == '"') {
                 string rawStringLiteral = "";
@@ -54,7 +54,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                     rawStringLiteral += getCharacter(lineStr, charId);
                 }
                 charId++; // skip closing " symbol
-                tokens.emplace_back(Token::Type::RawStringLiteral, rawStringLiteral, lineNumber, charNumber, fileInfo);
+                tokens.emplace_back(Token::Type::RawStringLiteral, rawStringLiteral, lineNumber, charNumber, fileInfo, lineId);
             }
             else if (c == '\'') {
                 charId++; // skip opening ' symbol
@@ -74,7 +74,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                     return nullopt;
                 }
                 charId++; // skip closing ' symbol
-                tokens.emplace_back(Token::Type::Char, character, lineNumber, charNumber, fileInfo);
+                tokens.emplace_back(Token::Type::Char, character, lineNumber, charNumber, fileInfo, lineId);
             }
             else if (isdigit(c)) {
                 string strNumber = string(1, c);
@@ -92,9 +92,9 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                     charId++;
                 }
                 if (haveDot) {
-                    tokens.emplace_back(Token::Type::Float, strNumber, lineNumber, charNumber, fileInfo);
+                    tokens.emplace_back(Token::Type::Float, strNumber, lineNumber, charNumber, fileInfo, lineId);
                 } else {
-                    tokens.emplace_back(Token::Type::Integer, strNumber, lineNumber, charNumber, fileInfo);
+                    tokens.emplace_back(Token::Type::Integer, strNumber, lineNumber, charNumber, fileInfo, lineId);
                 }
             }
             else if (c == '/' && charId < lineStr.size() - 1 && lineStr[charId + 1] == '/') {
@@ -108,10 +108,10 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
                 // skip everything till appropriate closing comment (*/) string
                 // (nested coments work -> /* ... /* ... */ ... */ is corrent syntax)
                 int openedComents = 1;
-                while (lineId < sourceCode.size()) {
-                    fileInfo = sourceCode[lineId].file;
-                    lineNumber = sourceCode[lineId].number;
-                    lineStr = sourceCode[lineId].value;
+                while (lineId < GVARS.sourceCode.size()) {
+                    fileInfo = GVARS.sourceCode[lineId].file;
+                    lineNumber = GVARS.sourceCode[lineId].number;
+                    lineStr = GVARS.sourceCode[lineId].value;
                     if (lineStr.size() > 0) {
                         while (charId < lineStr.size() - 1) {
                             if (lineStr[charId] == '*' && lineStr[charId+1] == '/') {
@@ -145,7 +145,7 @@ optional<vector<Token>> createTokens(const vector<SourceStringLine>& sourceCode)
             }
             else if (!isspace(c)){
                 // only whitespace characters don't get saved
-                tokens.emplace_back(Token::Type::Symbol, string(1,c), lineNumber, charNumber, fileInfo);
+                tokens.emplace_back(Token::Type::Symbol, string(1,c), lineNumber, charNumber, fileInfo, lineId);
                 charId++;
             } else {
                 charId++;
@@ -214,16 +214,20 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo) {
     file.close();
     return sourceCode;
 }
-optional<vector<SourceStringLine>> getSourceFromFile(string fileName) {
+bool getSourceFromFile(string fileName) {
     GVARS.fileInfos.emplace_back(make_unique<FileInfo>(fileName));
     auto sourceCode = getSourceFromFile(GVARS.fileInfos.back().get());
-    return sourceCode;
+    if (sourceCode) {
+        GVARS.sourceCode = sourceCode.value();
+        return true;
+    } else {
+        return false;
+    }
 }
 
 optional<vector<Token>> parseFile(string fileName) {
-    auto sourceCode = getSourceFromFile(fileName);
-    if (!sourceCode) {
+    if (!getSourceFromFile(fileName)) {
         return nullopt;
     }
-    return createTokens(sourceCode.value());
+    return createTokens();
 }
