@@ -6,18 +6,18 @@
 struct Token {
     enum class Type {
         Label,            // anything that starts with letter
-        StringLiteral,    // anything that starts with " symbol
-        RawStringLiteral, // anything that starts with ` symbol
+        StringLiteral,    // anything that starts with ` symbol
+        RawStringLiteral, // anything that starts with " symbol
         Char,             // anything that starts with ' symbol
         Integer,          // starts with digit, has no '.' in the middle
         Float,            // starts with digit, has exactly 1 '.' in the middle
         Symbol            // any 1 symbol that does not match anything above
     };
 
-    Token(Type type, const std::string& value, int lineNumber, int charNumber, const FileInfo* fileInfo) : 
+    Token(Type type, const std::string& value, int lineNumber, int charNumber, const FileInfo* fileInfo, int lineId) : 
         type(type),
         value(value),
-        codePosition(fileInfo, lineNumber, charNumber)
+        codePosition(fileInfo, lineNumber, charNumber, lineId)
     {}
     
     Type type;
