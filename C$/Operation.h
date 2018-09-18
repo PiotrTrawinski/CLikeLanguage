@@ -23,7 +23,6 @@ struct Operation : Value {
         ArrayIndex, ArraySubArray,
         Cast,
         FunctionCall,
-        TemplateFunctionCall,
         Deallocation,
         //ErrorCoding,
         Break,
@@ -310,24 +309,10 @@ private:
     enum FindFunctionStatus {
         Fail, Success, Error
     };
-    FindFunctionStatus findFunction(Scope* scope, Scope* searchScope, std::string functionName);
+    FindFunctionStatus findFunction(Scope* scope, Scope* searchScope, std::string functionName, const std::vector<Type*>& templatedTypes={});
     bool createTemplateFunctionCall(Scope* scope, Declaration* declaration);
 
     static std::vector<std::unique_ptr<FunctionCallOperation>> objects;
-};
-struct TemplateFunctionCallOperation : FunctionCallOperation {
-    TemplateFunctionCallOperation(const CodePosition& position);
-    static TemplateFunctionCallOperation* Create(const CodePosition& position);
-    void templateCopy(TemplateFunctionCallOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
-    virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
-    virtual std::optional<Value*> interpret(Scope* scope);
-    virtual bool operator==(const Statement& value) const;
-    //virtual std::unique_ptr<Value> copy();
-
-    std::vector<Type*> templateTypes;
-    
-private:
-    static std::vector<std::unique_ptr<TemplateFunctionCallOperation>> objects;
 };
 struct FlowOperation : Operation {
     FlowOperation(const CodePosition& position, Kind kind);

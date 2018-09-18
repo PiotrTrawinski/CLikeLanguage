@@ -1663,49 +1663,52 @@ bool FunctionCallOperation::createTemplateFunctionCall(Scope* scope, Declaration
     function = implementation;
     type = ((FunctionType*)implementation->type)->returnType;
 }
-FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName) {
-    // try to perfect find perfect non-template function
+FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName, const vector<Type*>& templatedTypes) {
     const auto& declarations = searchScope->declarationMap.getDeclarations(functionName);
     vector<Declaration*> viableDeclarations;
     vector<Declaration*> perfectMatches;
-    for (const auto declaration : declarations) {
-        auto functionType = (FunctionType*)declaration->variable->type;
-        if (functionType->kind == Type::Kind::TemplateFunction) {
-            continue;
-        }
-        if (functionType->argumentTypes.size() == arguments.size()) {
-            bool allMatch = true;
-            for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
-                if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
-                    allMatch = false;
+
+    if (templatedTypes.empty()) {
+        // try to perfect find perfect non-template function
+        for (const auto declaration : declarations) {
+            auto functionType = (FunctionType*)declaration->variable->type;
+            if (functionType->kind == Type::Kind::TemplateFunction) {
+                continue;
+            }
+            if (functionType->argumentTypes.size() == arguments.size()) {
+                bool allMatch = true;
+                for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
+                    if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
+                        allMatch = false;
+                    }
+                    if (!cmpPtr(functionType->argumentTypes[i]->getEffectiveType(), arguments[i]->type->getEffectiveType())) {
+                        allMatch = false;
+                    }
                 }
-                if (!cmpPtr(functionType->argumentTypes[i]->getEffectiveType(), arguments[i]->type->getEffectiveType())) {
-                    allMatch = false;
+                if (allMatch) {
+                    perfectMatches.push_back(declaration);
+                } else {
+                    viableDeclarations.push_back(declaration);
                 }
             }
-            if (allMatch) {
-                perfectMatches.push_back(declaration);
-            } else {
-                viableDeclarations.push_back(declaration);
-            }
         }
-    }
-    if (perfectMatches.size() == 1) {
-        function = perfectMatches.back()->value;
-        idName = searchScope->declarationMap.getIdName(perfectMatches.back());
-        type = ((FunctionType*)perfectMatches.back()->variable->type)->returnType;
-        return FindFunctionStatus::Success;
-    } else if (perfectMatches.size() > 1) {
-        string message = "ambogous function call. ";
-        message += "Possible functions at lines: ";
-        for (int i = 0; i < perfectMatches.size(); ++i) {
-            message += to_string(perfectMatches[i]->position.lineNumber);
-            if (i != perfectMatches.size() - 1) {
-                message += ", ";
+        if (perfectMatches.size() == 1) {
+            function = perfectMatches.back()->value;
+            idName = searchScope->declarationMap.getIdName(perfectMatches.back());
+            type = ((FunctionType*)perfectMatches.back()->variable->type)->returnType;
+            return FindFunctionStatus::Success;
+        } else if (perfectMatches.size() > 1) {
+            string message = "ambogous function call. ";
+            message += "Possible functions at lines: ";
+            for (int i = 0; i < perfectMatches.size(); ++i) {
+                message += to_string(perfectMatches[i]->position.lineNumber);
+                if (i != perfectMatches.size() - 1) {
+                    message += ", ";
+                }
             }
+            errorMessageBool(message, position);
+            return FindFunctionStatus::Error;
         }
-        errorMessageBool(message, position);
-        return FindFunctionStatus::Error;
     }
 
     // no perfect non-template function. try to find perfect template function
@@ -1716,14 +1719,30 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
         auto functionType = (TemplateFunctionType*)declaration->variable->type;
         functionType->implementationTypes.clear();
         functionType->implementationTypes.resize(functionType->templateTypes.size(), nullptr);
-        if (functionType->argumentTypes.size() == arguments.size()) {
+        std::vector<Type*> argumentTypes;
+        if (functionType->implementationTypes.size() < templatedTypes.size()) {
+            continue;
+        }
+        if (templatedTypes.size() > 0) {
+            unordered_map<string, Type*> templateToType;
+            for (int i = 0; i < templatedTypes.size(); ++i) {
+                templateToType[functionType->templateTypes[i]->name] = templatedTypes[i];
+                functionType->implementationTypes[i] = templatedTypes[i];
+            }
+            for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
+                argumentTypes.push_back(functionType->argumentTypes[i]->templateCopy(scope, templateToType));
+            }
+        } else {
+            argumentTypes = functionType->argumentTypes;
+        }
+        if (argumentTypes.size() == arguments.size()) {
             bool allMatch = true;
             bool fail = false;
-            for (int i = 0; i < functionType->argumentTypes.size(); ++i) {
-                if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
+            for (int i = 0; i < argumentTypes.size(); ++i) {
+                if (argumentTypes[i]->kind == Type::Kind::Reference && !isLvalue(arguments[i])) {
                     allMatch = false;
                 }
-                auto matchResult = functionType->argumentTypes[i]->getEffectiveType()->matchTemplate(functionType, arguments[i]->type->getEffectiveType());
+                auto matchResult = argumentTypes[i]->getEffectiveType()->matchTemplate(functionType, arguments[i]->type->getEffectiveType());
                 if (matchResult == MatchTemplateResult::Viable) {
                     allMatch = false;
                 } else if (matchResult == MatchTemplateResult::Fail) {
@@ -1970,7 +1989,23 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         if (status != FindFunctionStatus::Success) {
             return errorMessageOpt("no fitting function to call", position);
         }
-    } else if (function->valueKind == Value::ValueKind::Operation
+    } 
+    else if (function->valueKind == Value::ValueKind::TemplatedVariable) {
+        auto templatedVariable = (TemplatedVariable*)function;
+        FindFunctionStatus status;
+        Scope* actualScope = scope;
+        do {
+            status = findFunction(scope, actualScope, templatedVariable->name, templatedVariable->templatedTypes);
+            if (status == FindFunctionStatus::Error) {
+                return nullopt;
+            }
+            actualScope = actualScope->parentScope;
+        } while (status != FindFunctionStatus::Success && actualScope);
+        if (status != FindFunctionStatus::Success) {
+            return errorMessageOpt("no fitting function to call", position);
+        }
+    }
+    else if (function->valueKind == Value::ValueKind::Operation
         && (((Operation*)function)->kind == Operation::Kind::Dot)
         && ((Variable*)((Operation*)function)->arguments[1])->isConstexpr) {
         auto dotOperation = (DotOperation*)function;
@@ -2128,59 +2163,6 @@ void FunctionCallOperation::createDestructorLlvm(LlvmObject* llvmObj) {
     }
     auto functionCopy = function.copy();
     value->function = move(*(Variable*)functionCopy.get());
-    return value;
-}*/
-
-
-/*
-    TemplateFunctionCallOperation
-*/
-TemplateFunctionCallOperation::TemplateFunctionCallOperation(const CodePosition& position) : 
-    FunctionCallOperation(position)
-{
-    kind = Operation::Kind::TemplateFunctionCall;
-}
-vector<unique_ptr<TemplateFunctionCallOperation>> TemplateFunctionCallOperation::objects;
-TemplateFunctionCallOperation* TemplateFunctionCallOperation::Create(const CodePosition& position) {
-    objects.emplace_back(make_unique<TemplateFunctionCallOperation>(position));
-    return objects.back().get();
-}
-void TemplateFunctionCallOperation::templateCopy(TemplateFunctionCallOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
-    for (auto templateType : templateTypes) {
-        operation->templateTypes.push_back(templateType->templateCopy(parentScope, templateToType));
-    }
-    Operation::templateCopy(operation, parentScope, templateToType);
-}
-Statement* TemplateFunctionCallOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
-    auto operation = Create(position);
-    templateCopy(operation, parentScope, templateToType);
-    return operation;
-}
-optional<Value*> TemplateFunctionCallOperation::interpret(Scope* scope) {
-    return nullptr;
-}
-bool TemplateFunctionCallOperation::operator==(const Statement& value) const {
-    if(typeid(value) == typeid(*this)){
-        const auto& other = static_cast<const TemplateFunctionCallOperation&>(value);
-        return this->templateTypes == other.templateTypes
-            && FunctionCallOperation::operator==(other);
-    }
-    else {
-        return false;
-    }
-}
-/*unique_ptr<Value> TemplateFunctionCallOperation::copy() {
-    auto value = make_unique<TemplateFunctionCallOperation>(position);
-    value->type = type->copy();
-    value->isConstexpr = isConstexpr;
-    for (auto& argument : arguments) {
-        value->arguments.push_back(argument->copy());
-    }
-    auto functionCopy = function.copy();
-    value->function = move(*(Variable*)functionCopy.get());
-    for (auto& templateType : templateTypes) {
-        value->templateTypes.push_back(templateType->copy());
-    }
     return value;
 }*/
 

@@ -751,3 +751,37 @@ optional<Value*> NullValue::interpret(Scope* scope) {
 llvm::Value* NullValue::createLlvm(LlvmObject* llvmObj) {
     return llvm::ConstantPointerNull::get((llvm::PointerType*)type->createLlvm(llvmObj));
 }
+
+
+/*
+    TemplatedVariable
+*/
+TemplatedVariable::TemplatedVariable(const CodePosition& position, const string& name) : 
+    Value(position, Value::ValueKind::TemplatedVariable),
+    name(name)
+{}
+vector<unique_ptr<TemplatedVariable>> TemplatedVariable::objects;
+TemplatedVariable* TemplatedVariable::Create(const CodePosition& position, const string& name) {
+    objects.emplace_back(make_unique<TemplatedVariable>(position, name));
+    return objects.back().get();
+}
+void TemplatedVariable::templateCopy(TemplatedVariable* value, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    value->name = name;
+    for (auto templatedType : templatedTypes) {
+        value->templatedTypes.push_back(templatedType->templateCopy(parentScope, templateToType));
+    }
+    Value::templateCopy(value, parentScope, templateToType);
+}
+Statement* TemplatedVariable::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    auto value = Create(position, name);
+    templateCopy(value, parentScope, templateToType);
+    return value;
+}
+optional<Value*> TemplatedVariable::interpret(Scope* scope) {
+    if (wasInterpreted) {
+        return nullptr;
+    }
+    wasInterpreted = true;
+
+    return nullptr;
+}
