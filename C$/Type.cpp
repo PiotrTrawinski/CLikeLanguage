@@ -2274,20 +2274,32 @@ Type* ClassType::templateCopy(Scope* parentScope, const unordered_map<string, Ty
         return foundType->second;
     } else {
         auto classType = Create(name);
-        classType->templateTypes = templateTypes;
+        for (auto templateType : templateTypes) {
+            classType->templateTypes.push_back(templateType->templateCopy(parentScope, templateToType));
+        }
         return classType;
     }
 }
 bool ClassType::interpret(Scope* scope, bool needFullDeclaration) {
+    if (declaration) {
+        if (needFullDeclaration) {
+            return declaration->interpret(templateTypes);
+        } else {
+            return true;
+        }
+    }
     declaration = scope->classDeclarationMap.getDeclaration(name);
     if (!declaration && scope->parentScope) {
         return interpret(scope->parentScope, needFullDeclaration);
     }
-    if (needFullDeclaration) {
-        return declaration && declaration->interpret();
-    } else {
-        return declaration != nullptr;
+    if (!declaration) {
+        return false;
     }
+    declaration = declaration->get(templateTypes);
+    if (needFullDeclaration) {
+        return declaration->interpret(templateTypes);
+    }
+    return true;
 }
 bool ClassType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
