@@ -4,139 +4,6 @@
 
 using namespace std;
 
-std::pair<FunctionValue*, ClassDeclaration*> findClassConstructor(const CodePosition& position, Scope* scope, const string& name, vector<Value*>& arguments) {
-    ClassDeclaration* classDeclaration = nullptr;
-    Scope* searchScope = scope; 
-
-    classDeclaration = searchScope->classDeclarationMap.getDeclaration(name);
-    while (searchScope->parentScope && !classDeclaration) {
-        searchScope = searchScope->parentScope;
-        classDeclaration = searchScope->classDeclarationMap.getDeclaration(name);
-    }
-    if (classDeclaration) {
-        if (!classDeclaration->interpret()) {
-            return {nullptr, classDeclaration};
-        }
-        auto classType = ClassType::Create(classDeclaration->name);
-        classType->interpret(searchScope, false);
-
-        if (classDeclaration->body->constructors.empty()) {
-            if (arguments.size() == 0) {
-                return {classDeclaration->body->inlineConstructors, classDeclaration};
-            } 
-            else if (arguments.size() == 1 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)classType)) {
-                return {classDeclaration->body->copyConstructor, classDeclaration};
-            }
-            else {
-                errorMessageBool("only default (0 argument) constructor exists, got "
-                    + to_string(arguments.size()) + " arguments", position
-                );
-                return {nullptr, classDeclaration};
-            }
-        } else {
-            vector<FunctionValue*> viableDeclarations;
-            vector<FunctionValue*> perfectMatches;
-            for (const auto function : classDeclaration->body->constructors) {
-                auto functionType = (FunctionType*)function->type;
-                if (functionType && functionType->argumentTypes.size()-1 == arguments.size()) {
-                    bool allMatch = true;
-                    for (int i = 0; i < arguments.size(); ++i) {
-                        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference && !Value::isLvalue(arguments[i])) {
-                            allMatch = false;
-                        }
-                        if (!cmpPtr(functionType->argumentTypes[i]->getEffectiveType(), arguments[i]->type->getEffectiveType())) {
-                            allMatch = false;
-                        }
-                    }
-                    if (allMatch) {
-                        perfectMatches.push_back(function);
-                    } else {
-                        viableDeclarations.push_back(function);
-                    }
-                }
-            }
-            if (perfectMatches.size() == 1) {
-                return {perfectMatches.back(), classDeclaration};
-            } else if (perfectMatches.size() > 1) {
-                string message = "ambogous constructor call. ";
-                message += "Possible constructors at lines: ";
-                for (int i = 0; i < perfectMatches.size(); ++i) {
-                    message += to_string(perfectMatches[i]->position.lineNumber);
-                    if (i != perfectMatches.size() - 1) {
-                        message += ", ";
-                    }
-                }
-                errorMessageBool(message, position);
-                return {nullptr, classDeclaration};
-            } else {
-                vector<optional<vector<ConstructorOperation*>>> neededCtors;
-                for (auto function : viableDeclarations) {
-                    neededCtors.push_back(vector<ConstructorOperation*>());
-                    auto argumentTypes = ((FunctionType*)function->type)->argumentTypes;
-                    for (int i = 0; i < argumentTypes.size(); ++i) {
-                        if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
-                            auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
-                            auto ctorInterpret = ctor->interpret(scope, true);
-                            if (ctorInterpret) {
-                                neededCtors.back().value().push_back(ctor);
-                            } else {
-                                neededCtors.back() = nullopt;
-                                break;
-                            }
-                        } else {
-                            neededCtors.back().value().push_back(nullptr);
-                        }
-                    }
-                }
-
-                int matchId = -1;
-                vector<FunctionValue*> possibleFunctions;
-                for (int i = 0; i < neededCtors.size(); ++i) {
-                    if (neededCtors[i]) {
-                        matchId = i;
-                        possibleFunctions.push_back(viableDeclarations[i]);
-                    }
-                }
-
-                if (matchId == -1) {
-                    if (arguments.size() == 1 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)classType)) {
-                        return {classDeclaration->body->copyConstructor, classDeclaration};
-                    } else {
-                        errorMessageBool("no fitting constructor to call", position);
-                        return {nullptr, classDeclaration};
-                    }
-                } 
-                if (possibleFunctions.size() > 1) {
-                    string message = "ambogous constructor call. ";
-                    message += "Possible constructor at lines: ";
-                    for (int i = 0; i < possibleFunctions.size(); ++i) {
-                        message += to_string(possibleFunctions[i]->position.lineNumber);
-                        if (i != possibleFunctions.size() - 1) {
-                            message += ", ";
-                        }
-                    }
-                    errorMessageBool(message, position);
-                    return {nullptr, classDeclaration};
-                }
-
-                for (int i = 0; i < arguments.size(); ++i) {
-                    auto ctor = neededCtors[matchId].value()[i];
-                    if (ctor) {
-                        auto ctorInterpret = ctor->interpret(scope);
-                        if (ctorInterpret.value()) {
-                            arguments[i] = ctorInterpret.value();
-                        } else {
-                            arguments[i] = ctor;
-                        }
-                    }
-                }
-                return {viableDeclarations[matchId], classDeclaration};
-            }
-        }
-    } else {
-        return {nullptr, nullptr};
-    }
-}
 
 /*
     Operation
@@ -1941,23 +1808,35 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
     wasInterpreted = true;
 
     // first check if is it class constructor. if yes -> its ConstructorOperation
+    string className = "";
+    vector<Type*> templatedArguments;
     if (function->valueKind == Value::ValueKind::Variable) {
-        auto functionName = ((Variable*)function)->name;
-        auto basicType = stringToBasicType(functionName);
-        if (basicType) {
-            auto op = ConstructorOperation::Create(position, basicType, arguments);
-            auto opInterpret = op->interpret(scope);
-            if (!opInterpret) return nullopt;
-            if (opInterpret.value()) return opInterpret.value();
-            else return op;
+        className = ((Variable*)function)->name;
+    } else if (function->valueKind == Value::ValueKind::TemplatedVariable) {
+        className = ((TemplatedVariable*)function)->name;
+        templatedArguments = ((TemplatedVariable*)function)->templatedTypes;
+    }
+    if (!className.empty()) {
+        if (templatedArguments.empty()) {
+            auto basicType = stringToBasicType(className);
+            if (basicType) {
+                auto op = ConstructorOperation::Create(position, basicType, arguments);
+                auto opInterpret = op->interpret(scope);
+                if (!opInterpret) return nullopt;
+                if (opInterpret.value()) return opInterpret.value();
+                else return op;
+            }
         }
+
         Scope* searchScope = scope; 
-        auto classDeclaration = searchScope->classDeclarationMap.getDeclaration(functionName);
+        auto classDeclaration = searchScope->classDeclarationMap.getDeclaration(className);
         while (searchScope->parentScope && !classDeclaration) {
             searchScope = searchScope->parentScope;
-            classDeclaration = searchScope->classDeclarationMap.getDeclaration(functionName);
+            classDeclaration = searchScope->classDeclarationMap.getDeclaration(className);
         }
         if (classDeclaration) {
+            classDeclaration = classDeclaration->get(templatedArguments);
+            if (!classDeclaration->interpret({})) return nullopt;
             auto constructorType = ClassType::Create(classDeclaration->name);
             constructorType->declaration = classDeclaration;
             auto op = ConstructorOperation::Create(position, constructorType, arguments);
@@ -1967,6 +1846,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
             else return op;
         }
     }
+    
 
     if (!interpretAllArguments(scope)) {
         return nullopt;
@@ -3130,6 +3010,9 @@ optional<Value*> DotOperation::interpret(Scope* scope) {
             );
         }
 
+        if (!classType->interpret(scope, false)) {
+            return nullopt;
+        }
         auto& declarations = classType->declaration->body->declarations;
         vector<Declaration*> viableDeclarations;
         for (auto& declaration : declarations) {

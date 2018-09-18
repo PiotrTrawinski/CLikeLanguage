@@ -200,60 +200,93 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                 }
                 return Scope::ReadStatementValue(declaration);
             }
-        }
-        else if (tokens[i + 1].value == "class") {
-            // shorthand noration for class declaration
-            i += 2;
-            auto classDeclaration = ClassDeclaration::Create(token.codePosition, token.value);
-            classDeclaration->body = ClassScope::Create(token.codePosition, this);
-            if (!classDeclaration->body->createCodeTree(tokens, i)) {
-                return false;
-            }
-            return Scope::ReadStatementValue(classDeclaration);
-        }
-        else {
-            // value or shorthand notation for constexpr function declaration
-            int j = i + 1;
-            if (tokens[j].value == "<") {
-                j += 1;
-                int openTemplate = 1;
-                while (tokens.size() > j && openTemplate > 0) {
-                    if (tokens[j].value == "<") openTemplate += 1;
-                    else if (tokens[j].value == ">") openTemplate -= 1;
-                    j += 1;
+        } else {
+            bool isClass = false;
+            if (tokens[i + 1].value == "<" || tokens[i + 1].value == "class") {
+                // shorthand noration for class declaration or template class declaration 
+                isClass = true;
+                vector<TemplateType*> templateTypes;
+                if (tokens[i + 1].value == "<") {
+                    int k = i + 2;
+                    while (tokens[k].type == Token::Type::Label && tokens[k+1].value == ",") {
+                        templateTypes.push_back(TemplateType::Create(tokens[k].value));
+                        k += 2;
+                    }
+                    if (tokens[k].type != Token::Type::Label) {
+                        isClass = false;
+                    }
+                    if (tokens[k + 1].value != ">") {
+                        isClass = false;
+                    }
+                    templateTypes.push_back(TemplateType::Create(tokens[k].value));
+                    k += 2;
+                    if (tokens[k].value + tokens[k + 1].value == "::") {
+                        k += 2;
+                    }
+                    if (tokens[k].value != "class") {
+                        isClass = false;
+                    }
+                    k += 1;
+                    if (isClass) {
+                        i = k;
+                    }
+                } else {
+                    i += 2;
+                }
+                if (isClass) {
+                    auto classDeclaration = ClassDeclaration::Create(token.codePosition, token.value);
+                    classDeclaration->body = ClassScope::Create(token.codePosition, this);
+                    if (!classDeclaration->body->createCodeTree(tokens, i)) {
+                        return false;
+                    }
+                    classDeclaration->templateTypes = templateTypes;
+                    return Scope::ReadStatementValue(classDeclaration);
                 }
             }
-            if (tokens[j].value == "(") {
-                j += 1;
-                int openparentheses = 1;
-                while (tokens.size() > j && openparentheses > 0) {
-                    if (tokens[j].value == "(") openparentheses += 1;
-                    else if (tokens[j].value == ")") openparentheses -= 1;
+            if (!isClass) {
+                // value or shorthand notation for constexpr function declaration
+                int j = i + 1;
+                if (tokens[j].value == "<") {
                     j += 1;
-                }
-                if (tokens.size() > j+2) {
-                    if (tokens[j].value == "{" || tokens[j].value + tokens[j + 1].value == "->") {
-                        // shorthand notation for constexpr function declaration
-                        i += 1;
-                        auto declaration = Declaration::Create(token.codePosition);
-                        declaration->byReference = false;
-                        declaration->variable->isConst = true;
-                        declaration->variable->name = token.value;
-                        declaration->variable->type = nullptr;
-                        declaration->value = getValue(tokens, i, {";", "}"}, true);
-                        if (!declaration->value) {
-                            return false;
-                        }
-                        return Scope::ReadStatementValue(declaration);
+                    int openTemplate = 1;
+                    while (tokens.size() > j && openTemplate > 0) {
+                        if (tokens[j].value == "<") openTemplate += 1;
+                        else if (tokens[j].value == ">") openTemplate -= 1;
+                        j += 1;
                     }
                 }
-            }
+                if (tokens[j].value == "(") {
+                    j += 1;
+                    int openparentheses = 1;
+                    while (tokens.size() > j && openparentheses > 0) {
+                        if (tokens[j].value == "(") openparentheses += 1;
+                        else if (tokens[j].value == ")") openparentheses -= 1;
+                        j += 1;
+                    }
+                    if (tokens.size() > j+2) {
+                        if (tokens[j].value == "{" || tokens[j].value + tokens[j + 1].value == "->") {
+                            // shorthand notation for constexpr function declaration
+                            i += 1;
+                            auto declaration = Declaration::Create(token.codePosition);
+                            declaration->byReference = false;
+                            declaration->variable->isConst = true;
+                            declaration->variable->name = token.value;
+                            declaration->variable->type = nullptr;
+                            declaration->value = getValue(tokens, i, {";", "}"}, true);
+                            if (!declaration->value) {
+                                return false;
+                            }
+                            return Scope::ReadStatementValue(declaration);
+                        }
+                    }
+                }
 
-            auto value = getValue(tokens, i, {";", "}"}, true);
-            if (!value) {
-                return false;
+                auto value = getValue(tokens, i, {";", "}"}, true);
+                if (!value) {
+                    return false;
+                }
+                return Scope::ReadStatementValue(value);
             }
-            return Scope::ReadStatementValue(value);
         }
     }
 }
@@ -1508,7 +1541,7 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
         }
         case Statement::Kind::ClassDeclaration: {
             ClassDeclaration* declaration = (ClassDeclaration*)statement;
-            if (!declaration->interpret()) {
+            if (!declaration->interpret({})) {
                 wereErrors = true;
             }
             break;
@@ -1714,7 +1747,7 @@ void CodeScope::createLlvm(LlvmObject* llvmObj) {
         }
         case Statement::Kind::ClassDeclaration:{
             ClassDeclaration* declaration = (ClassDeclaration*)statement;
-            declaration->body->createLlvm(llvmObj);
+            declaration->createLlvmBody(llvmObj);
             break;
         }
         case Statement::Kind::Scope: {
@@ -1915,7 +1948,8 @@ bool ClassScope::interpret() {
         return true;
     }
     wasInterpreted = true;
-    ClassType::Create(classDeclaration->name)->declaration = classDeclaration;
+    auto classType = ClassType::Create(classDeclaration->name);
+    classType->declaration = classDeclaration;
 
     bool wereErrors = false;
     for (auto& declaration : declarations) {
@@ -1934,7 +1968,7 @@ bool ClassScope::interpret() {
         inline constructors
     */
     auto lambdaType = FunctionType::Create();
-    auto classPointerType = RawPointerType::Create(ClassType::Create(classDeclaration->name));
+    auto classPointerType = RawPointerType::Create(classType);
     classPointerType->interpret(this, false);
     lambdaType->argumentTypes.push_back(classPointerType);
     lambdaType->returnType = Type::Create(Type::Kind::Void);
@@ -2050,7 +2084,7 @@ bool ClassScope::interpret() {
             if (declaration->variable->isConst) {
                 auto lambda = (FunctionValue*)declaration->value;
                 auto lambdaType = (FunctionType*)declaration->value->type;
-                lambdaType->argumentTypes.push_back(RawPointerType::Create(ClassType::Create(classDeclaration->name)));
+                lambdaType->argumentTypes.push_back(RawPointerType::Create(classType));
                 lambda->arguments.push_back(Declaration::Create(lambda->position));
                 lambda->arguments.back()->variable->name = "this";
                 lambda->arguments.back()->variable->type = lambdaType->argumentTypes.back();
@@ -2087,6 +2121,9 @@ bool ClassScope::interpret() {
                 }
             }
             if (!declaration->interpret(this)) {
+                wereErrors = true;
+            }
+            if (!declarationMap.addFunctionDeclaration(declaration)) {
                 wereErrors = true;
             }
         }

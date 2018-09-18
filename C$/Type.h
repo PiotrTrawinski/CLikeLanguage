@@ -331,7 +331,7 @@ struct ClassType : Type {
     virtual void createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef);
 
     std::string name;
-    ClassDeclaration* declaration;
+    ClassDeclaration* declaration = nullptr;
     std::vector<Type*> templateTypes;
     
 private:
