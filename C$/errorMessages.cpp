@@ -24,7 +24,7 @@ void setDarkGrayColor() {
 
 void printErrorCodePosition(const CodePosition& codePosition) {
     setDarkGrayColor();
-    cerr << codePosition.fileInfo->name;
+    cerr << codePosition.fileInfo->name();
     setGrayColor();
     cerr << " (" << codePosition.lineNumber << ":" << codePosition.charNumber << ") ";
     setWhiteColor();
