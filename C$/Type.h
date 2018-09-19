@@ -9,6 +9,7 @@
 
 struct Value;
 struct FunctionValue;
+struct Declaration;
 struct Scope;
 struct TemplateType;
 struct TemplateFunctionType;
@@ -429,11 +430,12 @@ struct TemplateFunctionType : FunctionType {
     virtual bool interpret(Scope* scope, bool needFullDeclaration=true);
     virtual bool operator==(const Type& type) const;
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
+    FunctionValue* getImplementation(Scope* scope, Declaration* declaration);
     //virtual std::unique_ptr<Type> copy();
 
     std::vector<TemplateType*> templateTypes;
     std::vector<Type*> implementationTypes;
-    std::vector<FunctionValue*> implementations; 
+    std::vector<std::pair<std::vector<Type*>, FunctionValue*>> implementations; 
     
 private:
     static std::vector<std::unique_ptr<TemplateFunctionType>> objects;
