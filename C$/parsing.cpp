@@ -1,6 +1,68 @@
 #include "parsing.h"
+#include <filesystem>
 
 using namespace std;
+namespace fs = filesystem;
+
+optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo);
+
+struct recursive_directory_range {
+    recursive_directory_range(fs::path p) : p(p) {}
+    fs::recursive_directory_iterator begin() { return fs::recursive_directory_iterator(p); }
+    fs::recursive_directory_iterator end() { return fs::recursive_directory_iterator(); }
+private:
+    fs::path p;
+};
+
+vector<string> splitPath(string_view str) {
+    vector<string> result;
+    string token = "";
+    for (char c : str) {
+        if (c == '/') {
+            result.push_back(token);
+            token = "";
+        } else {
+            token += c;
+        }
+    }
+    if (!token.empty()) {
+        result.push_back(token);
+    }
+    return result;
+}
+
+void printErrorIncorrectPath(FileInfo* fileInfo, string_view fileName, int includeLine) {
+    cerr << "Include Error: " << fileName << " does not exist\n";
+    while (fileInfo) {
+        cerr << "included in " << fileInfo->name() << " at line " << includeLine << '\n';
+        includeLine = fileInfo->includeLineNumber;
+        fileInfo = fileInfo->parent;
+    }
+}
+
+optional<fs::path> createIncludePath(FileInfo* fileInfo, string_view str, int includeLine) {
+    auto newPath = fileInfo->path.parent_path();
+    auto tokens = splitPath(str);
+    for (auto& token : tokens) {
+        if (token == "..") {
+            if (newPath.has_parent_path()) {
+                newPath = newPath.parent_path();
+            } else {
+                printErrorIncorrectPath(fileInfo, str, includeLine);
+                return nullopt;
+            }
+        } else {
+            newPath /= fs::path(token);
+        }
+    }
+    if (fs::exists(newPath)) {
+        return newPath;
+    } else {
+        printErrorIncorrectPath(fileInfo, str, includeLine);
+        return nullopt;
+    }
+}
+
 
 char getCharacter(string_view lineStr, int& i) {
     if (lineStr[i] == '\\') {
@@ -38,10 +100,10 @@ optional<vector<Token>> createTokens() {
                 }
                 tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo, lineId);
             }
-            else if (c == '\`') {
+            else if (c == '`') {
                 string stringLiteral = "";
                 charId++; // skip opening ` symbol
-                while (charId < lineStr.size() && lineStr[charId] != '\`') {
+                while (charId < lineStr.size() && lineStr[charId] != '`') {
                     stringLiteral += getCharacter(lineStr, charId);
                 }
                 charId++; // skip closing ` symbol
@@ -137,7 +199,7 @@ optional<vector<Token>> createTokens() {
 
                 if (openedComents > 0) {
                     cerr << "Parsing error: missing closing multi-line comment (*/)\n";
-                    cerr << "in file " << fileInfo->name << " starting at line " << lineNumber << '\n';
+                    cerr << "in file " << fileInfo->name() << " starting at line " << lineNumber << '\n';
                     return nullopt;
                 }
 
@@ -156,21 +218,34 @@ optional<vector<Token>> createTokens() {
     return tokens;
 }
 
-
-void printErrorIncludeStack(FileInfo fileInfo) {
-    cerr << "Include Error: Could not open source file \"" << fileInfo.name << "\"\n";
-    FileInfo* parent = fileInfo.parent;
-    FileInfo* child = &fileInfo;
-    while (parent != nullptr) {
-        cerr << "included in " << parent->name << " at line " << child->includeLineNumber << '\n';
-        parent = parent->parent;
-        child = child->parent;
+bool includeFile(vector<SourceStringLine>& sourceCode, fs::path includePath, FileInfo* parentFileInfo, int includeLine) {
+    bool alreadyInserted = false;
+    for (const auto& element : GVARS.fileInfos) {
+        if (element.get()->path == includePath) {
+            alreadyInserted = true;
+            break;
+        }
     }
+
+    if (!alreadyInserted) {
+        GVARS.fileInfos.emplace_back(make_unique<FileInfo>(includePath, parentFileInfo, includeLine));
+        auto includedCode = getSourceFromFile(GVARS.fileInfos.back().get());
+
+        // if reading source from included file failed we do not try to continue without
+        if (!includedCode) {
+            return false;
+        }
+
+        // append includedFile to the rest of sourceCode
+        sourceCode.insert(sourceCode.end(), includedCode.value().begin(), includedCode.value().end());
+    }
+
+    return true;
 }
+
 optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo) {
-    ifstream file(fileInfo->name);
+    ifstream file(fileInfo->path.u8string());
     if (!file) {
-        printErrorIncludeStack(*fileInfo);
         return nullopt;
     }
 
@@ -181,53 +256,56 @@ optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo) {
         // if include directive then add source file from it
         int includeStrSize = sizeof("#include")-1;
         if (line.size() > includeStrSize && line.substr(0, includeStrSize) == "#include") {
-
             string includeFileName = line.substr(includeStrSize+1);
-            bool alreadyInserted = false;
-            for (const auto& element : GVARS.fileInfos) {
-                if (element.get()->name == includeFileName) {
-                    alreadyInserted = true;
-                    break;
-                }
+            auto includePath = createIncludePath(fileInfo, includeFileName, lineNumber);
+            if (!includePath) {
+                file.close();
+                return nullopt;
             }
-            if (!alreadyInserted) {
-                GVARS.fileInfos.emplace_back(make_unique<FileInfo>(includeFileName, fileInfo, lineNumber));
-                //FileInfo includedFile(line.substr(includeStrSize+1), fileInfo, lineNumber);
-                auto includedCode = getSourceFromFile(GVARS.fileInfos.back().get());
-
-                // if reading source from included file failed we do not try to continue without
-                if (!includedCode) {
+            if (fs::is_directory(includePath.value())) {
+                for (auto& filePath : recursive_directory_range(includePath.value())) {
+                    if (filePath.path().extension().u8string() == ".cdr") {
+                        if (!includeFile(sourceCode, filePath, fileInfo, lineNumber)) {
+                            file.close();
+                            return nullopt;
+                        }
+                    }
+                }
+            } else {
+                if (!includeFile(sourceCode, includePath.value(), fileInfo, lineNumber)) {
                     file.close();
                     return nullopt;
                 }
-
-                // append includedFile to the rest of sourceCode
-                sourceCode.insert(sourceCode.end(), includedCode.value().begin(), includedCode.value().end());
             }
         } else {
             sourceCode.emplace_back(line, fileInfo, lineNumber);
         }
-
         lineNumber++;
     }
-
     file.close();
     return sourceCode;
 }
-bool getSourceFromFile(string fileName) {
-    GVARS.fileInfos.emplace_back(make_unique<FileInfo>(fileName));
-    auto sourceCode = getSourceFromFile(GVARS.fileInfos.back().get());
-    if (sourceCode) {
-        GVARS.sourceCode = sourceCode.value();
-        return true;
-    } else {
-        return false;
-    }
-}
 
 optional<vector<Token>> parseFile(string fileName) {
-    if (!getSourceFromFile(fileName)) {
+    fs::path directory = fs::current_path();
+    fs::path filePath = fs::path(fileName);
+    auto path = directory / filePath;
+
+    if (!fs::exists(path)) {
+        cerr << "Provided file \"" + fileName + "\" does not exist\n";
         return nullopt;
     }
+    if (!fs::is_regular_file(path)) {
+        cerr << "Path " << path << " is not a file\n";
+        return nullopt;
+    }
+
+    GVARS.fileInfos.emplace_back(make_unique<FileInfo>(path));
+    auto sourceCode = getSourceFromFile(GVARS.fileInfos.back().get());
+    if (!sourceCode) {
+        return nullopt;
+    }
+
+    GVARS.sourceCode = sourceCode.value();
     return createTokens();
 }

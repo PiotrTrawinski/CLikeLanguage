@@ -1,15 +1,20 @@
 #pragma once
 #include <string>
+#include <filesystem>
 
 struct FileInfo {
     FileInfo(){}
-    FileInfo(std::string name, FileInfo* parent=nullptr, int lineNumber=0) :
-        name(name),
+    FileInfo(std::filesystem::path path, FileInfo* parent=nullptr, int lineNumber=0) :
+        path(path),
         parent(parent),
         includeLineNumber(lineNumber)
     {}
 
+    std::string name() const {
+        return path.filename().u8string();
+    }
+
     FileInfo* parent;
-    std::string name;
+    std::filesystem::path path;
     int includeLineNumber;
 };
