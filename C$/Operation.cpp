@@ -1183,6 +1183,8 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
             } else if (k1 == Type::Kind::Float) {
                 auto ptrToInt = new llvm::PtrToIntInst(arguments[0]->createLlvm(llvmObj), IntegerType::Create(IntegerType::Size::I64)->createLlvm(llvmObj), "", llvmObj->block);
                 return new llvm::BitCastInst(ptrToInt, type->createLlvm(llvmObj), "", llvmObj->block);
+            } else {
+                return nullptr;
             }
         } else if (k2 == Type::Kind::Bool || k2 == Type::Kind::Integer || k2 == Type::Kind::Float) {
             return new llvm::BitCastInst(arguments[0]->createLlvm(llvmObj), type->createLlvm(llvmObj), "", llvmObj->block);
@@ -1192,6 +1194,7 @@ llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
         }
     } else {
         internalError("unexpected type during cast llvm creating", arguments[0]->position);
+        return nullptr;
     }
 }
 llvm::Value* CastOperation::getReferenceLlvm(LlvmObject* llvmObj) {
@@ -1519,16 +1522,13 @@ Statement* FunctionCallOperation::templateCopy(Scope* parentScope, const unorder
 }
 bool FunctionCallOperation::createTemplateFunctionCall(Scope* scope, Declaration* declaration) {
     auto funType = (TemplateFunctionType*)declaration->variable->type;
-    unordered_map<string, Type*> templateToType;
-    for (int i = 0; i < funType->templateTypes.size(); ++i) {
-        templateToType.insert({funType->templateTypes[i]->name, funType->implementationTypes[i]});
-    }
-    auto implementation = (FunctionValue*)declaration->value->templateCopy(scope, templateToType);
+    auto implementation = funType->getImplementation(scope, declaration);
     if (!implementation->interpret(scope)) {
         return false;
     }
     function = implementation;
     type = ((FunctionType*)implementation->type)->returnType;
+    return true;
 }
 FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName, const vector<Type*>& templatedTypes) {
     const auto& declarations = searchScope->declarationMap.getDeclarations(functionName);

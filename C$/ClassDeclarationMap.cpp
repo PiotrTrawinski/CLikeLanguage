@@ -8,6 +8,7 @@ bool ClassDeclarationMap::add(ClassDeclaration* classDeclaration){
         return false;
     }
     nameToDeclaration[classDeclaration->name] = classDeclaration;
+    return true;
 }
 ClassDeclaration* ClassDeclarationMap::getDeclaration(std::string name) {
     try {

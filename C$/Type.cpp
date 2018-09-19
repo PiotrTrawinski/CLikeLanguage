@@ -157,6 +157,7 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
         return nullopt;
     default:
         internalError("unknown type construction", position);
+        return nullopt;
     }
 }
 /*unique_ptr<Type> Type::copy() {
@@ -2174,9 +2175,12 @@ pair<llvm::Value*, llvm::Value*> ArrayViewType::createLlvmValue(LlvmObject* llvm
                     {1}, "", llvmObj->block
                 )
             };
+        } else {
+            internalError("incorrect array view createLlvmValue (argument is not array)");
+            return {nullptr, nullptr};
         }
     } else {
-        internalError("incorrect array view createLlvmValue (argument is not array)");
+        internalError("incorrect array view createLlvmValue (too many arguments)");
         return {nullptr, nullptr};
     }
 }
@@ -2766,6 +2770,7 @@ pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmOb
     switch (arguments.size()) {
     case 0:
         internalError("incorrect integer constructor value creating during llvm creating (no arguments)");
+        return { nullptr, nullptr };
     case 1: {
         auto arg0Type = arguments[0]->type->getEffectiveType();
         switch (arg0Type->kind) {
@@ -2790,10 +2795,12 @@ pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmOb
             return { nullptr, arguments[0]->createLlvm(llvmObj)};
         default:
             internalError("integer can only be constructed from integer and float values in llvm stage");
+            return { nullptr, nullptr };
         }
     }
     default: 
         internalError("incorrect integer constructor value creating during llvm creating (> 1 argument)");
+        return { nullptr, nullptr };
     }
 }
 void IntegerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
@@ -2842,6 +2849,8 @@ llvm::Type* IntegerType::createLlvm(LlvmObject* llvmObj) {
     case Size::I64:
     case Size::U64:
         return llvm::Type::getInt64Ty(llvmObj->context);
+    default:
+        return nullptr;
     }
 }
 
@@ -2936,6 +2945,7 @@ pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj,
     switch (arguments.size()) {
     case 0:
         internalError("incorrect float constructor value creating during llvm creating (no arguments)");
+        return { nullptr, nullptr };
     case 1: {
         auto arg0Type = arguments[0]->type->getEffectiveType();
         switch (arg0Type->kind) {
@@ -2953,10 +2963,12 @@ pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj,
             }
         default:
             internalError("float can only be constructed from integer and float values in llvm stage");
+            return { nullptr, nullptr };
         }
     }
     default: 
         internalError("incorrect float constructor value creating during llvm creating (> 1 argument)");
+        return { nullptr, nullptr };
     }
 }
 void FloatType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
@@ -2982,6 +2994,8 @@ llvm::Type* FloatType::createLlvm(LlvmObject* llvmObj) {
         return llvm::Type::getFloatTy(llvmObj->context);
     case Size::F64:
         return llvm::Type::getDoubleTy(llvmObj->context);
+    default:
+        return nullptr;
     }
 }
 
@@ -3028,6 +3042,7 @@ Type* TemplateType::substituteTemplate(TemplateFunctionType* templateFunctionTyp
             return templateFunctionType->implementationTypes[i];
         }
     }
+    return nullptr;
 }
 int TemplateType::compareTemplateDepth(Type* type) {
     if (type->kind == Type::Kind::Template) return 0;
@@ -3086,6 +3101,27 @@ bool TemplateFunctionType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+FunctionValue* TemplateFunctionType::getImplementation(Scope* scope, Declaration* declaration) {
+    for (auto& implementation : implementations) {
+        bool allMatch = true;
+        for (int i = 0; i < templateTypes.size(); ++i) {
+            if (!cmpPtr(implementation.first[i], implementationTypes[i])) {
+                allMatch = false;
+                break;
+            }
+        }
+        if (allMatch) {
+            return implementation.second;
+        }
+    }
+    unordered_map<string, Type*> templateToType;
+    for (int i = 0; i < templateTypes.size(); ++i) {
+        templateToType.insert({templateTypes[i]->name, implementationTypes[i]});
+    }
+    auto implementation = (FunctionValue*)declaration->value->templateCopy(scope, templateToType);
+    implementations.push_back({implementationTypes, implementation});
+    return implementation;
 }
 /*unique_ptr<Type> TemplateFunctionType::copy() {
     auto type = make_unique<TemplateFunctionType>();
