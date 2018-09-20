@@ -2070,50 +2070,64 @@ bool ClassScope::interpret() {
 
 
     for (auto& declaration : declarations) {
-        if (declaration->variable->isConst && declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
-            if (declaration->variable->isConst) {
-                auto lambda = (FunctionValue*)declaration->value;
-                auto lambdaType = (FunctionType*)declaration->value->type;
-                lambdaType->argumentTypes.push_back(RawPointerType::Create(classType));
-                lambda->arguments.push_back(Declaration::Create(lambda->position));
-                lambda->arguments.back()->variable->name = "this";
-                lambda->arguments.back()->variable->type = lambdaType->argumentTypes.back();
-                if (declaration->variable->name == "constructor") {
-                    declaration->variable->name = classDeclaration->name + "Constructor";
-                    if (lambdaType->returnType->kind != Type::Kind::Void) {
-                        return errorMessageBool("cannot specify class constructor return type", declaration->variable->position);
-                    }
+        if (declaration->value && declaration->variable->isConst && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
+            auto lambda = (FunctionValue*)declaration->value;
+            auto lambdaType = (FunctionType*)declaration->value->type;
+            lambdaType->argumentTypes.push_back(RawPointerType::Create(classType));
+            lambda->arguments.push_back(Declaration::Create(lambda->position));
+            lambda->arguments.back()->variable->name = "this";
+            lambda->arguments.back()->variable->type = lambdaType->argumentTypes.back();
+            if (declaration->variable->name == "constructor") {
+                if (lambdaType->returnType->kind != Type::Kind::Void) {
+                    return errorMessageBool("cannot specify class constructor return type", declaration->variable->position);
+                }
+                auto functionCall = FunctionCallOperation::Create(lambda->position);
+                functionCall->function = inlineConstructors;
+                lambda->arguments.back()->variable->declaration = lambda->arguments.back();
+                functionCall->arguments.push_back(lambda->arguments.back()->variable);
+                functionCall->wasInterpreted = true;
+                lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
+                constructors.push_back(lambda);
+            } 
+            if (declaration->variable->name == "destructor") {
+                if (lambdaType->returnType->kind != Type::Kind::Void) {
+                    return errorMessageBool("cannot specify class destructor return type", declaration->variable->position);
+                }
+                if (lambdaType->argumentTypes.size() > 1) {
+                    return errorMessageBool("class destructor cannot have any arguments\n", declaration->variable->position);
+                }
+                if (inlineDestructors) {
                     auto functionCall = FunctionCallOperation::Create(lambda->position);
-                    functionCall->function = inlineConstructors;
+                    functionCall->function = inlineDestructors;
                     lambda->arguments.back()->variable->declaration = lambda->arguments.back();
                     functionCall->arguments.push_back(lambda->arguments.back()->variable);
                     functionCall->wasInterpreted = true;
                     lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
-                    constructors.push_back(lambda);
-                } 
-                if (declaration->variable->name == "destructor") {
-                    declaration->variable->name = classDeclaration->name + "Destructor";
-                    if (lambdaType->returnType->kind != Type::Kind::Void) {
-                        return errorMessageBool("cannot specify class destructor return type", declaration->variable->position);
-                    }
-                    if (lambdaType->argumentTypes.size() > 1) {
-                        return errorMessageBool("class destructor cannot have any arguments\n", declaration->variable->position);
-                    }
-                    if (inlineDestructors) {
-                        auto functionCall = FunctionCallOperation::Create(lambda->position);
-                        functionCall->function = inlineDestructors;
-                        lambda->arguments.back()->variable->declaration = lambda->arguments.back();
-                        functionCall->arguments.push_back(lambda->arguments.back()->variable);
-                        functionCall->wasInterpreted = true;
-                        lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
-                    }
-                    destructor = lambda;
                 }
+                destructor = lambda;
             }
-            if (!declaration->interpret(this)) {
+            if (declaration->variable->type && !declaration->variable->type->interpret(this)) {
+                errorMessageBool("unknown type: " + DeclarationMap::toString(declaration->variable->type), position);
+                wereErrors = true;
+            }
+            if (!declaration->value->type->interpret(this)) {
+                errorMessageBool("unknown type: " + DeclarationMap::toString(declaration->value->type), position);
                 wereErrors = true;
             }
             if (!declarationMap.addFunctionDeclaration(declaration)) {
+                wereErrors = true;
+            }
+            declaration->variable->type = declaration->value->type;
+            declaration->variable->isConstexpr = true;
+            if (declaration->value->type->kind == Type::Kind::TemplateFunction) {
+                declaration->isTemplateFunctionDeclaration = true;
+            }
+        }
+    }
+
+    for (auto& declaration : declarations) {
+        if (declaration->variable->isConst && declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
+            if (!declaration->interpret(this)) {
                 wereErrors = true;
             }
         }

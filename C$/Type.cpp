@@ -2400,7 +2400,7 @@ optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodeP
             for (auto function : viableDeclarations) {
                 neededCtors.push_back(vector<ConstructorOperation*>());
                 auto argumentTypes = ((FunctionType*)function->type)->argumentTypes;
-                for (int i = 0; i < argumentTypes.size(); ++i) {
+                for (int i = 0; i < arguments.size(); ++i) {
                     if (!cmpPtr(argumentTypes[i], arguments[i]->type)) {
                         auto ctor = ConstructorOperation::Create(arguments[i]->position, argumentTypes[i], {arguments[i]});
                         auto ctorInterpret = ctor->interpret(scope, true);
