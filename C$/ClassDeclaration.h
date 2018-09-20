@@ -19,6 +19,7 @@ struct ClassDeclaration : Statement {
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     ClassDeclaration* get(const std::vector<Type*>& classTemplateTypes);
     bool interpret(const std::vector<Type*>& classTemplateTypes);
+    bool interpretAllImplementations();
     virtual bool operator==(const Statement& declaration) const;
 
     std::string name;
