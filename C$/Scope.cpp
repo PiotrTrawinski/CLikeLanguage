@@ -1645,6 +1645,14 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
         declarationDependingOnErrorScope = nullptr;
     }
 
+    for (auto& statement : statements) {
+        if (statement->kind == Kind::ClassDeclaration) {
+            if (!((ClassDeclaration*)statement)->interpretAllImplementations()) {
+                wereErrors = true;
+            }
+        }
+    }
+
     if (wereErrors) {
         return false;
     }

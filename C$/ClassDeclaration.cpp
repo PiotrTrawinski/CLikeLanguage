@@ -76,6 +76,17 @@ bool ClassDeclaration::interpret(const vector<Type*>& classTemplateTypes) {
         return true;
     }
 }
+bool ClassDeclaration::interpretAllImplementations() {
+    if (!interpret({})) {
+        return false;
+    }
+    for (auto& implementation : implementations) {
+        if (!implementation.second->interpret({})) {
+            return false;
+        }
+    }
+    return true;
+}
 bool ClassDeclaration::operator==(const Statement& declaration) const {
     if(typeid(declaration) == typeid(*this)){
         const auto& other = static_cast<const ClassDeclaration&>(declaration);

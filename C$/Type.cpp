@@ -307,12 +307,22 @@ optional<InterpretConstructorResult> OwnerPointerType::interpretConstructor(cons
     switch (arguments.size()) {
     case 0:
         return NullValue::Create(position, this);
-    case 1:
+    case 1: {
         if (arguments[0]->valueKind == Value::ValueKind::Null) {
             return NullValue::Create(position, this);
         }
+        auto effType = arguments[0]->type->getEffectiveType();
+        if (effType->kind == Type::Kind::RawPointer && cmpPtr(((RawPointerType*)effType)->underlyingType, underlyingType)) {
+            if (isExplicit) {
+                return InterpretConstructorResult(nullptr, nullptr);
+            } else {
+                if (!onlyTry) errorMessageOpt("cannot implicitly create owner pointer from raw pointer", position);
+                return nullopt;
+            }
+        }
         if (!onlyTry) errorMessageOpt("no fitting owner pointer constructor (bad argument type)", position);
         return nullopt;
+    }
     default: 
         if (!onlyTry) errorMessageOpt("no fitting owner pointer constructor (too many arguments)", position);
         return nullopt;
@@ -334,14 +344,23 @@ llvm::Value* OwnerPointerType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue
     return new llvm::LoadInst(copy, "", llvmObj->block);
 }
 void OwnerPointerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    if (Value::isLvalue(arguments[0])) {
-        createLlvmCopyConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
+    if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::RawPointer) {
+        llvmStore(llvmObj, arguments[0]->createLlvm(llvmObj), leftLlvmRef);
     } else {
-        createLlvmMoveConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
+        if (Value::isLvalue(arguments[0])) {
+            createLlvmCopyConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
+        } else {
+            createLlvmMoveConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
+        }
     }
 }
 void OwnerPointerType::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    internalError("owner pointer should never createLlvmAssignment");
+    if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::RawPointer) {
+        createLlvmDestructorRef(llvmObj, leftLlvmRef);
+        llvmStore(llvmObj, arguments[0]->createLlvm(llvmObj), leftLlvmRef);
+    } else {
+        internalError("owner pointer can only createLlvmAssignment with raw pointer");
+    }
 }
 void OwnerPointerType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     auto rightAsInt = new llvm::PtrToIntInst(rightLlvmValue, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
@@ -482,12 +501,26 @@ optional<InterpretConstructorResult> RawPointerType::interpretConstructor(const 
         } else {
             return NullValue::Create(position, this);
         }
-    case 1:
+    case 1: {
         if (arguments[0]->valueKind == Value::ValueKind::Null) {
             return NullValue::Create(position, this);
         }
+        auto effType = arguments[0]->type->getEffectiveType();
+        if (effType->kind == Type::Kind::OwnerPointer && cmpPtr(((OwnerPointerType*)effType)->underlyingType, underlyingType)) {
+            if (Value::isLvalue(arguments[0])) {
+                return InterpretConstructorResult(nullptr, nullptr);
+            } else {
+                if (isExplicit) {
+                    return InterpretConstructorResult(nullptr, nullptr, true);
+                } else {
+                    if (!onlyTry) errorMessageOpt("cannot implicitly create raw pointer from non-lvalue owner pointer", position);
+                    return nullopt;
+                }
+            }
+        }
         if (!onlyTry) errorMessageOpt("no fitting raw pointer constructor (bad argument type)", position);
         return nullopt;
+    }
     default: 
         if (!onlyTry) errorMessageOpt("no fitting raw pointer constructor (too many arguments)", position);
         return nullopt;
