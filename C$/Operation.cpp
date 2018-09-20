@@ -359,6 +359,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
                 !((BoolValue*)bool1)->value
             );
         }
+        arguments[0] = bool1;
         type = Type::Create(Type::Kind::Bool);
 
         break;   
@@ -380,6 +381,8 @@ optional<Value*> Operation::interpret(Scope* scope) {
                 ((BoolValue*)bool1)->value && ((BoolValue*)bool2)->value
             );
         }
+        arguments[0] = bool1;
+        arguments[1] = bool2;
         type = Type::Create(Type::Kind::Bool);
 
         break;   
@@ -401,6 +404,8 @@ optional<Value*> Operation::interpret(Scope* scope) {
                 ((BoolValue*)bool1)->value || ((BoolValue*)bool2)->value
             );
         }
+        arguments[0] = bool1;
+        arguments[1] = bool2;
         type = Type::Create(Type::Kind::Bool);
 
         break;   
