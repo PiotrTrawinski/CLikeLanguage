@@ -87,7 +87,7 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
             } else {
                 return BoolValue::Create(position, false);
             }
-        case 1: 
+        case 1:  {
             if (arguments[0]->isConstexpr) {
                 switch (arguments[0]->valueKind) {
                 case Value::ValueKind::Char:        return BoolValue::Create(position, ((CharValue*)arguments[0])->value != 0);
@@ -96,8 +96,9 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
                 case Value::ValueKind::String:      return BoolValue::Create(position, ((StringValue*)arguments[0])->value.size() != 0);
                 }
             } 
-            if (arguments[0]->type->getEffectiveType()->kind != Type::Kind::Class) {
-                if (arguments[0]->type->kind == Type::Kind::Integer) {
+            auto effType = arguments[0]->type->getEffectiveType();
+            if (effType->kind != Type::Kind::Class) {
+                if (effType->kind == Type::Kind::Integer) {
                     auto op = Operation::Create(position, Operation::Kind::Neq);
                     op->arguments.push_back(arguments[0]);
                     auto integerValue = IntegerValue::Create(position, 0);
@@ -108,7 +109,7 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
                     if (opInterpret.value()) return opInterpret.value();
                     else return op;
                 } 
-                if (arguments[0]->type->kind == Type::Kind::Float) {
+                if (effType->kind == Type::Kind::Float) {
                     auto op = Operation::Create(position, Operation::Kind::Neq);
                     op->arguments.push_back(arguments[0]);
                     auto floatValue = FloatValue::Create(position, 0);
@@ -119,10 +120,10 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
                     if (opInterpret.value()) return opInterpret.value();
                     else return op;
                 }
-                if (arguments[0]->type->kind == Type::Kind::MaybeError) {
+                if (effType->kind == Type::Kind::MaybeError) {
                     auto toVoidError = ConstructorOperation::Create(position, MaybeErrorType::Create(Type::Create(Type::Kind::Void)), {arguments[0]});
                     auto toInt = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {toVoidError});
-                    auto op = Operation::Create(position, Operation::Kind::Neq);
+                    auto op = Operation::Create(position, Operation::Kind::Eq);
                     op->arguments.push_back(toInt);
                     auto integerValue = IntegerValue::Create(position, 0);
                     integerValue->type = IntegerType::Create(IntegerType::Size::I64);
@@ -132,7 +133,7 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
                     if (opInterpret.value()) return opInterpret.value();
                     else return op;
                 }
-                if (arguments[0]->type->kind == Type::Kind::RawPointer || arguments[0]->type->kind == Type::Kind::OwnerPointer) {
+                if (effType->kind == Type::Kind::RawPointer || effType->kind == Type::Kind::OwnerPointer) {
                     auto toInt = CastOperation::Create(position, IntegerType::Create(IntegerType::Size::I64));
                     toInt->arguments.push_back(arguments[0]);
                     auto op = Operation::Create(position, Operation::Kind::Neq);
@@ -148,6 +149,7 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
             }
             if (!onlyTry) errorMessageOpt("no fitting bool constructor (bad argument type)", position);
             return nullopt;
+        }
         default:
             if (!onlyTry) errorMessageOpt("no fitting bool constructor (too many arguments)", position);
             return nullopt;
