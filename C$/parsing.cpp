@@ -91,7 +91,7 @@ optional<vector<Token>> createTokens() {
         while (charId < lineStr.size()) {
             int charNumber = charId+1;
             char c = lineStr[charId];
-            if (isalpha(c)) {
+            if (isalpha(c) || c == '_') {
                 string label = string(1, c);
                 charId++;
                 while (charId < lineStr.size() && (isalpha(lineStr[charId]) || isdigit(lineStr[charId]) || lineStr[charId]=='_')) {
