@@ -132,8 +132,13 @@ void Declaration::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
     if (!value || !variable->isConstexpr || value->valueKind != Value::ValueKind::FunctionValue) {
         llvmVariable = variable->type->allocaLlvm(llvmObj, variable->name);
     }
-    if (value && value->valueKind == Value::ValueKind::Operation) {
-        ((Operation*)value)->createAllocaLlvmIfNeeded(llvmObj);
+    if (value) {
+        assignOperation = AssignOperation::Create(position);
+        assignOperation->arguments.push_back(variable);
+        assignOperation->arguments.push_back(value);
+        assignOperation->interpret(scope);
+        assignOperation->isConstruction = true;
+        assignOperation->createAllocaLlvmIfNeededForValue(llvmObj);
     }
 }
 void Declaration::createLlvm(LlvmObject* llvmObj) {
@@ -148,11 +153,6 @@ void Declaration::createLlvm(LlvmObject* llvmObj) {
             if (variable->type->kind == Type::Kind::Reference) {
                 new llvm::StoreInst(value->getReferenceLlvm(llvmObj), llvmVariable, llvmObj->block);
             } else {
-                auto assignOperation = AssignOperation::Create(position);
-                assignOperation->arguments.push_back(variable);
-                assignOperation->arguments.push_back(value);
-                assignOperation->interpret(scope);
-                assignOperation->isConstruction = true;
                 assignOperation->createLlvm(llvmObj);
             }
         }

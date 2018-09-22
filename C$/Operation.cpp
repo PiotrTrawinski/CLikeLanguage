@@ -737,9 +737,67 @@ bool Operation::operator==(const Statement& value) const {
     }
     return value;
 }*/
-void Operation::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
-    if (containedErrorResolve) {
-        containedErrorResolve->createAllocaLlvmIfNeeded(llvmObj);
+void Operation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    switch (kind) {
+    case Kind::Address:
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        break;
+    case Kind::GetValue:
+        switch (arguments[0]->type->getEffectiveType()->kind) {
+        case Type::Kind::MaybeError:
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        case Type::Kind::RawPointer:
+        case Type::Kind::OwnerPointer:
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+        break;
+    case Kind::Destroy:
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        break;
+    case Kind::Minus:
+    case Kind::LogicalNot:
+    case Kind::BitNeg:
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        break;
+    case Kind::Mul:
+    case Kind::Div:
+    case Kind::Mod:
+    case Kind::Add:
+    case Kind::Sub:
+    case Kind::Shl:
+    case Kind::Shr:
+    case Kind::Sal:
+    case Kind::Sar:
+    case Kind::Gt:
+    case Kind::Lt:
+    case Kind::Gte:
+    case Kind::Lte:
+    case Kind::Eq:
+    case Kind::Neq:
+    case Kind::LogicalAnd:
+    case Kind::LogicalOr:
+    case Kind::BitAnd:
+    case Kind::BitXor:
+    case Kind::BitOr:
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
+        break;
+    default:
+        break;
+    }
+}
+void Operation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    switch (kind) {
+    case Kind::GetValue:
+        switch (arguments[0]->type->getEffectiveType()->kind) {
+        case Type::Kind::RawPointer: 
+        case Type::Kind::OwnerPointer:
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        case Type::Kind::MaybeError: 
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        }
     }
 }
 llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
@@ -1162,6 +1220,16 @@ bool CastOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+void CastOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    if (argIsLValue) {
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+    } else {
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+    }
+}
+void CastOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+}
 llvm::Value* CastOperation::createLlvm(LlvmObject* llvmObj) {
     if (argIsLValue) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
@@ -1284,6 +1352,27 @@ bool ArrayIndexOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+void ArrayIndexOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    createAllocaLlvmIfNeededForReference(llvmObj);
+}
+void ArrayIndexOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    auto effType = arguments[0]->type->getEffectiveType();
+    if (effType->kind == Type::Kind::StaticArray) {
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+    } else if (effType->kind == Type::Kind::DynamicArray) {
+        if (isLvalue(arguments[0])) {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+    } else if (effType->kind == Type::Kind::ArrayView) {
+        if (isLvalue(arguments[0])) {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+    }
+}
 llvm::Value* ArrayIndexOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto effType = arguments[0]->type->getEffectiveType();
     llvm::Value* data;
@@ -1413,10 +1502,33 @@ bool ArraySubArrayOperation::operator==(const Statement& value) const {
     }
     return value;
 }*/
+void ArraySubArrayOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    auto effType = arguments[0]->type->getEffectiveType();
+    if (effType->kind == Type::Kind::StaticArray) {
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+    } else if (effType->kind == Type::Kind::DynamicArray) {
+        if (isLvalue(arguments[0])) {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+    } else if (effType->kind == Type::Kind::ArrayView) {
+        if (isLvalue(arguments[0])) {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+    }
+}
+void ArraySubArrayOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    if (!viewRef) {
+        viewRef = ((ArrayViewType*)type)->allocaLlvm(llvmObj);
+        createAllocaLlvmIfNeededForValue(llvmObj);
+    }
+}
 llvm::Value* ArraySubArrayOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto effType = arguments[0]->type->getEffectiveType();
     auto thisViewType = (ArrayViewType*)type;
-    auto viewRef = thisViewType->allocaLlvm(llvmObj, "");
     auto firstIndexValue = firstIndex->createLlvm(llvmObj);
     auto sizeValue = size->createLlvm(llvmObj);
     new llvm::StoreInst(sizeValue, thisViewType->llvmGepSize(llvmObj, viewRef), llvmObj->block);
@@ -1964,6 +2076,56 @@ bool FunctionCallOperation::operator==(const Statement& value) const {
         return false;
     }
 }
+void FunctionCallOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    if (!buildInFunctionName.empty()) {
+        
+    } else {
+        auto functionType = (FunctionType*)function->type;
+        for (int i = 0; i < arguments.size(); ++i) {
+            if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
+                arguments[i]->createAllocaLlvmIfNeededForReference(llvmObj);
+                argRefs.push_back(nullptr);
+            } else {
+                if (isLvalue(arguments[i])) {
+                    argRefs.push_back(arguments[i]->type->createRefForLlvmCopy(llvmObj, arguments[i]));
+                } else {
+                    arguments[i]->createAllocaLlvmIfNeededForValue(llvmObj);
+                    argRefs.push_back(nullptr);
+                }
+            }
+        }
+        function->createAllocaLlvmIfNeededForValue(llvmObj);
+
+        if (functionType->returnType->kind != Type::Kind::Reference && functionType->returnType->needsReference()) {
+            llvmRef = functionType->returnType->allocaLlvm(llvmObj);
+        }
+    }
+}
+void FunctionCallOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    if (!buildInFunctionName.empty()) {
+
+    } else {
+        auto functionType = (FunctionType*)function->type;
+        for (int i = 0; i < arguments.size(); ++i) {
+            if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
+                arguments[i]->createAllocaLlvmIfNeededForReference(llvmObj);
+                argRefs.push_back(nullptr);
+            } else {
+                if (isLvalue(arguments[i])) {
+                    argRefs.push_back(arguments[i]->type->createRefForLlvmCopy(llvmObj, arguments[i]));
+                } else {
+                    arguments[i]->createAllocaLlvmIfNeededForValue(llvmObj);
+                    argRefs.push_back(nullptr);
+                }
+            }
+        }
+        function->createAllocaLlvmIfNeededForValue(llvmObj);
+
+        if (functionType->returnType->kind != Type::Kind::Reference) {
+            llvmRef = functionType->returnType->allocaLlvm(llvmObj);
+        }
+    }
+}
 llvm::Value* FunctionCallOperation::createLlvmCall(LlvmObject* llvmObj) {
     vector<llvm::Value*> args;
     auto functionType = (FunctionType*)function->type;
@@ -1972,7 +2134,7 @@ llvm::Value* FunctionCallOperation::createLlvmCall(LlvmObject* llvmObj) {
             args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
         } else {
             if (isLvalue(arguments[i])) {
-                args.push_back(arguments[i]->type->createLlvmCopy(llvmObj, arguments[i]));
+                args.push_back(arguments[i]->type->createLlvmCopy(llvmObj, arguments[i], argRefs[i]));
             } else {
                 arguments[i]->wasCaptured = true;
                 args.push_back(arguments[i]->createLlvm(llvmObj));
@@ -2002,7 +2164,6 @@ llvm::Value* FunctionCallOperation::createLlvm(LlvmObject* llvmObj) {
         llvmValue = new llvm::LoadInst(callResult, "", llvmObj->block);
     } else if (functionType->returnType->needsReference()) {
         llvmValue = callResult;
-        llvmRef = functionType->returnType->allocaLlvm(llvmObj);
         new llvm::StoreInst(llvmValue, llvmRef, llvmObj->block);
         return llvmValue;
     } else {
@@ -2027,7 +2188,6 @@ llvm::Value* FunctionCallOperation::getReferenceLlvm(LlvmObject* llvmObj) {
         llvmRef = createLlvmCall(llvmObj);
         return llvmRef;
     }
-    llvmRef = functionType->returnType->allocaLlvm(llvmObj);
     new llvm::StoreInst(createLlvmCall(llvmObj), llvmRef, llvmObj->block);
     return llvmRef;
 }
@@ -2301,6 +2461,16 @@ bool FlowOperation::operator==(const Statement& value) const {
         return false;
     }
 }
+void FlowOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    if (kind == Kind::Return && arguments.size() > 0) {
+        if (arguments[0]->type->kind == Type::Kind::Reference) {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+    }
+}
+void FlowOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {}
 llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
     for (auto& destructor : variablesDestructors) {
         destructor->createLlvm(llvmObj);
@@ -2407,10 +2577,17 @@ bool ErrorResolveOperation::operator==(const Statement& value) const {
         return false;
     }
 }
-void ErrorResolveOperation::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
+void ErrorResolveOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
     errorValueDeclaration->createAllocaLlvmIfNeeded(llvmObj);
     if (onErrorScope) onErrorScope->allocaAllDeclarationsLlvm(llvmObj);
     if (onSuccessScope) onSuccessScope->allocaAllDeclarationsLlvm(llvmObj);
+    arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+}
+void ErrorResolveOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    errorValueDeclaration->createAllocaLlvmIfNeeded(llvmObj);
+    if (onErrorScope) onErrorScope->allocaAllDeclarationsLlvm(llvmObj);
+    if (onSuccessScope) onSuccessScope->allocaAllDeclarationsLlvm(llvmObj);
+    arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
 }
 llvm::Value* ErrorResolveOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
@@ -2728,6 +2905,20 @@ optional<Value*> ConstructorOperation::interpret(Scope* scope, bool onlyTry, boo
     }
     return nullptr;
 }
+void ConstructorOperation::createAllocaLlvmIfNeededForConstructor(LlvmObject* llvmObj) {
+    if (isHeapAllocation) {
+        constructorType->createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
+    } else {
+        type->createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
+    }
+}
+void ConstructorOperation::createAllocaLlvmIfNeededForAssignment(LlvmObject* llvmObj) {
+    if (isHeapAllocation) {
+        constructorType->createAllocaIfNeededForAssignment(llvmObj, arguments, classConstructor);
+    } else {
+        type->createAllocaIfNeededForAssignment(llvmObj, arguments, classConstructor);
+    }
+}
 void ConstructorOperation::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef) {
     if (isHeapAllocation) {
         auto allocPtr = new llvm::BitCastInst(
@@ -2756,12 +2947,24 @@ void ConstructorOperation::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value
         type->createLlvmAssignment(llvmObj, leftLlvmRef, arguments, classConstructor);
     }
 }
-llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+void ConstructorOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    if (!isHeapAllocation) {
+        llvmRef = type->createRefForLlvmValue(llvmObj, arguments, classConstructor);
+    }
+}
+void ConstructorOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
     if (isHeapAllocation) {
         llvmRef = type->allocaLlvm(llvmObj);
+        createAllocaLlvmIfNeededForValue(llvmObj);
+    } else {
+        llvmRef = type->createRefForLlvmReference(llvmObj, arguments, classConstructor);
+    }
+}
+llvm::Value* ConstructorOperation::getReferenceLlvm(LlvmObject* llvmObj) {
+    if (isHeapAllocation) {
         new llvm::StoreInst(createLlvm(llvmObj), llvmRef, llvmObj->block);
     } else {
-        llvmRef = type->createLlvmReference(llvmObj, arguments, classConstructor);
+        llvmRef = type->createLlvmReference(llvmObj, arguments, classConstructor, llvmRef);
     }
     return llvmRef;
 }
@@ -2775,7 +2978,7 @@ llvm::Value* ConstructorOperation::createLlvm(LlvmObject* llvmObj) {
         );
         constructorType->createLlvmConstructor(llvmObj, llvmValue, arguments, classConstructor);
     } else {
-        auto createValue = type->createLlvmValue(llvmObj, arguments, classConstructor);
+        auto createValue = type->createLlvmValue(llvmObj, arguments, classConstructor, llvmRef);
         llvmRef = createValue.first;
         llvmValue = createValue.second;
     }
@@ -2872,6 +3075,36 @@ bool AssignOperation::operator==(const Statement& value) const {
     }
     else {
         return false;
+    }
+}
+void AssignOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    createAllocaLlvmIfNeededForReference(llvmObj);
+}
+void AssignOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+
+    if (arguments[1]->valueKind == Value::ValueKind::Operation && ((Operation*)arguments[1])->kind == Operation::Kind::Constructor) {
+        auto constructorOp = (ConstructorOperation*)arguments[1];
+        if (isConstruction) {
+            constructorOp->createAllocaLlvmIfNeededForConstructor(llvmObj);
+        } else {
+            constructorOp->createAllocaLlvmIfNeededForAssignment(llvmObj);
+        }
+    }
+    else {
+        if (isLvalue(arguments[1])) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::DynamicArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
+                arguments[1]->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else {
+                arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
+        } else {
+            if (arguments[0]->type->kind == Type::Kind::Class) {
+                arguments[1]->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else {
+                arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
+        }
     }
 }
 llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
@@ -3050,6 +3283,51 @@ bool DotOperation::operator==(const Statement& value) const {
     }
     else {
         return false;
+    }
+}
+void DotOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    auto arg0EffType = arguments[0]->type->getEffectiveType();
+    if (arg0EffType->kind == Type::Kind::DynamicArray || arg0EffType->kind == Type::Kind::ArrayView) {
+        createAllocaLlvmIfNeededForReference(llvmObj);
+    } else {
+        auto accessedDeclaration = ((Variable*)arguments[1])->declaration;
+        if (accessedDeclaration->value && accessedDeclaration->variable->isConstexpr) {
+            return;
+        } else {
+            createAllocaLlvmIfNeededForReference(llvmObj);
+        }
+    }
+}
+void DotOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    auto effectiveType0 = arguments[0]->type->getEffectiveType();
+    if (effectiveType0->kind == Type::Kind::DynamicArray) {
+        auto fieldName = ((Variable*)arguments[1])->name;
+        auto dynamicArrayType = (DynamicArrayType*)effectiveType0;
+        if (arguments[0]->valueKind == ValueKind::Operation 
+            && (((Operation*)arguments[0])->kind == Operation::Kind::FunctionCall) || ((Operation*)arguments[0])->kind == Operation::Kind::Constructor)
+        {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        }
+    } else if (effectiveType0->kind == Type::Kind::ArrayView) {
+        auto fieldName = ((Variable*)arguments[1])->name;
+        auto arrayViewType = (ArrayViewType*)effectiveType0;
+        if (arguments[0]->valueKind == ValueKind::Operation 
+            && (((Operation*)arguments[0])->kind == Operation::Kind::FunctionCall) || ((Operation*)arguments[0])->kind == Operation::Kind::Constructor)
+        {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        }
+    } else {
+        if (effectiveType0->kind == Type::Kind::RawPointer || effectiveType0->kind == Type::Kind::OwnerPointer) {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        } else if (effectiveType0->kind == Type::Kind::MaybeError) {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        }
     }
 }
 llvm::Value* DotOperation::getReferenceLlvm(LlvmObject* llvmObj) {

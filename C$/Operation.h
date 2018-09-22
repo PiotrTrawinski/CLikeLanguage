@@ -54,7 +54,8 @@ struct Operation : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
-    virtual void createAllocaLlvmIfNeeded(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     
@@ -236,6 +237,8 @@ struct CastOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
 
@@ -253,6 +256,8 @@ struct ArrayIndexOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
@@ -277,12 +282,16 @@ struct ArraySubArrayOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     Value* firstIndex;
     Value* secondIndex;
     Value* size = nullptr;
+
+    llvm::Value* viewRef = nullptr;
     
 private:
     static std::vector<std::unique_ptr<ArraySubArrayOperation>> objects;
@@ -295,6 +304,8 @@ struct FunctionCallOperation : Operation {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     llvm::Value* createLlvmCall(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
@@ -304,6 +315,9 @@ struct FunctionCallOperation : Operation {
     std::string buildInFunctionName = "";
     FunctionValue* classConstructor = nullptr;
     std::string idName = "";
+
+    std::vector<llvm::Value*> argRefs;
+    std::vector<llvm::Value*> argValues;
     
 private:
     enum FindFunctionStatus {
@@ -325,6 +339,8 @@ struct FlowOperation : Operation {
     Scope* scopePtr = nullptr;
     std::vector<Operation*> variablesDestructors;
 
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
 private:
@@ -338,7 +354,8 @@ struct ErrorResolveOperation : Operation {
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
-    virtual void createAllocaLlvmIfNeeded(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual void createLlvmSuccessDestructor(LlvmObject* llvmObj);
@@ -384,8 +401,12 @@ struct ConstructorOperation : Operation {
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     std::optional<Value*> interpret(Scope* scope, bool onlyTry, bool parentIsAssignment=false);
+    void createAllocaLlvmIfNeededForConstructor(LlvmObject* llvmObj);
+    void createAllocaLlvmIfNeededForAssignment(LlvmObject* llvmObj);
     void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef);
     void createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef);
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual void createDestructorLlvm(LlvmObject* llvmObj);
@@ -406,6 +427,8 @@ struct AssignOperation : Operation {
     void templateCopy(AssignOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual bool operator==(const Statement& value) const;
@@ -422,6 +445,8 @@ struct DotOperation : Operation {
     void templateCopy(DotOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual bool operator==(const Statement& value) const;

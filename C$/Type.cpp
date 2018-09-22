@@ -177,15 +177,26 @@ llvm::Type* Type::createLlvm(LlvmObject* llvmObj) {
 llvm::AllocaInst* Type::allocaLlvm(LlvmObject* llvmObj, const string& name) {
     return new llvm::AllocaInst(createLlvm(llvmObj), 0, name, llvmObj->block);
 }
-pair<llvm::Value*, llvm::Value*> Type::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    return { nullptr, nullptr };
-}
-llvm::Value* Type::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+llvm::Value* Type::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     return nullptr;
 }
-llvm::Value* Type::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+pair<llvm::Value*, llvm::Value*> Type::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    return { nullptr, nullptr };
+}
+llvm::Value* Type::createRefForLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return nullptr;
+}
+llvm::Value* Type::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    return nullptr;
+}
+llvm::Value* Type::createRefForLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    lValue->createAllocaLlvmIfNeededForValue(llvmObj);
+    return nullptr;
+}
+llvm::Value* Type::createLlvmCopy(LlvmObject* llvmObj, Value* lValue, llvm::Value* ref) {
     return lValue->createLlvm(llvmObj);
 }
+void Type::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {}
 void Type::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {}
 bool Type::hasLlvmConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (kind) {
@@ -195,6 +206,9 @@ bool Type::hasLlvmConstructor(LlvmObject* llvmObj, const std::vector<Value*>& ar
     default:
         return true;
     }
+}
+void Type::createAllocaIfNeededForAssignment(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
 }
 void Type::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     createLlvmDestructorRef(llvmObj, leftLlvmRef);
@@ -340,10 +354,16 @@ llvm::Type* OwnerPointerType::createLlvm(LlvmObject* llvmObj) {
         return llvm::PointerType::get(underlyingType->createLlvm(llvmObj), 0);
     }
 }
-llvm::Value* OwnerPointerType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
-    auto copy = allocaLlvm(llvmObj);
-    createLlvmCopyConstructor(llvmObj, copy, lValue->createLlvm(llvmObj));
-    return new llvm::LoadInst(copy, "", llvmObj->block);
+llvm::Value* OwnerPointerType::createRefForLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    lValue->createAllocaLlvmIfNeededForValue(llvmObj);
+    return allocaLlvm(llvmObj);
+}
+llvm::Value* OwnerPointerType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue, llvm::Value* ref) {
+    createLlvmCopyConstructor(llvmObj, ref, lValue->createLlvm(llvmObj));
+    return new llvm::LoadInst(ref, "", llvmObj->block);
+}
+void OwnerPointerType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
 }
 void OwnerPointerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::RawPointer) {
@@ -355,6 +375,9 @@ void OwnerPointerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* l
             createLlvmMoveConstructor(llvmObj, leftLlvmRef, arguments[0]->createLlvm(llvmObj));
         }
     }
+}
+void OwnerPointerType::createAllocaIfNeededForAssignment(LlvmObject* llvmObj, const vector<Value*>& arguments) {
+    arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
 }
 void OwnerPointerType::createLlvmAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::RawPointer) {
@@ -528,6 +551,11 @@ optional<InterpretConstructorResult> RawPointerType::interpretConstructor(const 
         return nullopt;
     }
 }
+void RawPointerType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (arguments.size() == 1) {
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+    }
+}
 void RawPointerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (arguments.size()) {
     case 0: 
@@ -644,7 +672,34 @@ llvm::Type* MaybeErrorType::createLlvm(LlvmObject* llvmObj) {
     }
     return llvmType;
 }
-pair<llvm::Value*, llvm::Value*> MaybeErrorType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+llvm::Value* MaybeErrorType::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        if (underlyingType->kind == Type::Kind::Void) {
+            return nullptr;
+        } else if (!underlyingType->needsDestruction()){
+            return nullptr;
+        }
+        break;
+    case 1: {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        if (underlyingType->kind == Type::Kind::Void) {
+            if (argEffType->kind == Type::Kind::Integer) {
+                arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+                return nullptr;
+            } else if (argEffType->kind == Type::Kind::MaybeError) {
+                arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+                return nullptr;
+            }
+        }
+        break;
+    }
+    default: 
+        break;
+    }
+    return createRefForLlvmReference(llvmObj, arguments, classConstructor);
+}
+pair<llvm::Value*, llvm::Value*> MaybeErrorType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
     switch (arguments.size()) {
     case 0:
         if (underlyingType->kind == Type::Kind::Void) {
@@ -673,18 +728,24 @@ pair<llvm::Value*, llvm::Value*> MaybeErrorType::createLlvmValue(LlvmObject* llv
     default: 
         break;
     }
-    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor);
+    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor, ref);
     return {llvmRef, new llvm::LoadInst(llvmRef, "", llvmObj->block)};
 }
-llvm::Value* MaybeErrorType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = allocaLlvm(llvmObj);
-    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
-    return llvmRef;
+llvm::Value* MaybeErrorType::createRefForLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
+    return allocaLlvm(llvmObj);
 }
-llvm::Value* MaybeErrorType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
-    auto copy = allocaLlvm(llvmObj);
-    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
-    return new llvm::LoadInst(copy, "", llvmObj->block);
+llvm::Value* MaybeErrorType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    createLlvmConstructor(llvmObj, ref, arguments, classConstructor);
+    return ref;
+}
+llvm::Value* MaybeErrorType::createRefForLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    lValue->createAllocaLlvmIfNeededForReference(llvmObj);
+    return allocaLlvm(llvmObj);
+}
+llvm::Value* MaybeErrorType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue, llvm::Value* ref) {
+    createLlvmCopyConstructor(llvmObj, ref, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(ref, "", llvmObj->block);
 }
 llvm::Value* MaybeErrorType::llvmGepError(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     vector<llvm::Value*> indexList;
@@ -713,6 +774,33 @@ llvm::Value* MaybeErrorType::llvmInsertError(LlvmObject* llvmObj, llvm::Value* l
 }
 llvm::Value* MaybeErrorType::llvmInsertValue(LlvmObject* llvmObj, llvm::Value* llvmValue, llvm::Value* toInsert) {
     return llvm::InsertValueInst::Create(llvmValue, toInsert, {0}, "", llvmObj->block);
+}
+void MaybeErrorType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 1: {
+        auto argEffType = arguments[0]->type->getEffectiveType();
+        if (cmpPtr(argEffType, underlyingType)) {
+            if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
+                arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else {
+                arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
+        }
+        else if (underlyingType->kind == Type::Kind::Void && argEffType->kind == Type::Kind::Integer) {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+        else if (argEffType->kind == Type::Kind::MaybeError) {
+            if (underlyingType->kind == Type::Kind::Void) {
+                arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else if (((MaybeErrorType*)argEffType)->underlyingType->kind == Type::Kind::Void) {
+                arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
+        }
+        break;
+    }
+    default: 
+        break;
+    }
 }
 void MaybeErrorType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (arguments.size()) {
@@ -1031,19 +1119,31 @@ optional<InterpretConstructorResult> StaticArrayType::interpretConstructor(const
         return result;
     }
 }
-pair<llvm::Value*, llvm::Value*> StaticArrayType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor);
+llvm::Value* StaticArrayType::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return createRefForLlvmReference(llvmObj, arguments, classConstructor);
+}
+pair<llvm::Value*, llvm::Value*> StaticArrayType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor, ref);
     return {llvmRef, new llvm::LoadInst(llvmRef, "", llvmObj->block)};
 }
-llvm::Value* StaticArrayType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = allocaLlvm(llvmObj);
-    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
-    return llvmRef;
+llvm::Value* StaticArrayType::createRefForLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
+    return allocaLlvm(llvmObj);
 }
-llvm::Value* StaticArrayType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
-    auto copy = allocaLlvm(llvmObj);
-    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
-    return new llvm::LoadInst(copy, "", llvmObj->block);
+llvm::Value* StaticArrayType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    createLlvmConstructor(llvmObj, ref, arguments, classConstructor);
+    return ref;
+}
+llvm::Value* StaticArrayType::createRefForLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    lValue->createAllocaLlvmIfNeededForReference(llvmObj);
+    return allocaLlvm(llvmObj);
+}
+llvm::Value* StaticArrayType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue, llvm::Value* ref) {
+    createLlvmCopyConstructor(llvmObj, ref, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(ref, "", llvmObj->block);
+}
+void StaticArrayType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    elementType->createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
 }
 void StaticArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     if (elementType->hasLlvmConstructor(llvmObj, arguments, classConstructor)) {
@@ -1749,19 +1849,28 @@ llvm::Type* DynamicArrayType::createLlvm(LlvmObject* llvmObj) {
     }
     return llvmType;
 }
-pair<llvm::Value*, llvm::Value*> DynamicArrayType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor);
+llvm::Value* DynamicArrayType::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return createRefForLlvmReference(llvmObj, arguments, classConstructor);
+}
+pair<llvm::Value*, llvm::Value*> DynamicArrayType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor, ref);
     return {llvmRef, llvmLoad(llvmObj, llvmRef)};
 }
-llvm::Value* DynamicArrayType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = allocaLlvm(llvmObj);
-    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
-    return llvmRef;
+llvm::Value* DynamicArrayType::createRefForLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
+    return allocaLlvm(llvmObj);
 }
-llvm::Value* DynamicArrayType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
-    auto copy = allocaLlvm(llvmObj);
-    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
-    return new llvm::LoadInst(copy, "", llvmObj->block);
+llvm::Value* DynamicArrayType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    createLlvmConstructor(llvmObj, ref, arguments, classConstructor);
+    return ref;
+}
+llvm::Value* DynamicArrayType::createRefForLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    lValue->createAllocaLlvmIfNeededForReference(llvmObj);
+    return allocaLlvm(llvmObj);
+}
+llvm::Value* DynamicArrayType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue, llvm::Value* ref) {
+    createLlvmCopyConstructor(llvmObj, ref, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(ref, "", llvmObj->block);
 }
 llvm::Value* DynamicArrayType::llvmGepSize(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     vector<llvm::Value*> indexList;
@@ -1844,6 +1953,36 @@ void DynamicArrayType::llvmReallocData(LlvmObject* llvmObj, llvm::Value* llvmRef
         dataRef, 
         llvmObj->block
     );
+}
+void DynamicArrayType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        break;
+    case 1: {
+        auto effType = arguments[0]->type->getEffectiveType();
+        if (effType->kind == Type::Kind::StaticArray) {
+            arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else if (effType->kind == Type::Kind::ArrayView) {
+            if (Value::isLvalue(arguments[0])) {
+                arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else {
+                arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
+        } else {
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+        break;
+    }
+    default: {
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
+        vector<Value*> constructorArgs(arguments.begin()+2, arguments.end());
+        if (elementType->hasLlvmConstructor(llvmObj, constructorArgs, classConstructor)) {
+            elementType->createAllocaIfNeededForConstructor(llvmObj, constructorArgs, classConstructor);
+        }
+        break;
+    }
+    }
 }
 void DynamicArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     const int DEFAULT_CAPACITY = 50;
@@ -2170,7 +2309,15 @@ llvm::Type* ArrayViewType::createLlvm(LlvmObject* llvmObj) {
     }
     return llvmType;
 }
-pair<llvm::Value*, llvm::Value*> ArrayViewType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+llvm::Value* ArrayViewType::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (arguments.size() == 0) {
+        return nullptr;
+    } else if (arguments.size() == 1) {
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        return nullptr;
+    }
+}
+pair<llvm::Value*, llvm::Value*> ArrayViewType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
     if (arguments.size() == 0) {
         return { 
             nullptr,
@@ -2219,10 +2366,13 @@ pair<llvm::Value*, llvm::Value*> ArrayViewType::createLlvmValue(LlvmObject* llvm
         return {nullptr, nullptr};
     }
 }
-llvm::Value* ArrayViewType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = allocaLlvm(llvmObj);
-    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
-    return llvmRef;
+llvm::Value* ArrayViewType::createRefForLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
+    return allocaLlvm(llvmObj);
+}
+llvm::Value* ArrayViewType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    createLlvmConstructor(llvmObj, ref, arguments, classConstructor);
+    return ref;
 }
 llvm::Value* ArrayViewType::llvmGepSize(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     vector<llvm::Value*> indexList;
@@ -2248,6 +2398,11 @@ llvm::Value* ArrayViewType::llvmExtractData(LlvmObject* llvmObj, llvm::Value* ll
 }
 llvm::Value* ArrayViewType::llvmGepDataElement(LlvmObject* llvmObj, llvm::Value* data, llvm::Value* index) {
     return llvm::GetElementPtrInst::Create(((llvm::PointerType*)data->getType())->getElementType(), data, {index}, "", llvmObj->block);
+}
+void ArrayViewType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (arguments.size() > 0) {
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+    }
 }
 void ArrayViewType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (arguments.size()) {
@@ -2506,19 +2661,38 @@ optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodeP
 llvm::Type* ClassType::createLlvm(LlvmObject* llvmObj) {
     return declaration->getLlvmType(llvmObj);
 }
-pair<llvm::Value*, llvm::Value*> ClassType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor);
+llvm::Value* ClassType::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    return createRefForLlvmReference(llvmObj, arguments, classConstructor);
+}
+pair<llvm::Value*, llvm::Value*> ClassType::createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    auto llvmRef = createLlvmReference(llvmObj, arguments, classConstructor, ref);
     return {llvmRef, new llvm::LoadInst(llvmRef, "", llvmObj->block)};
 }
-llvm::Value* ClassType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto llvmRef = allocaLlvm(llvmObj);
-    createLlvmConstructor(llvmObj, llvmRef, arguments, classConstructor);
-    return llvmRef;
+llvm::Value* ClassType::createRefForLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    createAllocaIfNeededForConstructor(llvmObj, arguments, classConstructor);
+    return allocaLlvm(llvmObj);
 }
-llvm::Value* ClassType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
-    auto copy = allocaLlvm(llvmObj);
-    createLlvmCopyConstructor(llvmObj, copy, lValue->getReferenceLlvm(llvmObj));
-    return new llvm::LoadInst(copy, "", llvmObj->block);
+llvm::Value* ClassType::createLlvmReference(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
+    createLlvmConstructor(llvmObj, ref, arguments, classConstructor);
+    return ref;
+}
+llvm::Value* ClassType::createRefForLlvmCopy(LlvmObject* llvmObj, Value* lValue) {
+    lValue->createAllocaLlvmIfNeededForReference(llvmObj);
+    return allocaLlvm(llvmObj);
+}
+llvm::Value* ClassType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue, llvm::Value* ref) {
+    createLlvmCopyConstructor(llvmObj, ref, lValue->getReferenceLlvm(llvmObj));
+    return new llvm::LoadInst(ref, "", llvmObj->block);
+}
+void ClassType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    auto functionType = (FunctionType*)classConstructor->type;
+    for (int i = 0; i < arguments.size(); ++i) {
+        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
+            arguments[i]->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else {
+            arguments[i]->createAllocaLlvmIfNeededForValue(llvmObj);
+        }
+    }
 }
 void ClassType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
     vector<llvm::Value*> args;
@@ -2691,6 +2865,11 @@ optional<InterpretConstructorResult> FunctionType::interpretConstructor(const Co
         return nullopt;
     }
 }
+void FunctionType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (arguments.size() > 0) {
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+    }
+}
 void FunctionType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (arguments.size()) {
     case 0: 
@@ -2801,7 +2980,18 @@ optional<InterpretConstructorResult> IntegerType::interpretConstructor(const Cod
         return nullopt;
     }
 }
-pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+llvm::Value* IntegerType::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        return nullptr;
+    case 1:
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        return nullptr;
+    default: 
+        return nullptr;
+    }
+}
+pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
     switch (arguments.size()) {
     case 0:
         internalError("incorrect integer constructor value creating during llvm creating (no arguments)");
@@ -2838,12 +3028,17 @@ pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmOb
         return { nullptr, nullptr };
     }
 }
+void IntegerType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (arguments.size() > 0) {
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+    }
+}
 void IntegerType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (arguments.size()) {
     case 0: 
         break;
     case 1: 
-        createLlvmCopyConstructor(llvmObj, leftLlvmRef, createLlvmValue(llvmObj, arguments, classConstructor).second);
+        createLlvmCopyConstructor(llvmObj, leftLlvmRef, createLlvmValue(llvmObj, arguments, classConstructor, nullptr).second);
         break;
     default: 
         internalError("incorrect integer constructor during llvm creating (> 1 argument)");
@@ -2976,7 +3171,18 @@ optional<InterpretConstructorResult> FloatType::interpretConstructor(const CodeP
         return nullopt;
     }
 }
-pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+llvm::Value* FloatType::createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
+    switch (arguments.size()) {
+    case 0:
+        return nullptr;
+    case 1:
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        return nullptr;
+    default: 
+        return nullptr;
+    }
+}
+pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref) {
     switch (arguments.size()) {
     case 0:
         internalError("incorrect float constructor value creating during llvm creating (no arguments)");
@@ -3006,12 +3212,17 @@ pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj,
         return { nullptr, nullptr };
     }
 }
+void FloatType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
+    if (arguments.size() > 0) {
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+    }
+}
 void FloatType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const vector<Value*>& arguments, FunctionValue* classConstructor) {
     switch (arguments.size()) {
     case 0: 
         break;
     case 1: 
-        createLlvmCopyConstructor(llvmObj, leftLlvmRef, createLlvmValue(llvmObj, arguments, classConstructor).second);
+        createLlvmCopyConstructor(llvmObj, leftLlvmRef, createLlvmValue(llvmObj, arguments, classConstructor, nullptr).second);
         break;
     default: 
         internalError("incorrect float constructor during llvm creating (> 1 argument)");

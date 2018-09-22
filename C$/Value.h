@@ -29,6 +29,8 @@ struct Value : Statement {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual void createDestructorLlvm(LlvmObject* llvmObj);
@@ -146,6 +148,8 @@ struct StaticArrayValue : Value {
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();
+    virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
+    virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);
     virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* getReferenceLlvm(LlvmObject* llvmObj);
     virtual void createDestructorLlvm(LlvmObject* llvmObj);
