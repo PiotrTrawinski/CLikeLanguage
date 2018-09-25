@@ -2444,7 +2444,9 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                 auto returnType = ((FunctionType*)functionValue->type)->returnType;
 
                 if (arguments.size() == 0) {
-                    if (returnType->kind != Type::Kind::Void) {
+                    if (returnType->kind == Type::Kind::MaybeError && ((MaybeErrorType*)returnType)->underlyingType->kind == Type::Kind::Void) {
+                        isReturnMaybeErrorVoidType = true;
+                    } else if (returnType->kind != Type::Kind::Void) {
                         return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
                             + " got nothing", position);
                     } 
@@ -2467,6 +2469,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         if (!arguments.empty()) {
             arguments[0]->wasCaptured = true;
         }
+        scopePtr = scope;
         break;
     }
     }
@@ -2499,14 +2502,29 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
     }
     if (kind == Kind::Return) {
         if (arguments.size() == 0) {
-            return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
+            if (isReturnMaybeErrorVoidType) {
+                return llvm::ReturnInst::Create(llvmObj->context, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmObj->block);
+            } else {
+                return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
+            }
         }
         else {
+            llvm::Value* llvmArg;
             if (arguments[0]->type->kind == Type::Kind::Reference) {
-                return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->getReferenceLlvm(llvmObj), llvmObj->block);
+                llvmArg = arguments[0]->getReferenceLlvm(llvmObj);
             } else {
-                return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->createLlvm(llvmObj), llvmObj->block);
+                llvmArg = arguments[0]->createLlvm(llvmObj);
             }
+            auto iter = ((CodeScope*)scopePtr)->valuesToDestroyAfterStatement.find(this);
+            if (iter != ((CodeScope*)scopePtr)->valuesToDestroyAfterStatement.end()) {
+                for (auto value : iter->second) {
+                    if (!value->wasCaptured) {
+                        value->createDestructorLlvm(llvmObj);
+                        value->wasCaptured = true;
+                    }
+                }
+            }
+            return llvm::ReturnInst::Create(llvmObj->context, llvmArg, llvmObj->block);
         }
     }
     else if (kind == Kind::Break) {
