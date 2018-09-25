@@ -1982,12 +1982,17 @@ bool ClassScope::interpret() {
             inlineConstructors->body->statements.push_back(assignOperation);
         }
     }
-    if (!inlineConstructors->interpret(this)) {
-        internalError("failed interpreting of inline class member constructors", position);
+    if (inlineConstructors->body->statements.empty()) {
+        inlineConstructors = nullptr;
+    } else {
+        if (!inlineConstructors->interpret(this)) {
+            internalError("failed interpreting of inline class member constructors", position);
+        }
+        for (auto& statement : inlineConstructors->body->statements) {
+            ((AssignOperation*)statement)->isConstruction = true;
+        }
     }
-    for (auto& statement : inlineConstructors->body->statements) {
-        ((AssignOperation*)statement)->isConstruction = true;
-    }
+
 
     /*
         inline destructors
@@ -2089,12 +2094,6 @@ bool ClassScope::interpret() {
                 if (lambdaType->returnType->kind != Type::Kind::Void) {
                     return errorMessageBool("cannot specify class constructor return type", declaration->variable->position);
                 }
-                auto functionCall = FunctionCallOperation::Create(lambda->position);
-                functionCall->function = inlineConstructors;
-                lambda->arguments.back()->variable->declaration = lambda->arguments.back();
-                functionCall->arguments.push_back(lambda->arguments.back()->variable);
-                functionCall->wasInterpreted = true;
-                lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
                 constructors.push_back(lambda);
             } 
             if (declaration->variable->name == "destructor") {
@@ -2103,14 +2102,6 @@ bool ClassScope::interpret() {
                 }
                 if (lambdaType->argumentTypes.size() > 1) {
                     return errorMessageBool("class destructor cannot have any arguments\n", declaration->variable->position);
-                }
-                if (inlineDestructors) {
-                    auto functionCall = FunctionCallOperation::Create(lambda->position);
-                    functionCall->function = inlineDestructors;
-                    lambda->arguments.back()->variable->declaration = lambda->arguments.back();
-                    functionCall->arguments.push_back(lambda->arguments.back()->variable);
-                    functionCall->wasInterpreted = true;
-                    lambda->body->statements.insert(lambda->body->statements.begin(), functionCall);
                 }
                 destructor = lambda;
             }
@@ -2154,7 +2145,9 @@ bool ClassScope::getHasReturnStatement() {
 }
 void ClassScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {}
 void ClassScope::createLlvm(LlvmObject* llvmObj) {
-    inlineConstructors->createLlvm(llvmObj, classDeclaration->name + "InlineConstructors");
+    if (inlineConstructors) {
+        inlineConstructors->createLlvm(llvmObj, classDeclaration->name + "InlineConstructors");
+    }
     copyConstructor->createLlvm(llvmObj, classDeclaration->name + "DefaultCopyConstructor");
     operatorEq->createLlvm(llvmObj, classDeclaration->name + "DefaultCopyAssignment");
     if (inlineDestructors) {

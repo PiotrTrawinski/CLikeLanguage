@@ -4,7 +4,7 @@
 using namespace std;
 namespace fs = filesystem;
 
-optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo);
+bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceStringLine>& sourceCode);
 
 struct recursive_directory_range {
     recursive_directory_range(fs::path p) : p(p) {}
@@ -80,145 +80,7 @@ char getCharacter(string_view lineStr, int& i) {
     return lineStr[i++];
 }
 
-optional<vector<Token>> createTokens() {
-    vector<Token> tokens;
-
-    for(int lineId = 0; lineId < GVARS.sourceCode.size(); ++lineId){
-        FileInfo* fileInfo = GVARS.sourceCode[lineId].file;
-        int lineNumber = GVARS.sourceCode[lineId].number;
-        string_view lineStr = GVARS.sourceCode[lineId].value;
-        int charId = 0;
-        while (charId < lineStr.size()) {
-            int charNumber = charId+1;
-            char c = lineStr[charId];
-            if (isalpha(c) || c == '_') {
-                string label = string(1, c);
-                charId++;
-                while (charId < lineStr.size() && (isalpha(lineStr[charId]) || isdigit(lineStr[charId]) || lineStr[charId]=='_')) {
-                    label += lineStr[charId];
-                    charId++;
-                }
-                tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo, lineId);
-            }
-            else if (c == '`') {
-                string stringLiteral = "";
-                charId++; // skip opening ` symbol
-                while (charId < lineStr.size() && lineStr[charId] != '`') {
-                    stringLiteral += getCharacter(lineStr, charId);
-                }
-                charId++; // skip closing ` symbol
-                tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo, lineId);
-            }
-            else if (c == '"') {
-                string rawStringLiteral = "";
-                charId++; // skip opening " symbol
-                while (charId < lineStr.size() && lineStr[charId] != '"') {
-                    rawStringLiteral += getCharacter(lineStr, charId);
-                }
-                charId++; // skip closing " symbol
-                tokens.emplace_back(Token::Type::RawStringLiteral, rawStringLiteral, lineNumber, charNumber, fileInfo, lineId);
-            }
-            else if (c == '\'') {
-                charId++; // skip opening ' symbol
-                if (charId >= lineStr.size()) {
-                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
-                    cerr << "didn't complete the definition of char literal defined at char " << charNumber << '\n';
-                    return nullopt;
-                }
-                string character = string(1, getCharacter(lineStr, charId));
-                if (charId >= lineStr.size()) {
-                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
-                    cerr << "missing closing ' symbol for char literal defined at char " << charNumber << '\n';
-                    return nullopt;
-                }
-                if (lineStr[charId] != '\'') {
-                    cerr << "Parsing error: missing closing ' symbol for char literal\n";
-                    return nullopt;
-                }
-                charId++; // skip closing ' symbol
-                tokens.emplace_back(Token::Type::Char, character, lineNumber, charNumber, fileInfo, lineId);
-            }
-            else if (isdigit(c)) {
-                string strNumber = string(1, c);
-                charId++;
-                bool haveDot = false;
-                while (charId < lineStr.size() && (isdigit(lineStr[charId]) || lineStr[charId]=='.')) {
-                    if (lineStr[charId] == '.') {
-                        if (haveDot) {
-                            cerr << "Parsing error: too many dots in number\n";
-                            return nullopt;
-                        }
-                        haveDot = true;
-                    }
-                    strNumber += lineStr[charId];
-                    charId++;
-                }
-                if (haveDot) {
-                    tokens.emplace_back(Token::Type::Float, strNumber, lineNumber, charNumber, fileInfo, lineId);
-                } else {
-                    tokens.emplace_back(Token::Type::Integer, strNumber, lineNumber, charNumber, fileInfo, lineId);
-                }
-            }
-            else if (c == '/' && charId < lineStr.size() - 1 && lineStr[charId + 1] == '/') {
-                // single line comment
-                break;
-            }
-            else if (c == '/' && charId < lineStr.size() - 1 && lineStr[charId + 1] == '*') {
-                // multi-line comment
-                charId += 2; // skip '/' and '*' symbols
-
-                // skip everything till appropriate closing comment (*/) string
-                // (nested coments work -> /* ... /* ... */ ... */ is corrent syntax)
-                int openedComents = 1;
-                while (lineId < GVARS.sourceCode.size()) {
-                    fileInfo = GVARS.sourceCode[lineId].file;
-                    lineNumber = GVARS.sourceCode[lineId].number;
-                    lineStr = GVARS.sourceCode[lineId].value;
-                    if (lineStr.size() > 0) {
-                        while (charId < lineStr.size() - 1) {
-                            if (lineStr[charId] == '*' && lineStr[charId+1] == '/') {
-                                openedComents -= 1;
-                                charId++;
-                                if (openedComents <= 0) {
-                                    break;
-                                }
-                            }
-                            else if (lineStr[charId] == '/' && lineStr[charId+1] == '*') {
-                                charId++;
-                                openedComents += 1;
-                            }
-                            charId++;
-                        }
-                    }
-                    if (openedComents <= 0) {
-                        break;
-                    }
-                    lineId++;
-                    charId = 0;
-                }
-
-                if (openedComents > 0) {
-                    cerr << "Parsing error: missing closing multi-line comment (*/)\n";
-                    cerr << "in file " << fileInfo->name() << " starting at line " << lineNumber << '\n';
-                    return nullopt;
-                }
-
-                charId++; // skip closing / symbol
-            }
-            else if (!isspace(c)){
-                // only whitespace characters don't get saved
-                tokens.emplace_back(Token::Type::Symbol, string(1,c), lineNumber, charNumber, fileInfo, lineId);
-                charId++;
-            } else {
-                charId++;
-            }
-        }
-    }
-
-    return tokens;
-}
-
-bool includeFile(vector<SourceStringLine>& sourceCode, fs::path includePath, FileInfo* parentFileInfo, int includeLine) {
+bool includeFile(vector<SourceStringLine>& sourceCode, vector<Token>& tokens, fs::path includePath, FileInfo* parentFileInfo, int includeLine) {
     bool alreadyInserted = false;
     for (const auto& element : GVARS.fileInfos) {
         if (element.get()->path == includePath) {
@@ -229,61 +91,181 @@ bool includeFile(vector<SourceStringLine>& sourceCode, fs::path includePath, Fil
 
     if (!alreadyInserted) {
         GVARS.fileInfos.emplace_back(make_unique<FileInfo>(includePath, parentFileInfo, includeLine));
-        auto includedCode = getSourceFromFile(GVARS.fileInfos.back().get());
 
-        // if reading source from included file failed we do not try to continue without
-        if (!includedCode) {
+        if (!createTokens(GVARS.fileInfos.back().get(), tokens, sourceCode)) {
             return false;
         }
-
-        // append includedFile to the rest of sourceCode
-        sourceCode.insert(sourceCode.end(), includedCode.value().begin(), includedCode.value().end());
     }
 
     return true;
 }
 
-optional<vector<SourceStringLine>> getSourceFromFile(FileInfo* fileInfo) {
+bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceStringLine>& sourceCode) {
     ifstream file(fileInfo->path.u8string());
-    if (!file) {
-        return nullopt;
-    }
+    if (!file) return false;
 
-    vector<SourceStringLine> sourceCode;
     string line;
     int lineNumber = 1;
     while (getline(file, line)) {
-        // if include directive then add source file from it
-        int includeStrSize = sizeof("#include")-1;
-        if (line.size() > includeStrSize && line.substr(0, includeStrSize) == "#include") {
-            string includeFileName = line.substr(includeStrSize+1);
-            auto includePath = createIncludePath(fileInfo, includeFileName, lineNumber);
-            if (!includePath) {
-                file.close();
-                return nullopt;
-            }
-            if (fs::is_directory(includePath.value())) {
-                for (auto& filePath : recursive_directory_range(includePath.value())) {
-                    if (filePath.path().extension().u8string() == ".cdr") {
-                        if (!includeFile(sourceCode, filePath, fileInfo, lineNumber)) {
-                            file.close();
-                            return nullopt;
+        int lineId = sourceCode.size();
+        sourceCode.emplace_back(line, fileInfo, lineNumber);
+
+        int charId = 0;
+        while (charId < line.size()) {
+            int charNumber = charId+1;
+            char c = line[charId];
+            if (c == '#' && charId + sizeof("#include") < line.size() && !line.compare(charId, sizeof("#include") - 1, "#include")) {
+                string includeFileName = line.substr(charId+sizeof("#include"));
+                auto includePath = createIncludePath(fileInfo, includeFileName, lineNumber);
+                if (!includePath) {
+                    file.close();
+                    return false;
+                }
+                if (fs::is_directory(includePath.value())) {
+                    for (auto& filePath : recursive_directory_range(includePath.value())) {
+                        if (filePath.path().extension().u8string() == ".cdr") {
+                            if (!includeFile(sourceCode, tokens, filePath, fileInfo, lineNumber)) {
+                                file.close();
+                                return false;
+                            }
                         }
                     }
+                } else {
+                    if (!includeFile(sourceCode, tokens, includePath.value(), fileInfo, lineNumber)) {
+                        file.close();
+                        return false;
+                    }
                 }
-            } else {
-                if (!includeFile(sourceCode, includePath.value(), fileInfo, lineNumber)) {
-                    file.close();
-                    return nullopt;
+                break;
+            }
+            else if (isalpha(c) || c == '_') {
+                string label = string(1, c);
+                charId++;
+                while (charId < line.size() && (isalpha(line[charId]) || isdigit(line[charId]) || line[charId]=='_')) {
+                    label += line[charId];
+                    charId++;
+                }
+                tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo, lineId);
+            }
+            else if (c == '`') {
+                string stringLiteral = "";
+                charId++; // skip opening ` symbol
+                while (charId < line.size() && line[charId] != '`') {
+                    stringLiteral += getCharacter(line, charId);
+                }
+                charId++; // skip closing ` symbol
+                tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo, lineId);
+            }
+            else if (c == '"') {
+                string rawStringLiteral = "";
+                charId++; // skip opening " symbol
+                while (charId < line.size() && line[charId] != '"') {
+                    rawStringLiteral += getCharacter(line, charId);
+                }
+                charId++; // skip closing " symbol
+                tokens.emplace_back(Token::Type::RawStringLiteral, rawStringLiteral, lineNumber, charNumber, fileInfo, lineId);
+            }
+            else if (c == '\'') {
+                charId++; // skip opening ' symbol
+                if (charId >= line.size()) {
+                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
+                    cerr << "didn't complete the definition of char literal defined at char " << charNumber << '\n';
+                    return false;
+                }
+                string character = string(1, getCharacter(line, charId));
+                if (charId >= line.size()) {
+                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
+                    cerr << "missing closing ' symbol for char literal defined at char " << charNumber << '\n';
+                    return false;
+                }
+                if (line[charId] != '\'') {
+                    cerr << "Parsing error: missing closing ' symbol for char literal\n";
+                    return false;
+                }
+                charId++; // skip closing ' symbol
+                tokens.emplace_back(Token::Type::Char, character, lineNumber, charNumber, fileInfo, lineId);
+            }
+            else if (isdigit(c)) {
+                string strNumber = string(1, c);
+                charId++;
+                bool haveDot = false;
+                while (charId < line.size() && (isdigit(line[charId]) || line[charId]=='.')) {
+                    if (line[charId] == '.') {
+                        if (haveDot) {
+                            cerr << "Parsing error: too many dots in number\n";
+                            return false;
+                        }
+                        haveDot = true;
+                    }
+                    strNumber += line[charId];
+                    charId++;
+                }
+                if (haveDot) {
+                    tokens.emplace_back(Token::Type::Float, strNumber, lineNumber, charNumber, fileInfo, lineId);
+                } else {
+                    tokens.emplace_back(Token::Type::Integer, strNumber, lineNumber, charNumber, fileInfo, lineId);
                 }
             }
-        } else {
-            sourceCode.emplace_back(line, fileInfo, lineNumber);
+            else if (c == '/' && charId < line.size() - 1 && line[charId + 1] == '/') {
+                // single line comment
+                break;
+            }
+            else if (c == '/' && charId < line.size() - 1 && line[charId + 1] == '*') {
+                // multi-line comment
+                charId += 2; // skip '/' and '*' symbols
+                // skip everything till appropriate closing comment (*/) string
+                // (nested coments work -> /* ... /* ... */ ... */ is corrent syntax)
+                int openedComents = 1;
+                do {
+                    while (charId+1 < line.size()) {
+                        if (line[charId] == '*' && line[charId+1] == '/') {
+                            openedComents -= 1;
+                            charId++;
+                            if (openedComents <= 0) {
+                                charId += 1;
+                                break;
+                            }
+                        }
+                        else if (line[charId] == '/' && line[charId+1] == '*') {
+                            charId++;
+                            openedComents += 1;
+                        }
+                        charId++;
+                    }
+                    if (openedComents <= 0) break;
+                    if (!getline(file, line)) break;
+                    lineId = sourceCode.size();
+                    sourceCode.emplace_back(line, fileInfo, lineNumber);
+                    charId = 0;
+                } while(true);
+                if (openedComents > 0) {
+                    cerr << "Parsing error: missing closing multi-line comment (*/)\n";
+                    cerr << "in file " << fileInfo->name() << " starting at line " << lineNumber << '\n';
+                    return false;
+                }
+            }
+            else if (!isspace(c)) {
+                // only whitespace characters don't get saved
+                tokens.emplace_back(Token::Type::Symbol, string(1,c), lineNumber, charNumber, fileInfo, lineId);
+                charId++;
+            } else {
+                charId++;
+            }
         }
-        lineNumber++;
+        lineNumber += 1;
     }
     file.close();
-    return sourceCode;
+
+    return true;
+}
+
+optional<vector<Token>> createTokens(FileInfo* fileInfo) {
+    vector<Token> tokens;
+    if(createTokens(fileInfo, tokens, GVARS.sourceCode)) {
+        return tokens;
+    } else {
+        return nullopt;
+    }
 }
 
 optional<vector<Token>> parseFile(string fileName) {
@@ -301,11 +283,5 @@ optional<vector<Token>> parseFile(string fileName) {
     }
 
     GVARS.fileInfos.emplace_back(make_unique<FileInfo>(path));
-    auto sourceCode = getSourceFromFile(GVARS.fileInfos.back().get());
-    if (!sourceCode) {
-        return nullopt;
-    }
-
-    GVARS.sourceCode = sourceCode.value();
-    return createTokens();
+    return createTokens(GVARS.fileInfos.back().get());
 }
