@@ -56,6 +56,8 @@ bool Value::operator==(const Statement& value) const {
     value->isConstexpr = isConstexpr;
     return value;
 }*/
+void Value::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {}
+void Value::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {}
 llvm::Value* Value::createLlvm(LlvmObject* llvmObj) {
     return nullptr;
 }
@@ -530,6 +532,26 @@ bool StaticArrayValue::operator==(const Statement& value) const {
         return false;
     }
 }
+void StaticArrayValue::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
+    if (!llvmRef) {
+        bool allElementsConstexpr = true;
+        for (auto value : values) {
+            if (!value->isConstexpr) {
+                allElementsConstexpr = false;
+                break;
+            }
+        }
+        if (!allElementsConstexpr) {
+            llvmRef = type->allocaLlvm(llvmObj);
+        }
+    }
+    
+}
+void StaticArrayValue::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
+    if (!llvmRef) {
+        llvmRef = type->allocaLlvm(llvmObj);
+    }
+}
 llvm::Value* StaticArrayValue::createLlvm(LlvmObject* llvmObj) {
     bool allElementsConstexpr = true;
     for (auto value : values) {
@@ -546,7 +568,6 @@ llvm::Value* StaticArrayValue::createLlvm(LlvmObject* llvmObj) {
         llvmValue = llvm::ConstantArray::get((llvm::ArrayType*)type->createLlvm(llvmObj), llvmValues);
         return llvmValue;
     } else {
-        llvmRef = type->allocaLlvm(llvmObj);
         for (int i = 0; i < values.size(); ++i) {
             vector<llvm::Value*> indexList;
             if (((StaticArrayType*)type)->sizeAsInt != -1) {
@@ -573,7 +594,6 @@ llvm::Value* StaticArrayValue::getReferenceLlvm(LlvmObject* llvmObj) {
             break;
         }
     }
-    llvmRef = type->allocaLlvm(llvmObj);
     if (allElementsConstexpr) {
         vector<llvm::Constant*> llvmValues;
         for (auto value : values) {

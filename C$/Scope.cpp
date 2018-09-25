@@ -1712,8 +1712,8 @@ void CodeScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
     for (auto statement : statements) {
         if (statement->kind == Statement::Kind::Declaration) {
             ((Declaration*)statement)->createAllocaLlvmIfNeeded(llvmObj);
-        } else if (statement->kind == Statement::Kind::Value && ((Value*)statement)->valueKind == Value::ValueKind::Operation) {
-            ((Operation*)statement)->createAllocaLlvmIfNeeded(llvmObj);
+        } else if (statement->kind == Statement::Kind::Value) {
+            ((Value*)statement)->createAllocaLlvmIfNeededForValue(llvmObj);
         }
         else if (statement->kind == Statement::Kind::Scope) {
             ((Scope*)statement)->allocaAllDeclarationsLlvm(llvmObj);
@@ -2593,10 +2593,31 @@ void ForScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
     if (holds_alternative<ForIterData>(data)) {
         auto& forIterData = get<ForIterData>(data);
         forIterData.iterDeclaration->createAllocaLlvmIfNeeded(llvmObj);
+        forIterData.stepOperation->createAllocaLlvmIfNeededForValue(llvmObj);
+        forIterData.conditionOperation->createAllocaLlvmIfNeededForValue(llvmObj);
     } else {
         auto& forEachData = get<ForEachData>(data);
         forEachData.indexDeclaration->createAllocaLlvmIfNeeded(llvmObj);
         forEachData.itDeclaration->createAllocaLlvmIfNeeded(llvmObj);
+
+        auto arrayEffType = forEachData.arrayValue->type->getEffectiveType();
+        if (arrayEffType->kind == Type::Kind::StaticArray) {
+            forEachData.arrayValue->createAllocaLlvmIfNeededForReference(llvmObj);
+        } else if (arrayEffType->kind == Type::Kind::DynamicArray) {
+            auto dynamicArrayType = (DynamicArrayType*)arrayEffType;
+            if (Value::isLvalue(forEachData.arrayValue)) {
+                forEachData.arrayValue->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else {
+                forEachData.arrayValue->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
+        } else if (arrayEffType->kind == Type::Kind::ArrayView) {
+            auto arrayViewType = (ArrayViewType*)arrayEffType;
+            if (Value::isLvalue(forEachData.arrayValue)) {
+                forEachData.arrayValue->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else {
+                forEachData.arrayValue->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
+        }
     }
     CodeScope::allocaAllDeclarationsLlvm(llvmObj);
 }
@@ -2898,6 +2919,10 @@ bool WhileScope::findBreakStatement(CodeScope* scope) {
 bool WhileScope::getHasReturnStatement() {
     return false;
 }
+void WhileScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
+    conditionExpression->createAllocaLlvmIfNeededForValue(llvmObj);
+    CodeScope::allocaAllDeclarationsLlvm(llvmObj);
+}
 void WhileScope::createLlvm(LlvmObject* llvmObj) {
     auto whileConditionBlock = llvm::BasicBlock::Create(llvmObj->context, "whileCondition", llvmObj->function);
     auto whileBlock          = llvm::BasicBlock::Create(llvmObj->context, "while",          llvmObj->function);
@@ -3039,6 +3064,13 @@ unordered_map<Declaration*, bool> IfScope::getDeclarationsInitState() {
         return newDeclarationsInitState;
     } else {
         return declarationsInitState;
+    }
+}
+void IfScope::allocaAllDeclarationsLlvm(LlvmObject* llvmObj) {
+    conditionExpression->createAllocaLlvmIfNeededForValue(llvmObj);
+    CodeScope::allocaAllDeclarationsLlvm(llvmObj);
+    if (elseScope) {
+        elseScope->allocaAllDeclarationsLlvm(llvmObj);
     }
 }
 void IfScope::createLlvm(LlvmObject* llvmObj) {

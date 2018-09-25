@@ -218,6 +218,7 @@ struct WhileScope : CodeScope {
     virtual bool operator==(const Statement& scope) const;
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
+    virtual void allocaAllDeclarationsLlvm(LlvmObject* llvmObj);
     virtual void createLlvm(LlvmObject* llvmObj);
 
     Value* conditionExpression = nullptr;
@@ -239,6 +240,7 @@ struct IfScope : CodeScope {
     virtual std::unordered_set<Declaration*> getUninitializedDeclarations();
     virtual bool getHasReturnStatement();
     virtual std::unordered_map<Declaration*, bool> getDeclarationsInitState();
+    virtual void allocaAllDeclarationsLlvm(LlvmObject* llvmObj);
     virtual void createLlvm(LlvmObject* llvmObj);
 
     Value* conditionExpression = nullptr;

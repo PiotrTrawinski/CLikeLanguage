@@ -3,6 +3,8 @@
 #include "Statement.h"
 #include "Value.h"
 
+struct AssignOperation;
+
 struct Declaration : Statement {
     enum class Status {
         None,
@@ -27,6 +29,7 @@ struct Declaration : Statement {
     Status status = Status::None;
     Scope* scope = nullptr;
     llvm::Value* llvmVariable;
+    AssignOperation* assignOperation = nullptr;
     
 private:
     static std::vector<std::unique_ptr<Declaration>> objects;
