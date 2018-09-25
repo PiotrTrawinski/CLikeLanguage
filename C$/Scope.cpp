@@ -1852,7 +1852,7 @@ bool GlobalScope::setCDeclaration(const CodePosition& codePosition, const string
 }
 bool GlobalScope::interpret() {
     for (auto& declaration : cDeclarations) {
-        if (!declaration->variable->type->interpret(this, false)) {
+        if (!declaration->variable->type->interpret(this)) {
             return false;
         }
     }
@@ -1967,7 +1967,7 @@ bool ClassScope::interpret() {
     */
     auto lambdaType = FunctionType::Create();
     auto classPointerType = RawPointerType::Create(classType);
-    classPointerType->interpret(this, false);
+    classPointerType->interpret(this);
     lambdaType->argumentTypes.push_back(classPointerType);
     lambdaType->returnType = Type::Create(Type::Kind::Void);
     inlineConstructors = FunctionValue::Create(position, lambdaType, this);

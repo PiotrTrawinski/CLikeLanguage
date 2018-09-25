@@ -19,7 +19,7 @@ Type* Type::Create(Kind kind) {
 Type* Type::changeClassToTemplate(const vector<TemplateType*> templateTypes) {
     return this;
 }
-bool Type::interpret(Scope* scope, bool needFullDeclaration) {
+bool Type::interpret(Scope* scope) {
     return true;
 }
 bool Type::operator==(const Type& type) const {
@@ -291,8 +291,8 @@ Type* OwnerPointerType::changeClassToTemplate(const vector<TemplateType*> templa
 Type* OwnerPointerType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(underlyingType->templateCopy(parentScope, templateToType));
 }
-bool OwnerPointerType::interpret(Scope* scope, bool needFullDeclaration) {
-    return underlyingType->interpret(scope, false);
+bool OwnerPointerType::interpret(Scope* scope) {
+    return underlyingType->interpret(scope);
 }
 bool OwnerPointerType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -493,8 +493,8 @@ Type* RawPointerType::changeClassToTemplate(const vector<TemplateType*> template
 Type* RawPointerType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(underlyingType->templateCopy(parentScope, templateToType));
 }
-bool RawPointerType::interpret(Scope* scope, bool needFullDeclaration) {
-    return underlyingType->interpret(scope, false);
+bool RawPointerType::interpret(Scope* scope) {
+    return underlyingType->interpret(scope);
 }
 bool RawPointerType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -597,8 +597,8 @@ Type* MaybeErrorType::changeClassToTemplate(const vector<TemplateType*> template
     underlyingType = underlyingType->changeClassToTemplate(templateTypes);
     return this;
 }
-bool MaybeErrorType::interpret(Scope* scope, bool needFullDeclaration) {
-    return underlyingType->interpret(scope, needFullDeclaration);
+bool MaybeErrorType::interpret(Scope* scope) {
+    return underlyingType->interpret(scope);
 }
 Type* MaybeErrorType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(underlyingType->templateCopy(parentScope, templateToType));
@@ -977,8 +977,8 @@ Type* ReferenceType::changeClassToTemplate(const vector<TemplateType*> templateT
 Type* ReferenceType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(underlyingType->templateCopy(parentScope, templateToType));
 }
-bool ReferenceType::interpret(Scope* scope, bool needFullDeclaration) {
-    return underlyingType->interpret(scope, false);
+bool ReferenceType::interpret(Scope* scope) {
+    return underlyingType->interpret(scope);
 }
 bool ReferenceType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -1063,7 +1063,7 @@ Type* StaticArrayType::changeClassToTemplate(const vector<TemplateType*> templat
 Type* StaticArrayType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(elementType->templateCopy(parentScope, templateToType), (Value*)size->templateCopy(parentScope, templateToType));
 }
-bool StaticArrayType::interpret(Scope* scope, bool needFullDeclaration) {
+bool StaticArrayType::interpret(Scope* scope) {
     if (size) {
         auto sizeInterpret = size->interpret(scope);
         if (!sizeInterpret) return false;
@@ -1076,7 +1076,7 @@ bool StaticArrayType::interpret(Scope* scope, bool needFullDeclaration) {
         }
     }
     
-    return elementType ? elementType->interpret(scope, needFullDeclaration) : true;
+    return elementType->interpret(scope);
 }
 bool StaticArrayType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -1252,8 +1252,8 @@ Type* DynamicArrayType::changeClassToTemplate(const vector<TemplateType*> templa
 Type* DynamicArrayType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(elementType->templateCopy(parentScope, templateToType));
 }
-bool DynamicArrayType::interpret(Scope* scope, bool needFullDeclaration) {
-    return elementType ? elementType->interpret(scope, false) : true;
+bool DynamicArrayType::interpret(Scope* scope) {
+    return elementType->interpret(scope);
 }
 bool DynamicArrayType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -2240,8 +2240,8 @@ Type* ArrayViewType::changeClassToTemplate(const vector<TemplateType*> templateT
 Type* ArrayViewType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     return Create(elementType->templateCopy(parentScope, templateToType));
 }
-bool ArrayViewType::interpret(Scope* scope, bool needFullDeclaration) {
-    return elementType ? elementType->interpret(scope, false) : true;
+bool ArrayViewType::interpret(Scope* scope) {
+    return elementType->interpret(scope);
 }
 bool ArrayViewType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -2474,26 +2474,19 @@ Type* ClassType::templateCopy(Scope* parentScope, const unordered_map<string, Ty
         return classType;
     }
 }
-bool ClassType::interpret(Scope* scope, bool needFullDeclaration) {
+bool ClassType::interpret(Scope* scope) {
     if (declaration) {
-        if (needFullDeclaration) {
-            return declaration->interpret(templateTypes);
-        } else {
-            return true;
-        }
+        return declaration->interpret(templateTypes);
     }
     declaration = scope->classDeclarationMap.getDeclaration(name);
     if (!declaration && scope->parentScope) {
-        return interpret(scope->parentScope, needFullDeclaration);
+        return interpret(scope->parentScope);
     }
     if (!declaration) {
         return false;
     }
     declaration = declaration->get(templateTypes);
-    if (needFullDeclaration) {
-        return declaration->interpret(templateTypes);
-    }
-    return true;
+    return declaration->interpret(templateTypes);
 }
 bool ClassType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -2753,13 +2746,13 @@ Type* FunctionType::templateCopy(Scope* parentScope, const unordered_map<string,
     funType->returnType = returnType->templateCopy(parentScope, templateToType);
     return funType;
 }
-bool FunctionType::interpret(Scope* scope, bool needFullDeclaration) {
+bool FunctionType::interpret(Scope* scope) {
     for (auto* argumentType : argumentTypes) {
-        if (!argumentType->interpret(scope, false)) {
+        if (!argumentType->interpret(scope)) {
             return false;
         }
     }
-    return returnType ? returnType->interpret(scope, false) : true;
+    return returnType->interpret(scope);
 }
 bool FunctionType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
@@ -3329,15 +3322,15 @@ Type* TemplateFunctionType::templateCopy(Scope* parentScope, const unordered_map
     funType->returnType = returnType->templateCopy(parentScope, templateToType);
     return funType;
 }
-bool TemplateFunctionType::interpret(Scope* scope, bool needFullDeclaration) {
+bool TemplateFunctionType::interpret(Scope* scope) {
     for (auto& argumentType : argumentTypes) {
         argumentType = argumentType->changeClassToTemplate(templateTypes);
-        if (!argumentType->interpret(scope, false)) {
+        if (!argumentType->interpret(scope)) {
             return false;
         }
     }
     returnType = returnType->changeClassToTemplate(templateTypes);
-    return returnType->interpret(scope, false);
+    return returnType->interpret(scope);
 }
 bool TemplateFunctionType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
