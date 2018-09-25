@@ -640,7 +640,7 @@ optional<InterpretConstructorResult> MaybeErrorType::interpretConstructor(const 
         if (cmpPtr(argEffType, underlyingType)) {
             return InterpretConstructorResult(nullptr, nullptr);
         }
-        if (underlyingType->kind == Type::Kind::Void && argEffType->kind == Type::Kind::Integer) {
+        if (isExplicit && underlyingType->kind == Type::Kind::Void && argEffType->kind == Type::Kind::Integer) {
             return InterpretConstructorResult(nullptr, nullptr);
         }
         if (argEffType->kind == Type::Kind::MaybeError) {
