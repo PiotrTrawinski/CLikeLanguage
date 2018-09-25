@@ -1941,7 +1941,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         if (templatedArguments.empty()) {
             auto basicType = stringToBasicType(className);
             if (basicType) {
-                auto op = ConstructorOperation::Create(position, basicType, arguments);
+                auto op = ConstructorOperation::Create(position, basicType, arguments, false, true);
                 auto opInterpret = op->interpret(scope);
                 if (!opInterpret) return nullopt;
                 if (opInterpret.value()) return opInterpret.value();
@@ -1960,7 +1960,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
             if (!classDeclaration->interpret({})) return nullopt;
             auto constructorType = ClassType::Create(classDeclaration->name);
             constructorType->declaration = classDeclaration;
-            auto op = ConstructorOperation::Create(position, constructorType, arguments);
+            auto op = ConstructorOperation::Create(position, constructorType, arguments, false, true);
             auto opInterpret = op->interpret(scope);
             if (!opInterpret) return nullopt;
             if (opInterpret.value()) return opInterpret.value();
