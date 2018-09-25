@@ -2467,6 +2467,7 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
         if (!arguments.empty()) {
             arguments[0]->wasCaptured = true;
         }
+        scopePtr = scope;
         break;
     }
     }
@@ -2502,11 +2503,22 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
             return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
         }
         else {
+            llvm::Value* llvmArg;
             if (arguments[0]->type->kind == Type::Kind::Reference) {
-                return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->getReferenceLlvm(llvmObj), llvmObj->block);
+                llvmArg = arguments[0]->getReferenceLlvm(llvmObj);
             } else {
-                return llvm::ReturnInst::Create(llvmObj->context, arguments[0]->createLlvm(llvmObj), llvmObj->block);
+                llvmArg = arguments[0]->createLlvm(llvmObj);
             }
+            auto iter = ((CodeScope*)scopePtr)->valuesToDestroyAfterStatement.find(this);
+            if (iter != ((CodeScope*)scopePtr)->valuesToDestroyAfterStatement.end()) {
+                for (auto value : iter->second) {
+                    if (!value->wasCaptured) {
+                        value->createDestructorLlvm(llvmObj);
+                        value->wasCaptured = true;
+                    }
+                }
+            }
+            return llvm::ReturnInst::Create(llvmObj->context, llvmArg, llvmObj->block);
         }
     }
     else if (kind == Kind::Break) {
