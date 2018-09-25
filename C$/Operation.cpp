@@ -92,7 +92,11 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (!isLvalue(arguments[0])) {
             return errorMessageOpt("You can only take address of an l-value", position);
         }
-        type = RawPointerType::Create(arguments[0]->type);
+        if (arguments[0]->type->kind == Type::Kind::Reference) {
+            type = RawPointerType::Create(((ReferenceType*)arguments[0]->type)->underlyingType);
+        } else {
+            type = RawPointerType::Create(arguments[0]->type);
+        }
         break;
     }
     case Kind::GetValue: {
@@ -2022,11 +2026,29 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
                 classScope = ((ClassType*)arg0Type)->declaration->body;
                 auto thisArgument = Operation::Create(position, Operation::Kind::Address);
                 thisArgument->arguments.push_back(dotOperation->arguments[0]);
-                if (!thisArgument->interpret(scope)) {
-                    return nullopt;
-                }
+                if (!thisArgument->interpret(scope)) return nullopt;
                 arguments.push_back(thisArgument);
-            } else {
+            } else if (arg0Type->kind == Type::Kind::Reference){
+                classScope = ((ClassType*)((ReferenceType*)arg0Type)->underlyingType)->declaration->body;
+                auto thisArgument = Operation::Create(position, Operation::Kind::Address);
+                thisArgument->arguments.push_back(dotOperation->arguments[0]);
+                if (!thisArgument->interpret(scope)) return nullopt;
+                arguments.push_back(thisArgument);
+            } else if (arg0Type->kind == Type::Kind::OwnerPointer){
+                classScope = ((ClassType*)((OwnerPointerType*)arg0Type)->underlyingType)->declaration->body;
+                auto thisArgument = CastOperation::Create(position, RawPointerType::Create(((OwnerPointerType*)arg0Type)->underlyingType));
+                thisArgument->arguments.push_back(dotOperation->arguments[0]);
+                if (!thisArgument->interpret(scope)) return nullopt;
+                arguments.push_back(thisArgument);
+            } else if (arg0Type->kind == Type::Kind::MaybeError){
+                classScope = ((ClassType*)((MaybeErrorType*)arg0Type)->underlyingType)->declaration->body;
+                auto thisArgument = Operation::Create(position, Operation::Kind::Address);
+                auto thisValue = Operation::Create(position, Operation::Kind::GetValue);
+                thisValue->arguments.push_back(dotOperation->arguments[0]);
+                thisArgument->arguments.push_back(thisValue);
+                if (!thisArgument->interpret(scope)) return nullopt;
+                arguments.push_back(thisArgument);
+            } else if (arg0Type->kind == Type::Kind::RawPointer){
                 classScope = ((ClassType*)((RawPointerType*)arg0Type)->underlyingType)->declaration->body;
                 arguments.push_back(dotOperation->arguments[0]);
             }
