@@ -2523,12 +2523,7 @@ int ClassType::sizeInBytes() {
     return sum;
 }
 bool ClassType::needsDestruction() {
-    for (auto memberDeclaration : declaration->body->declarations) {
-        if (memberDeclaration->variable->type->needsDestruction()) {
-            return true;
-        }
-    }
-    return false;
+    return declaration->body->destructor || declaration->body->inlineDestructors;
 }
 bool ClassType::needsReference() {
     return true;
@@ -2536,7 +2531,7 @@ bool ClassType::needsReference() {
 optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     if (declaration->body->constructors.empty()) {
         if (arguments.size() == 0) {
-            return InterpretConstructorResult(nullptr, declaration->body->inlineConstructors);
+            return InterpretConstructorResult(nullptr, nullptr);
         } else {
             if (!onlyTry) errorMessageOpt("only default (0 argument) constructor exists, got "
                 + to_string(arguments.size()) + " arguments", position
@@ -2678,27 +2673,34 @@ llvm::Value* ClassType::createLlvmCopy(LlvmObject* llvmObj, Value* lValue, llvm:
     return new llvm::LoadInst(ref, "", llvmObj->block);
 }
 void ClassType::createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const vector<Value*>& arguments, FunctionValue* classConstructor) {
-    auto functionType = (FunctionType*)classConstructor->type;
-    for (int i = 0; i < arguments.size(); ++i) {
-        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
-            arguments[i]->createAllocaLlvmIfNeededForReference(llvmObj);
-        } else {
-            arguments[i]->createAllocaLlvmIfNeededForValue(llvmObj);
+    if (classConstructor) {
+        auto functionType = (FunctionType*)classConstructor->type;
+        for (int i = 0; i < arguments.size(); ++i) {
+            if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
+                arguments[i]->createAllocaLlvmIfNeededForReference(llvmObj);
+            } else {
+                arguments[i]->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
         }
     }
 }
 void ClassType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor) {
-    vector<llvm::Value*> args;
-    auto functionType = (FunctionType*)classConstructor->type;
-    for (int i = 0; i < arguments.size(); ++i) {
-        if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
-            args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
-        } else {
-            args.push_back(arguments[i]->createLlvm(llvmObj));
-        }
+    if (declaration->body->inlineConstructors) {
+        llvm::CallInst::Create(declaration->body->inlineConstructors->createLlvm(llvmObj), leftLlvmRef, "", llvmObj->block);
     }
-    args.push_back(leftLlvmRef);
-    llvm::CallInst::Create(classConstructor->createLlvm(llvmObj), args, "", llvmObj->block);
+    if (classConstructor) {
+        vector<llvm::Value*> args;
+        auto functionType = (FunctionType*)classConstructor->type;
+        for (int i = 0; i < arguments.size(); ++i) {
+            if (functionType->argumentTypes[i]->kind == Type::Kind::Reference) {
+                args.push_back(arguments[i]->getReferenceLlvm(llvmObj));
+            } else {
+                args.push_back(arguments[i]->createLlvm(llvmObj));
+            }
+        }
+        args.push_back(leftLlvmRef);
+        llvm::CallInst::Create(classConstructor->createLlvm(llvmObj), args, "", llvmObj->block);
+    }
 }
 void ClassType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     llvm::CallInst::Create(declaration->body->copyConstructor->createLlvm(llvmObj), {rightLlvmValue, leftLlvmRef}, "", llvmObj->block);
@@ -2715,7 +2717,8 @@ void ClassType::createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvm
 void ClassType::createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef) {
     if (declaration->body->destructor) {
         llvm::CallInst::Create(declaration->body->destructor->createLlvm(llvmObj), llvmRef, "", llvmObj->block);
-    } else if (declaration->body->inlineDestructors) {
+    } 
+    if (declaration->body->inlineDestructors) {
         llvm::CallInst::Create(declaration->body->inlineDestructors->createLlvm(llvmObj), llvmRef, "", llvmObj->block);
     }
 }
