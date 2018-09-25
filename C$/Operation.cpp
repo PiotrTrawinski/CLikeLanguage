@@ -2444,7 +2444,9 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                 auto returnType = ((FunctionType*)functionValue->type)->returnType;
 
                 if (arguments.size() == 0) {
-                    if (returnType->kind != Type::Kind::Void) {
+                    if (returnType->kind == Type::Kind::MaybeError && ((MaybeErrorType*)returnType)->underlyingType->kind == Type::Kind::Void) {
+                        isReturnMaybeErrorVoidType = true;
+                    } else if (returnType->kind != Type::Kind::Void) {
                         return errorMessageOpt("expected return value of type " + DeclarationMap::toString(returnType)
                             + " got nothing", position);
                     } 
@@ -2500,7 +2502,11 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
     }
     if (kind == Kind::Return) {
         if (arguments.size() == 0) {
-            return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
+            if (isReturnMaybeErrorVoidType) {
+                return llvm::ReturnInst::Create(llvmObj->context, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmObj->block);
+            } else {
+                return llvm::ReturnInst::Create(llvmObj->context, (llvm::Value*)nullptr, llvmObj->block);
+            }
         }
         else {
             llvm::Value* llvmArg;

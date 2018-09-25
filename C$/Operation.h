@@ -337,6 +337,7 @@ struct FlowOperation : Operation {
     virtual bool operator==(const Statement& value) const;
 
     Scope* scopePtr = nullptr;
+    bool isReturnMaybeErrorVoidType = false;
     std::vector<Operation*> variablesDestructors;
 
     virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
