@@ -54,26 +54,12 @@ ClassDeclaration* ClassDeclaration::get(const vector<Type*>& classTemplateTypes)
     }
 }
 bool ClassDeclaration::interpret(const vector<Type*>& classTemplateTypes) {
-    if (templateTypes.size() > 0 && classTemplateTypes.empty()) {
-        status = Status::Evaluated;
-        return true;
-    } else if (templateTypes.size() > 0 && classTemplateTypes.size() > 0) {
+    if (templateTypes.size() > 0) {
+        if (classTemplateTypes.size() == 0) return true;
         return get(classTemplateTypes)->interpret({});
     } else {
-        if (status == Status::Evaluated) {
-            return true;
-        }
-        if (status == Status::InEvaluation) {
-            return errorMessageBool("recursive class declaration", position);
-        }
-        status = Status::InEvaluation;
-
         body->classDeclaration = this;
-        if (!body->interpret()) {
-            return false;
-        }
-        status = Status::Evaluated;
-        return true;
+        return body->interpret();
     }
 }
 bool ClassDeclaration::interpretAllImplementations() {
@@ -91,7 +77,6 @@ bool ClassDeclaration::operator==(const Statement& declaration) const {
     if(typeid(declaration) == typeid(*this)){
         const auto& other = static_cast<const ClassDeclaration&>(declaration);
         return this->name == other.name
-            && this->status == other.status
             && this->templateTypes == other.templateTypes
             && Statement::operator==(other);
     } else {

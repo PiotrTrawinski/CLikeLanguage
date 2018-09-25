@@ -7,12 +7,6 @@ struct Type;
 struct TemplateType;
 
 struct ClassDeclaration : Statement {
-    enum class Status {
-        None,
-        InEvaluation,
-        Evaluated,
-    };
-
     ClassDeclaration(const CodePosition& position, std::string name);
     static ClassDeclaration* Create(const CodePosition& position, std::string name);
     void templateCopy(ClassDeclaration* classDeclaration, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
@@ -26,7 +20,6 @@ struct ClassDeclaration : Statement {
     ClassScope* body = nullptr;
     std::vector<TemplateType*> templateTypes;
     std::vector<std::pair<std::vector<Type*>, ClassDeclaration*>> implementations;
-    Status status = Status::None;
 
     // LLVM:
     void createLlvm(LlvmObject* llvmObj);

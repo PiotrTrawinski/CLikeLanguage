@@ -2872,6 +2872,7 @@ optional<Value*> ConstructorOperation::interpret(Scope* scope, bool onlyTry, boo
     if (wasInterpreted) return nullptr;
     if (!onlyTry) wasInterpreted = true;
     if (!type->interpret(scope)) return nullopt;
+    if (!constructorType->interpret(scope)) return nullopt;
     if (!interpretAllArguments(scope)) return nullopt;
 
     if (!onlyTry && isHeapAllocation) {
@@ -3248,7 +3249,7 @@ optional<Value*> DotOperation::interpret(Scope* scope) {
             );
         }
 
-        if (!classType->interpret(scope, false)) {
+        if (!classType->interpret(scope)) {
             return nullopt;
         }
         auto& declarations = classType->declaration->body->declarations;
