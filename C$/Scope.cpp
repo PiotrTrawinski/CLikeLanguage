@@ -450,7 +450,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 endOfExpression = true;
                 break;
             }
-            out.push_back(CharValue::Create(tokens[i].codePosition, (int)tokens[i].value[0]));
+            out.push_back(CharValue::Create(tokens[i].codePosition, (int)tokens[i].value[1]));
             i += 1;
             expectValue = false;
             break;
@@ -459,7 +459,7 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 endOfExpression = true;
                 break;
             }
-            out.push_back(StringValue::Create(tokens[i].codePosition, tokens[i].value));
+            out.push_back(StringValue::Create(tokens[i].codePosition, tokens[i].value.substr(1)));
             i += 1;
             expectValue = false;
             break;
@@ -469,8 +469,8 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 break;
             }
             auto staticArray = StaticArrayValue::Create(tokens[i].codePosition);
-            for (char c : tokens[i].value) {
-                staticArray->values.push_back(CharValue::Create(tokens[i].codePosition, c));
+            for (int j = 1; j < tokens[i].value.size(); ++j) {
+                staticArray->values.push_back(CharValue::Create(tokens[i].codePosition, tokens[i].value[j]));
             }
             out.push_back(staticArray);
             i += 1;
