@@ -148,7 +148,7 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
                 tokens.emplace_back(Token::Type::Label, label, lineNumber, charNumber, fileInfo, lineId);
             }
             else if (c == '`') {
-                string stringLiteral = "";
+                string stringLiteral = "`";
                 charId++; // skip opening ` symbol
                 while (charId < line.size() && line[charId] != '`') {
                     stringLiteral += getCharacter(line, charId);
@@ -157,7 +157,7 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
                 tokens.emplace_back(Token::Type::StringLiteral, stringLiteral, lineNumber, charNumber, fileInfo, lineId);
             }
             else if (c == '"') {
-                string rawStringLiteral = "";
+                string rawStringLiteral = "\"";
                 charId++; // skip opening " symbol
                 while (charId < line.size() && line[charId] != '"') {
                     rawStringLiteral += getCharacter(line, charId);
@@ -172,7 +172,7 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
                     cerr << "didn't complete the definition of char literal defined at char " << charNumber << '\n';
                     return false;
                 }
-                string character = string(1, getCharacter(line, charId));
+                string character = "'"s + getCharacter(line, charId);
                 if (charId >= line.size()) {
                     cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
                     cerr << "missing closing ' symbol for char literal defined at char " << charNumber << '\n';
