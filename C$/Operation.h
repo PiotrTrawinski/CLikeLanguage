@@ -42,6 +42,8 @@ struct Operation : Value {
     void templateCopy(Operation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
 
+    static std::optional<Kind> stringToKind(const std::string& str);
+    static std::string kindToFunctionName(Kind kind);
     static int priority(Kind kind);
     static bool isLeftAssociative(Kind kind);
     static int numberOfArguments(Kind kind);
@@ -51,6 +53,7 @@ struct Operation : Value {
     int getNumberOfArguments();
 
     bool interpretAllArguments(Scope* scope);
+    virtual std::optional<Value*> createCustomFunctionOperation(Scope* scope);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
     //virtual std::unique_ptr<Value> copy();

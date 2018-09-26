@@ -58,6 +58,15 @@ bool Operation::interpretAllArguments(Scope* scope) {
     return true;
 }
 
+optional<Value*> Operation::createCustomFunctionOperation(Scope* scope) {
+    auto functionCall = FunctionCallOperation::Create(position);
+    functionCall->arguments = arguments;
+    functionCall->function = Variable::Create(position, kindToFunctionName(kind));
+    auto functionCallInterpret = functionCall->interpret(scope);
+    if (!functionCallInterpret) return nullopt;
+    if (functionCallInterpret.value()) return functionCallInterpret.value();
+    else return functionCall;
+}
 optional<Value*> Operation::interpret(Scope* scope) {
     if (wasInterpreted) {
         return nullptr;
@@ -89,13 +98,12 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
     switch (kind) {
     case Kind::Address: {
-        if (!isLvalue(arguments[0])) {
-            return errorMessageOpt("You can only take address of an l-value", position);
-        }
-        if (arguments[0]->type->kind == Type::Kind::Reference) {
-            type = RawPointerType::Create(((ReferenceType*)arguments[0]->type)->underlyingType);
-        } else {
-            type = RawPointerType::Create(arguments[0]->type);
+        if (isLvalue(arguments[0])) {
+            if (arguments[0]->type->kind == Type::Kind::Reference) {
+                type = RawPointerType::Create(((ReferenceType*)arguments[0]->type)->underlyingType);
+            } else {
+                type = RawPointerType::Create(arguments[0]->type);
+            }
         }
         break;
     }
@@ -320,17 +328,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
             return val1 == val2;
         }, scope);
         if (value) return value;
-        if (arguments[0]->type != arguments[1]->type) {
-            break;
-        }
-        if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
-            if (arguments[0] == arguments[1]) {
-                return BoolValue::Create(position, true);
-            } else {
-                return BoolValue::Create(position, false);
-            }
-        }
-        type = Type::Create(Type::Kind::Bool);
         break;
     }
     case Kind::Neq:{
@@ -338,17 +335,6 @@ optional<Value*> Operation::interpret(Scope* scope) {
             return val1 != val2;
         }, scope);
         if (value) return value;
-        if (arguments[0]->type != arguments[1]->type) {
-            break;
-        }
-        if (arguments[0]->isConstexpr && arguments[1]->isConstexpr) {
-            if (arguments[0] != arguments[1]) {
-                return BoolValue::Create(position, true);
-            } else {
-                return BoolValue::Create(position, false);
-            }
-        }
-        type = Type::Create(Type::Kind::Bool);
         break;
     }
     case Kind::LogicalNot: {
@@ -487,21 +473,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
     }
 
     if (!type) {
-        string message = "incorrect use of operation '" + kindToString(kind) + "'. ";
-        if (arguments.size() == 0) {
-
-        }
-        else if (arguments.size() == 1) {
-            message += "type is: ";
-            message += DeclarationMap::toString(arguments[0]->type);
-        } else {
-            message += "types are: ";
-            message += DeclarationMap::toString(arguments[0]->type);
-            message += "; ";
-            message += DeclarationMap::toString(arguments[1]->type);
-        }
-
-        return errorMessageOpt(message, position);
+        return createCustomFunctionOperation(scope);
     }
 
     wasInterpreted = true;
@@ -513,12 +485,12 @@ string Operation::kindToString(Kind kind) {
     case Kind::Destroy: return "destroy";
     case Kind::Dot: return ". (dot)";
     case Kind::FunctionCall: return "function call";
-    case Kind::ArrayIndex: return "[x] (array index)";
-    case Kind::ArraySubArray: return "[x:y] (sub-array)";
+    case Kind::ArrayIndex: return "[] (array index)";
+    case Kind::ArraySubArray: return "[:] (sub-array)";
     case Kind::Address: return "@ (address)";
     case Kind::GetValue: return "$ (valueOf)";
     case Kind::Deallocation: return "dealloc";
-    case Kind::Cast: return "[T]() (cast)";
+    case Kind::Cast: return "<T> (cast)";
     case Kind::BitNeg: return "~ (bit negation)";
     case Kind::LogicalNot: return "! (logical not)";
     case Kind::Minus: return "- (unary minus)";
@@ -556,6 +528,90 @@ string Operation::kindToString(Kind kind) {
     case Kind::BitOrAssign: return "|= (or-assign)";
     case Kind::BitXorAssign: return "^= (xor-assign)";
     default: return "unknown";
+    }
+}
+optional<Operation::Kind> Operation::stringToKind(const std::string& str) {
+    if (str == "[]")       return Kind::ArrayIndex;
+    else if (str == "[:]") return Kind::ArraySubArray;
+    else if (str == "@")   return Kind::Address;
+    else if (str == "$")   return Kind::GetValue;
+    else if (str == "~")   return Kind::BitNeg;
+    else if (str == "!")   return Kind::LogicalNot;
+    else if (str == "*")   return Kind::Mul;
+    else if (str == "/")   return Kind::Div;
+    else if (str == "+")   return Kind::Add;
+    else if (str == "-")   return Kind::Sub;
+    else if (str == "<<")  return Kind::Shl;
+    else if (str == ">>")  return Kind::Shr;
+    else if (str == "<<<") return Kind::Sal;
+    else if (str == ">>>") return Kind::Sar;
+    else if (str == ">")   return Kind::Gt;
+    else if (str == "<")   return Kind::Lt;
+    else if (str == ">=")  return Kind::Gte;
+    else if (str == "<=")  return Kind::Lte;
+    else if (str == "==")  return Kind::Eq;
+    else if (str == "!=")  return Kind::Neq;
+    else if (str == "&")   return Kind::BitAnd;
+    else if (str == "^")   return Kind::BitXor;
+    else if (str == "|")   return Kind::BitOr;
+    else if (str == "&&")  return Kind::LogicalAnd;
+    else if (str == "||")  return Kind::LogicalOr;
+    else if (str == "+=")  return Kind::AddAssign;
+    else if (str == "-=")  return Kind::SubAssign;
+    else if (str == "*=")  return Kind::MulAssign;
+    else if (str == "/=")  return Kind::DivAssign;
+    else if (str == "%=")  return Kind::ModAssign;
+    else if (str == "<<=")  return Kind::ShlAssign;
+    else if (str == ">>=")  return Kind::ShrAssign;
+    else if (str == "<<<=")  return Kind::SalAssign;
+    else if (str == ">>>=")  return Kind::SarAssign;
+    else if (str == "~=")  return Kind::BitNegAssign;
+    else if (str == "|=")  return Kind::BitOrAssign;
+    else if (str == "^=")  return Kind::BitXorAssign;
+    else return nullopt;
+}
+string Operation::kindToFunctionName(Kind kind) {
+    switch (kind) {
+    case Kind::ArrayIndex:    return "__operator_ArrayIndex__";
+    case Kind::ArraySubArray: return "__operator_ArraySubArray__";
+    case Kind::Address:       return "__operator_Address__";
+    case Kind::GetValue:      return "__operator_GetValue__";
+    case Kind::BitNeg:        return "__operator_BitNeg__";
+    case Kind::LogicalNot:    return"__operator_LogicalNot__";
+    case Kind::Minus:         return "__operator_Minus__";
+    case Kind::Mul:           return "__operator_Mul__";
+    case Kind::Div:           return "__operator_Div__";
+    case Kind::Mod:           return "__operator_Mod__";
+    case Kind::Add:           return "__operator_Add__";
+    case Kind::Sub:           return "__operator_Sub__";
+    case Kind::Shl:           return "__operator_Shl__";
+    case Kind::Shr:           return "__operator_Shr__";
+    case Kind::Sal:           return "__operator_Sal__";
+    case Kind::Sar:           return "__operator_Sar__";
+    case Kind::Gt:            return "__operator_Gt__";
+    case Kind::Lt:            return "__operator_Lt__";
+    case Kind::Gte:           return "__operator_Gte__";
+    case Kind::Lte:           return "__operator_Lte__";
+    case Kind::Eq:            return "__operator_Eq__";
+    case Kind::Neq:           return "__operator_Neq__";
+    case Kind::BitAnd:        return "__operator_BitAnd__";
+    case Kind::BitXor:        return "__operator_BitXor__";
+    case Kind::BitOr:         return "__operator_BitOr__";
+    case Kind::LogicalAnd:    return "__operator_LogicalAnd__";
+    case Kind::LogicalOr:     return "__operator_LogicalOr__";
+    case Kind::AddAssign:     return "__operator_AddAssign__";
+    case Kind::SubAssign:     return "__operator_SubAssign__";
+    case Kind::MulAssign:     return "__operator_MulAssign__";
+    case Kind::DivAssign:     return "__operator_DivAssign__";
+    case Kind::ModAssign:     return "__operator_ModAssign__";
+    case Kind::ShlAssign:     return "__operator_ShlAssign__";
+    case Kind::ShrAssign:     return "__operator_ShrAssign__";
+    case Kind::SalAssign:     return "__operator_SalAssign__";
+    case Kind::SarAssign:     return "__operator_SarAssign__";
+    case Kind::BitNegAssign:  return "__operator_BitNegAssign__";
+    case Kind::BitOrAssign:   return "__operator_BitOrAssign__";
+    case Kind::BitXorAssign:  return "__operator_BitXorAssign__";
+    default:                  return "__operator_unknown__";
     }
 }
 int Operation::priority(Kind kind) {
