@@ -132,7 +132,7 @@ void Declaration::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
     if (!value || !variable->isConstexpr || value->valueKind != Value::ValueKind::FunctionValue) {
         llvmVariable = variable->type->allocaLlvm(llvmObj, variable->name);
     }
-    if (value) {
+    if (!variable->isConstexpr && value) {
         assignOperation = AssignOperation::Create(position);
         assignOperation->arguments.push_back(variable);
         assignOperation->arguments.push_back(value);
