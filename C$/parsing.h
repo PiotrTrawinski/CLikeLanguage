@@ -11,5 +11,6 @@
 #include "FileInfo.h"
 #include "Token.h"
 #include "globalVariables.h"
+#include "consoleColors.h"
 
 std::optional<std::vector<Token>> parseFile(std::string fileName);
