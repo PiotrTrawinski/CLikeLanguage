@@ -157,6 +157,54 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
         }
         else if (i + 1 >= tokens.size()) {
             return errorMessageBool("unexpected end of file", token.codePosition);
+        } 
+        else if (tokens[i].value == "operator") {
+            string operatorSymbols = "";
+            i += 1;
+            if (i + 3 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == "[:]") {
+                operatorSymbols += "[:]";
+                i += 3;
+            }
+            while (i < tokens.size() && tokens[i].value != ":") {
+                operatorSymbols += tokens[i].value;
+                i += 1;
+            }
+            i += 1;
+            if (i >= tokens.size()) {
+                return errorMessageBool("unexpected end of operator function", token.codePosition);
+            }
+            auto nameToKind = Operation::stringToKind(operatorSymbols);
+            if (!nameToKind) {
+                return errorMessageBool("unknown operator '" + operatorSymbols + "'", token.codePosition);
+            }
+            auto operKind = nameToKind.value();
+            auto declaration = Declaration::Create(token.codePosition);
+            declaration->byReference = false;
+            declaration->variable->isConst = true;
+            declaration->variable->type = nullptr;
+            declaration->value = getValue(tokens, i, {";", "}"}, true);
+            if (!declaration->value) return false;
+            if (declaration->value->valueKind != Value::ValueKind::FunctionValue) {
+                return errorMessageBool("operator name used for non-function value", token.codePosition);
+            }
+            auto functionType = (FunctionType*)declaration->value->type;
+            if (operKind == Operation::Kind::Sub && functionType->argumentTypes.size() == 1) {
+                operKind = Operation::Kind::Minus;
+            }
+            declaration->variable->name = Operation::kindToFunctionName(operKind);
+            if (operKind == Operation::Kind::ArrayIndex) {
+                if (functionType->argumentTypes.size() != 2) {
+                    return errorMessageBool("operator '[]' must take 2 arguments", token.codePosition);
+                }
+            } else if (operKind == Operation::Kind::ArraySubArray) {
+                if (functionType->argumentTypes.size() != 3) {
+                    return errorMessageBool("operator '[:]' must take 3 arguments", token.codePosition);
+                }
+            } else if (Operation::numberOfArguments(operKind) != functionType->argumentTypes.size()) {
+                return errorMessageBool("operator '" + operatorSymbols + "' must take " + to_string(Operation::numberOfArguments(operKind)) + " arguments", token.codePosition);
+            }
+
+            return Scope::ReadStatementValue(declaration);
         }
         else if (tokens[i + 1].value == ":" || tokens[i + 1].value == "&") {
             // declaration
