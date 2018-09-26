@@ -31,16 +31,21 @@ vector<string> splitPath(string_view str) {
     return result;
 }
 
-void printErrorIncorrectPath(FileInfo* fileInfo, string_view fileName, int includeLine) {
-    cerr << "Include Error: " << fileName << " does not exist\n";
+void printErrorIncorrectPath(FileInfo* fileInfo, const std::string& fileName, int includeLine) {
+    printfColorErr(COLOR::RED, "Include Error");
+    printfColorErr(COLOR::GREY, ": ");
+    printfColorErr(COLOR::MAGENTA, "%s", fileName.c_str());
+    printfColorErr(COLOR::GREY, " does not exist\n");
     while (fileInfo) {
-        cerr << "included in " << fileInfo->name() << " at line " << includeLine << '\n';
+        printfColorErr(COLOR::GREY,    "included in");
+        printfColorErr(COLOR::MAGENTA, " %s ", fileInfo->name().c_str());
+        printfColorErr(COLOR::GREY,    "at line %d\n", includeLine);
         includeLine = fileInfo->includeLineNumber;
         fileInfo = fileInfo->parent;
     }
 }
 
-optional<fs::path> createIncludePath(FileInfo* fileInfo, string_view str, int includeLine) {
+optional<fs::path> createIncludePath(FileInfo* fileInfo, const string& str, int includeLine) {
     auto newPath = fileInfo->path.parent_path();
     auto tokens = splitPath(str);
     for (auto& token : tokens) {
@@ -98,6 +103,26 @@ bool includeFile(vector<SourceStringLine>& sourceCode, vector<Token>& tokens, fs
     }
 
     return true;
+}
+
+void printErrorCodePosition(FileInfo* fileInfo, int lineNumber, int charNumber) {
+    printfColorErr(COLOR::MAGENTA, "%s", fileInfo->name().c_str());
+    printfColorErr(COLOR::GREY, " (%d:%d) ", lineNumber, charNumber);
+}
+
+void printErrorCodeLine(const string& line, int charNumber) {
+    printfColorErr(COLOR::WHITE, "%s\n", line.c_str());
+    for (int i = 1; i < charNumber; ++i) {
+        printfColorErr(COLOR::GREY, "-");
+    }
+    printfColorErr(COLOR::GREY, "^\n");
+}
+
+void printParsingError(const string& message, FileInfo* fileInfo, const string& line, int lineNumber, int charNumber) {
+    printErrorCodePosition(fileInfo, lineNumber, charNumber);
+    printfColorErr(COLOR::RED, "Parsing Error");
+    printfColorErr(COLOR::GREY, ": %s\n", message.c_str());
+    printErrorCodeLine(line, charNumber);
 }
 
 bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceStringLine>& sourceCode) {
@@ -168,18 +193,16 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
             else if (c == '\'') {
                 charId++; // skip opening ' symbol
                 if (charId >= line.size()) {
-                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
-                    cerr << "didn't complete the definition of char literal defined at char " << charNumber << '\n';
+                    printParsingError("didn't complete the definition of char literal", fileInfo, line, lineNumber, charNumber);
                     return false;
                 }
                 string character = "'"s + getCharacter(line, charId);
                 if (charId >= line.size()) {
-                    cerr << "Parsing error: unexpected end of line at line " << lineNumber << '\n';
-                    cerr << "missing closing ' symbol for char literal defined at char " << charNumber << '\n';
+                    printParsingError("missing closing ' symbol for char literal", fileInfo, line, lineNumber, charNumber);
                     return false;
                 }
                 if (line[charId] != '\'') {
-                    cerr << "Parsing error: missing closing ' symbol for char literal\n";
+                    printParsingError("missing closing ' symbol for char literal", fileInfo, line, lineNumber, charNumber);
                     return false;
                 }
                 charId++; // skip closing ' symbol
@@ -192,7 +215,7 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
                 while (charId < line.size() && (isdigit(line[charId]) || line[charId]=='.')) {
                     if (line[charId] == '.') {
                         if (haveDot) {
-                            cerr << "Parsing error: too many dots in number\n";
+                            printParsingError("too many dots in number", fileInfo, line, lineNumber, charNumber);
                             return false;
                         }
                         haveDot = true;
@@ -212,6 +235,7 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
             }
             else if (c == '/' && charId < line.size() - 1 && line[charId + 1] == '*') {
                 // multi-line comment
+                auto oldLine = line;
                 charId += 2; // skip '/' and '*' symbols
                 // skip everything till appropriate closing comment (*/) string
                 // (nested coments work -> /* ... /* ... */ ... */ is corrent syntax)
@@ -239,8 +263,7 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
                     charId = 0;
                 } while(true);
                 if (openedComents > 0) {
-                    cerr << "Parsing error: missing closing multi-line comment (*/)\n";
-                    cerr << "in file " << fileInfo->name() << " starting at line " << lineNumber << '\n';
+                    printParsingError("missing closing multi-line comment (*/)", fileInfo, oldLine, lineNumber, charNumber);
                     return false;
                 }
             }
@@ -274,11 +297,17 @@ optional<vector<Token>> parseFile(string fileName) {
     auto path = directory / filePath;
 
     if (!fs::exists(path)) {
-        cerr << "Provided file \"" + fileName + "\" does not exist\n";
+        printfColorErr(COLOR::RED, "Argument Error");
+        printfColorErr(COLOR::GREY, ": provided file ");
+        printfColorErr(COLOR::MAGENTA, "%s", fileName.c_str());
+        printfColorErr(COLOR::GREY, " does not exist\n");
         return nullopt;
     }
     if (!fs::is_regular_file(path)) {
-        cerr << "Path " << path << " is not a file\n";
+        printfColorErr(COLOR::RED, "Argument Error");
+        printfColorErr(COLOR::GREY, ": path ");
+        printfColorErr(COLOR::MAGENTA, "%s", fileName.c_str());
+        printfColorErr(COLOR::GREY, " is not a file\n");
         return nullopt;
     }
 

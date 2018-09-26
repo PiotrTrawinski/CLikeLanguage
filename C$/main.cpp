@@ -1,10 +1,9 @@
-#include <iostream>
 #include "parsing.h"
 #include "codeTreeCreating.h"
 #include "llvmCreating.h"
 #include "Value.h"
+#include "consoleColors.h"
 #include <chrono>
-#include <iomanip>
 #include <filesystem>
 #include <Windows.h>
 
@@ -17,10 +16,9 @@ double nanoToSec(long long nanoSecs) {
 }
 
 int main(int argc, char** argv) {
-    cout << setprecision(5) << fixed;
-
     if (argc < 2) {
-        cerr << "You didn't provide a file to compile\n";
+        printfColorErr(COLOR::RED, "Compilation FAILED");
+        printfColorErr(COLOR::GREY, ": you didn't provide a file to compile\n");
         return 1;
     }
     string filePath = argv[1];
@@ -30,7 +28,8 @@ int main(int argc, char** argv) {
     auto tokens = parseFile(filePath);
     auto parsingTime = nanoToSec(duration_cast<nanoseconds>(high_resolution_clock::now() - start).count());
     if (!tokens) {
-        cerr << "Compiling failed: there were errors during parsing\n";
+        printfColorErr(COLOR::RED, "Compilation FAILED");
+        printfColorErr(COLOR::GREY, ": there were errors during parsing\n");
         return 2;
     }
     
@@ -38,7 +37,8 @@ int main(int argc, char** argv) {
     auto globalScope = createCodeTree(tokens.value());
     auto codeTreeCreatingTime = nanoToSec(duration_cast<nanoseconds>(high_resolution_clock::now() - start).count());
     if (!globalScope) {
-        cerr << "Compiling failed: there were errors during code tree creating\n";
+        printfColorErr(COLOR::RED, "Compilation FAILED");
+        printfColorErr(COLOR::GREY, ": there were errors during code tree creating\n");
         return 3;
     }
 
@@ -46,7 +46,8 @@ int main(int argc, char** argv) {
     bool statusInterpreting = globalScope->interpret();
     auto interpretingTime = nanoToSec(duration_cast<nanoseconds>(high_resolution_clock::now() - start).count());
     if (!statusInterpreting) {
-        cerr << "Compiling failed: there were errors during interpreting\n";
+        printfColorErr(COLOR::RED, "Compilation FAILED");
+        printfColorErr(COLOR::GREY, ": there were errors during interpreting\n");
         return 4;
     }
 
@@ -56,7 +57,8 @@ int main(int argc, char** argv) {
     mainFunction->setName("main");
     auto llvmCreateTime = nanoToSec(duration_cast<nanoseconds>(high_resolution_clock::now() - start).count());
     if (!llvmObj) {
-        cerr << "Compiling failed: there were errors during llvm creating\n";
+        printfColorErr(COLOR::RED, "Compilation FAILED");
+        printfColorErr(COLOR::GREY, ": there were errors during llvm creating\n");
         return 5;
     }
 
@@ -74,17 +76,16 @@ int main(int argc, char** argv) {
     
     auto frontEndTime = parsingTime + codeTreeCreatingTime + interpretingTime + llvmCreateTime + emitLlvmTime;
     auto fullTime = frontEndTime + backEndTime;
-    cout << "---------------------------------------\n";
-    cout << "| Compiling completed\n";
-    cout << "| - time : "                 << fullTime             << "[s]\n";
-    cout << "| -- front-end   : "         << frontEndTime         << "[s] (" << 100*frontEndTime/fullTime << "%)\n";
-    cout << "| --- parsing            : " << parsingTime          << "[s] (" << 100*parsingTime/fullTime << "%)\n";
-    cout << "| --- code tree creating : " << codeTreeCreatingTime << "[s] (" << 100*codeTreeCreatingTime/fullTime << "%)\n";
-    cout << "| --- interpreting       : " << interpretingTime     << "[s] (" << 100*interpretingTime/fullTime << "%)\n";
-    cout << "| --- llvm creating      : " << llvmCreateTime       << "[s] (" << 100*llvmCreateTime/fullTime << "%)\n";
-    cout << "| --- llvm code emiting  : " << emitLlvmTime         << "[s] (" << 100*emitLlvmTime/fullTime << "%)\n";
-    cout << "| -- back-end    : "         << backEndTime          << "[s] (" << 100*backEndTime/fullTime << "%)\n";
-    cout << "---------------------------------------\n";
+
+    printfColor(COLOR::GREEN, "Compilation SUCCEEDED\n");
+    printfColor(COLOR::GREY, "- time : ");printfColor(COLOR::CYAN, "%.3f",fullTime);printfColor(COLOR::GREY, "[s]\n");
+    printfColor(COLOR::GREY, "-- front-end   : ");printfColor(COLOR::CYAN, "%.3f", frontEndTime);printfColor(COLOR::GREY, "[s] (%.2f%%)\n", 100*frontEndTime/fullTime);
+    printfColor(COLOR::GREY, "--- parsing            : ");printfColor(COLOR::CYAN, "%.3f", parsingTime);printfColor(COLOR::GREY, "[s] (%.2f%%)\n", 100*parsingTime/fullTime);
+    printfColor(COLOR::GREY, "--- code tree creating : ");printfColor(COLOR::CYAN, "%.3f", codeTreeCreatingTime);printfColor(COLOR::GREY, "[s] (%.2f%%)\n", 100*codeTreeCreatingTime/fullTime);
+    printfColor(COLOR::GREY, "--- interpreting       : ");printfColor(COLOR::CYAN, "%.3f", interpretingTime);printfColor(COLOR::GREY, "[s] (%.2f%%)\n", 100*interpretingTime/fullTime);
+    printfColor(COLOR::GREY, "--- llvm creating      : ");printfColor(COLOR::CYAN, "%.3f", llvmCreateTime);printfColor(COLOR::GREY, "[s] (%.2f%%)\n", 100*llvmCreateTime/fullTime);
+    printfColor(COLOR::GREY, "--- llvm code emiting  : ");printfColor(COLOR::CYAN, "%.3f", emitLlvmTime);printfColor(COLOR::GREY, "[s] (%.2f%%)\n", 100*emitLlvmTime/fullTime);
+    printfColor(COLOR::GREY, "-- back-end    : ");printfColor(COLOR::CYAN, "%.3f", backEndTime);printfColor(COLOR::GREY, "[s] (%.2f%%)\n", 100*backEndTime/fullTime);
 
     if (argc < 3 || (argc >= 3 && strcmp(argv[2], "-run"))) {
         return 0;

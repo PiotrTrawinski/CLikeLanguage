@@ -66,6 +66,9 @@
     <ClCompile Include="llvmCreating.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="consoleColors.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parsing.h">
@@ -135,6 +138,9 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="LlvmObject.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="consoleColors.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
