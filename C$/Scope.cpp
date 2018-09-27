@@ -551,6 +551,10 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                 appendOperator(stack, out, Operation::Kind::Destroy, tokens[i++].codePosition);
                 expectValue = true;
             }
+            else if (tokens[i].value == "move") {
+                appendOperator(stack, out, Operation::Kind::Move, tokens[i++].codePosition);
+                expectValue = true;
+            }
             else if (tokens[i].value == "sizeof") {
                 auto operation = SizeofOperation::Create(tokens[i].codePosition);
                 i += 1;

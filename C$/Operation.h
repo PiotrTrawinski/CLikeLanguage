@@ -34,6 +34,7 @@ struct Operation : Value {
         Typesize,
         Constructor,
         Destroy,
+        Move,
         LeftBracket // not really operator - only for convinience in reverse polish notation
     };
 
