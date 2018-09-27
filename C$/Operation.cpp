@@ -3180,12 +3180,13 @@ void ConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
 }
 
 
-AssignOperation::AssignOperation(const CodePosition& position) : 
-    Operation(position, Operation::Kind::Assign)
+AssignOperation::AssignOperation(const CodePosition& position, bool forceConstruction) : 
+    Operation(position, Operation::Kind::Assign),
+    isConstruction(forceConstruction)
 {}
 vector<unique_ptr<AssignOperation>> AssignOperation::objects;
-AssignOperation* AssignOperation::Create(const CodePosition& position) {
-    objects.emplace_back(make_unique<AssignOperation>(position));
+AssignOperation* AssignOperation::Create(const CodePosition& position, bool forceConstruction) {
+    objects.emplace_back(make_unique<AssignOperation>(position, forceConstruction));
     return objects.back().get();
 }
 void AssignOperation::templateCopy(AssignOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {

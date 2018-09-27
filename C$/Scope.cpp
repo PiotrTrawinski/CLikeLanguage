@@ -303,7 +303,7 @@ Scope::ReadStatementValue Scope::readStatement(const vector<Token>& tokens, int&
                         j += 1;
                     }
                 }
-                if (tokens[j].value == "(") {
+                if (j < tokens.size() && tokens[j].value == "(") {
                     j += 1;
                     int openparentheses = 1;
                     while (tokens.size() > j && openparentheses > 0) {
@@ -1041,6 +1041,10 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     expectValue = true;
                 } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "&=") {
                     endOfExpression = true;
+                } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "<:") {
+                    appendOperator(stack, out, AssignOperation::Create(tokens[i].codePosition, true));
+                    i += 2;
+                    expectValue = true;
                 } else if (i+2 < tokens.size() && tokens[i].value + tokens[i + 1].value == "<<") {
                     appendOperator(stack, out, Operation::Kind::Shl, tokens[i].codePosition);
                     i += 2;

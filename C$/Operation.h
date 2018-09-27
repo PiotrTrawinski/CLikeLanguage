@@ -426,8 +426,8 @@ private:
 };
 
 struct AssignOperation : Operation {
-    AssignOperation(const CodePosition& position);
-    static AssignOperation* Create(const CodePosition& position);
+    AssignOperation(const CodePosition& position, bool forceConstruction=false);
+    static AssignOperation* Create(const CodePosition& position, bool forceConstruction=false);
     void templateCopy(AssignOperation* operation, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
