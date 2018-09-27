@@ -3441,6 +3441,11 @@ FunctionValue* TemplateFunctionType::getImplementation(Scope* scope, Declaration
     implementations.push_back({implementationTypes, implementation});
     return implementation;
 }
+void TemplateFunctionType::createLlvmImplementations(LlvmObject* llvmObj, const string& name) {
+    for (auto& implementation : implementations) {
+        implementation.second->createLlvm(llvmObj, name);
+    }
+}
 /*unique_ptr<Type> TemplateFunctionType::copy() {
     auto type = make_unique<TemplateFunctionType>();
     for (auto& templateType : templateTypes) {

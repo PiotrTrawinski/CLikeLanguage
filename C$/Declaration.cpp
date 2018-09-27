@@ -142,7 +142,13 @@ void Declaration::createAllocaLlvmIfNeeded(LlvmObject* llvmObj) {
     }
 }
 void Declaration::createLlvm(LlvmObject* llvmObj) {
-    if (value && variable->isConstexpr && value->valueKind == Value::ValueKind::FunctionValue) {
+    if (value && value->type->kind == Type::Kind::TemplateFunction) {
+        if (variable->name == "main") {
+            ((TemplateFunctionType*)value->type)->createLlvmImplementations(llvmObj, "_main");
+        } else {
+            ((TemplateFunctionType*)value->type)->createLlvmImplementations(llvmObj, variable->name);
+        }
+    } else if (value && variable->isConstexpr && value->valueKind == Value::ValueKind::FunctionValue) {
         if (variable->name == "main") {
             ((FunctionValue*)value)->createLlvm(llvmObj, "_main");
         } else {

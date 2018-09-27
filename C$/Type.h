@@ -475,6 +475,7 @@ struct TemplateFunctionType : FunctionType {
     virtual bool operator==(const Type& type) const;
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     FunctionValue* getImplementation(Scope* scope, Declaration* declaration);
+    void createLlvmImplementations(LlvmObject* llvmObj, const std::string& name);
     //virtual std::unique_ptr<Type> copy();
 
     std::vector<TemplateType*> templateTypes;
