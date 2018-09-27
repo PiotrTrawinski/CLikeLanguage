@@ -85,7 +85,7 @@ bool ClassDeclaration::operator==(const Statement& declaration) const {
 }
 llvm::StructType* ClassDeclaration::getLlvmType(LlvmObject* llvmObj) {
     if (!llvmType) {
-        llvmType = llvm::StructType::create(llvmObj->context, name+to_string(body->id));
+        llvmType = llvm::StructType::create(llvmObj->context, name);
     }
     return llvmType;
 }
