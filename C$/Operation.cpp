@@ -1730,6 +1730,69 @@ bool FunctionCallOperation::createTemplateFunctionCall(Scope* scope, Declaration
     type = ((FunctionType*)implementation->type)->returnType;
     return true;
 }
+int considerPriorities(const vector<Type*>& funArgTypes0, const vector<Type*>& funArgTypes1) {
+    int winner = -1;
+    for (int i = 0; i < funArgTypes0.size(); ++i) {
+        if (cmpPtr(funArgTypes0[i]->getEffectiveType(), funArgTypes1[i]->getEffectiveType())) {
+            if (funArgTypes0[i]->kind == Type::Kind::Reference) {
+                if (funArgTypes1[i]->kind != Type::Kind::Reference) {
+                    if (winner == 1) {
+                        winner = -2; 
+                        break;
+                    } else {
+                        winner = 0;
+                    }
+                }
+            } else {
+                if (funArgTypes1[i]->kind == Type::Kind::Reference) {
+                    if (winner == 0) {
+                        winner = -2;
+                        break;
+                    } else {
+                        winner = 1;
+                    }
+                }
+            }
+        }
+    }
+    return winner;
+}
+void considerPriorities(vector<Declaration*>& matches, const CodePosition& position) {
+    if (matches.size() > 1) {
+        int winner = -1;
+        do {
+            auto& funArgTypes0 = ((FunctionType*)matches[0]->variable->type)->argumentTypes;
+            auto& funArgTypes1 = ((FunctionType*)matches[1]->variable->type)->argumentTypes;
+
+            winner = considerPriorities(funArgTypes0, funArgTypes1);
+
+            if (winner == -1) internalError("found 2 perfect functions which differ in more then argument references", position);
+            if (winner == 0) {
+                matches.erase(matches.begin()+1);
+            } else if (winner == 1) {
+                matches.erase(matches.begin());
+            }
+        } while (matches.size() > 1 && winner != -2);
+    }
+}
+void considerPriorities(vector<pair<Declaration*, vector<ConstructorOperation*>>>& matches, const CodePosition& position) {
+    if (matches.size() > 1) {
+        int winner = -1;
+        do {
+            auto& funArgTypes0 = ((FunctionType*)matches[0].first->variable->type)->argumentTypes;
+            auto& funArgTypes1 = ((FunctionType*)matches[1].first->variable->type)->argumentTypes;
+
+            winner = considerPriorities(funArgTypes0, funArgTypes1);
+
+            if (winner == -1) internalError("found 2 perfect functions which differ in more then argument references", position);
+            if (winner == 0) {
+                matches.erase(matches.begin()+1);
+            } else if (winner == 1) {
+                matches.erase(matches.begin());
+            }
+        } while (matches.size() > 1 && winner != -2);
+    }
+}
 FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Scope* scope, Scope* searchScope, string functionName, const vector<Type*>& templatedTypes) {
     const auto& declarations = searchScope->declarationMap.getDeclarations(functionName);
     vector<Declaration*> viableDeclarations;
@@ -1759,6 +1822,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
                 }
             }
         }
+        considerPriorities(perfectMatches, position);
         if (perfectMatches.size() == 1) {
             function = perfectMatches.back()->value;
             idName = searchScope->declarationMap.getIdName(perfectMatches.back());
@@ -1873,6 +1937,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
                 perfectMatches.erase(perfectMatches.end()-2);
             }
         }
+        considerPriorities(perfectMatches, position);
         if (perfectMatches.size() == 1) {
             if (createTemplateFunctionCall(searchScope, perfectMatches.back())) {
                 return FindFunctionStatus::Success;
@@ -1946,6 +2011,7 @@ FunctionCallOperation::FindFunctionStatus FunctionCallOperation::findFunction(Sc
             return decl.first->variable->type->kind == Type::Kind::TemplateFunction && ((TemplateFunctionType*)decl.first->variable->type)->templateTypes.size() > minTemplateArgsCount;
         }), possibleDeclarations.end());
     }
+    considerPriorities(possibleDeclarations, position);
     if (possibleDeclarations.size() > 1) {
         string message = "ambogous function call. ";
         message += "Possible functions at lines: ";
