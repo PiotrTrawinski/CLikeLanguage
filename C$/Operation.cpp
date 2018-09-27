@@ -539,6 +539,7 @@ optional<Operation::Kind> Operation::stringToKind(const std::string& str) {
     else if (str == "!")   return Kind::LogicalNot;
     else if (str == "*")   return Kind::Mul;
     else if (str == "/")   return Kind::Div;
+    else if (str == "%")   return Kind::Mod;
     else if (str == "+")   return Kind::Add;
     else if (str == "-")   return Kind::Sub;
     else if (str == "<<")  return Kind::Shl;
@@ -1360,6 +1361,32 @@ optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
     if (!interpretAllArguments(scope)) {
         return nullopt;
     }
+
+    switch (arguments[0]->type->getEffectiveType()->kind) {
+    case Type::Kind::StaticArray:
+        type = ReferenceType::Create(((StaticArrayType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    case Type::Kind::DynamicArray:
+        type = ReferenceType::Create(((DynamicArrayType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    case Type::Kind::ArrayView:
+        type = ReferenceType::Create(((ArrayViewType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    default: {
+        auto functionCall = FunctionCallOperation::Create(position);
+        functionCall->arguments = arguments;
+        auto indexInterpret = index->interpret(scope);
+        if (!indexInterpret) return nullopt;
+        if (indexInterpret.value()) index = indexInterpret.value();
+        functionCall->arguments.push_back(index);
+        functionCall->function = Variable::Create(position, kindToFunctionName(kind));
+        auto functionCallInterpret = functionCall->interpret(scope);
+        if (!functionCallInterpret) return nullopt;
+        if (functionCallInterpret.value()) return functionCallInterpret.value();
+        else return functionCall;
+    }
+    }
+
     index = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {index});
     auto indexInterpret = index->interpret(scope);
     if (!indexInterpret) return nullopt;
@@ -1372,23 +1399,6 @@ optional<Value*> ArrayIndexOperation::interpret(Scope* scope) {
             return errorMessageOpt("array index outside the bounds of an array", position);
         }
         return staticArrayValues[indexValue];
-    }
-
-    switch (arguments[0]->type->getEffectiveType()->kind) {
-        case Type::Kind::StaticArray:
-            type = ReferenceType::Create(((StaticArrayType*)arguments[0]->type->getEffectiveType())->elementType);
-            break;
-        case Type::Kind::DynamicArray:
-            type = ReferenceType::Create(((DynamicArrayType*)arguments[0]->type->getEffectiveType())->elementType);
-            break;
-        case Type::Kind::ArrayView:
-            type = ReferenceType::Create(((ArrayViewType*)arguments[0]->type->getEffectiveType())->elementType);
-            break;
-        default:
-            break;
-    }
-    if (!type) {
-        return errorMessageOpt("cannot index value of type " + DeclarationMap::toString(arguments[0]->type), position);
     }
 
     return nullptr;
@@ -1491,6 +1501,36 @@ optional<Value*> ArraySubArrayOperation::interpret(Scope* scope) {
     if (!interpretAllArguments(scope)) {
         return nullopt;
     }
+
+    switch (arguments[0]->type->getEffectiveType()->kind) {
+    case Type::Kind::StaticArray:
+        type = ArrayViewType::Create(((StaticArrayType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    case Type::Kind::DynamicArray:
+        type = ArrayViewType::Create(((DynamicArrayType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    case Type::Kind::ArrayView:
+        type = ArrayViewType::Create(((ArrayViewType*)arguments[0]->type->getEffectiveType())->elementType);
+        break;
+    default:{
+        auto functionCall = FunctionCallOperation::Create(position);
+        functionCall->arguments = arguments;
+        auto indexInterpret = firstIndex->interpret(scope);
+        if (!indexInterpret) return nullopt;
+        if (indexInterpret.value()) firstIndex = indexInterpret.value();
+        functionCall->arguments.push_back(firstIndex);
+        indexInterpret = secondIndex->interpret(scope);
+        if (!indexInterpret) return nullopt;
+        if (indexInterpret.value()) secondIndex = indexInterpret.value();
+        functionCall->arguments.push_back(secondIndex);
+        functionCall->function = Variable::Create(position, kindToFunctionName(kind));
+        auto functionCallInterpret = functionCall->interpret(scope);
+        if (!functionCallInterpret) return nullopt;
+        if (functionCallInterpret.value()) return functionCallInterpret.value();
+        else return functionCall;
+    }
+    }
+
     firstIndex = ConstructorOperation::Create(position, IntegerType::Create(IntegerType::Size::I64), {firstIndex});
     auto indexInterpret = firstIndex->interpret(scope);
     if (!indexInterpret) return nullopt;
@@ -1522,23 +1562,6 @@ optional<Value*> ArraySubArrayOperation::interpret(Scope* scope) {
     auto sizeInterpret = size->interpret(scope);
     if (!sizeInterpret) return nullopt;
     if (sizeInterpret.value()) size = sizeInterpret.value();
-
-    switch (arguments[0]->type->getEffectiveType()->kind) {
-    case Type::Kind::StaticArray:
-        type = ArrayViewType::Create(((StaticArrayType*)arguments[0]->type->getEffectiveType())->elementType);
-        break;
-    case Type::Kind::DynamicArray:
-        type = ArrayViewType::Create(((DynamicArrayType*)arguments[0]->type->getEffectiveType())->elementType);
-        break;
-    case Type::Kind::ArrayView:
-        type = ArrayViewType::Create(((ArrayViewType*)arguments[0]->type->getEffectiveType())->elementType);
-        break;
-    default:
-        break;
-    }
-    if (!type) {
-        return errorMessageOpt("cannot sub-array value of type " + DeclarationMap::toString(arguments[0]->type), position);
-    }
 
     return nullptr;
 }
