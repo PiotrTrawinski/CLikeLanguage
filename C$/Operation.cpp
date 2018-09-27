@@ -2016,6 +2016,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
             if (!classDeclaration->interpret({})) return nullopt;
             auto constructorType = ClassType::Create(classDeclaration->name);
             constructorType->declaration = classDeclaration;
+            constructorType->templateTypes = templatedArguments;
             auto op = ConstructorOperation::Create(position, constructorType, arguments, false, true);
             auto opInterpret = op->interpret(scope);
             if (!opInterpret) return nullopt;

@@ -50,6 +50,7 @@ struct Type {
     Type(Kind kind);
     static Type* Create(Kind kind);
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -99,6 +100,7 @@ struct OwnerPointerType : Type {
     static OwnerPointerType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -130,6 +132,7 @@ struct RawPointerType : Type {
     static RawPointerType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -153,6 +156,7 @@ struct MaybeErrorType : Type {
     static MaybeErrorType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -194,6 +198,7 @@ struct ReferenceType : Type {
     static ReferenceType* Create(Type* underlyingType);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -217,6 +222,7 @@ struct StaticArrayType : Type {
     static StaticArrayType* Create(Type* elementType, int64_t sizeAsInt);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -256,6 +262,7 @@ struct DynamicArrayType : Type {
     static DynamicArrayType* Create(Type* elementType);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -302,6 +309,7 @@ struct ArrayViewType : Type {
     static ArrayViewType* Create(Type* elementType);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -335,6 +343,7 @@ struct ClassType : Type {
     static ClassType* Create(const std::string& name);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
@@ -371,6 +380,7 @@ struct FunctionType : Type {
     static FunctionType* Create();
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);
@@ -444,6 +454,7 @@ struct TemplateType : Type {
     static TemplateType* Create(const std::string& name);
     
     virtual bool operator==(const Type& type) const;
+    virtual bool isTemplate();
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual int compareTemplateDepth(Type* type);

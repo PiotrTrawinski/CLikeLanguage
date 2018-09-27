@@ -31,6 +31,9 @@ bool Type::operator==(const Type& type) const {
         return false;
     }
 }
+bool Type::isTemplate() {
+    return false;
+}
 MatchTemplateResult Type::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return MatchTemplateResult::Perfect;
     else return MatchTemplateResult::Viable;
@@ -302,6 +305,9 @@ bool OwnerPointerType::operator==(const Type& type) const {
         return false;
     }
 }
+bool OwnerPointerType::isTemplate() {
+    return underlyingType->isTemplate();
+}
 MatchTemplateResult OwnerPointerType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((OwnerPointerType*)type)->underlyingType);
     else return MatchTemplateResult::Fail;
@@ -504,6 +510,9 @@ bool RawPointerType::operator==(const Type& type) const {
         return false;
     }
 }
+bool RawPointerType::isTemplate() {
+    return underlyingType->isTemplate();
+}
 MatchTemplateResult RawPointerType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((RawPointerType*)type)->underlyingType);
     else return MatchTemplateResult::Fail;
@@ -610,6 +619,9 @@ bool MaybeErrorType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+bool MaybeErrorType::isTemplate() {
+    return underlyingType->isTemplate();
 }
 MatchTemplateResult MaybeErrorType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((MaybeErrorType*)type)->underlyingType);
@@ -988,6 +1000,9 @@ bool ReferenceType::operator==(const Type& type) const {
         return false;
     }
 }
+bool ReferenceType::isTemplate() {
+    return underlyingType->isTemplate();
+}
 MatchTemplateResult ReferenceType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) return underlyingType->matchTemplate(templateFunctionType, ((ReferenceType*)type)->underlyingType);
     else return MatchTemplateResult::Fail;
@@ -1087,6 +1102,9 @@ bool StaticArrayType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+bool StaticArrayType::isTemplate() {
+    return elementType->isTemplate();
 }
 MatchTemplateResult StaticArrayType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind && sizeAsInt == ((StaticArrayType*)type)->sizeAsInt) {
@@ -1262,6 +1280,9 @@ bool DynamicArrayType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+bool DynamicArrayType::isTemplate() {
+    return elementType->isTemplate();
 }
 MatchTemplateResult DynamicArrayType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) {
@@ -2251,6 +2272,9 @@ bool ArrayViewType::operator==(const Type& type) const {
         return false;
     }
 }
+bool ArrayViewType::isTemplate() {
+    return elementType->isTemplate();
+}
 MatchTemplateResult ArrayViewType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind == type->kind) {
         return elementType->matchTemplate(templateFunctionType, ((ArrayViewType*)type)->elementType);
@@ -2460,6 +2484,9 @@ Type* ClassType::changeClassToTemplate(const vector<TemplateType*> templateTypes
             return templateType;
         }
     }
+    for (auto& thisTemplateType : this->templateTypes) {
+        thisTemplateType = thisTemplateType->changeClassToTemplate(templateTypes);
+    }
     return this;
 }
 Type* ClassType::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
@@ -2475,6 +2502,13 @@ Type* ClassType::templateCopy(Scope* parentScope, const unordered_map<string, Ty
     }
 }
 bool ClassType::interpret(Scope* scope) {
+    if (templateTypes.size() > 0) {
+        for (auto templateType : templateTypes) {
+            if (templateType->isTemplate()) {
+                return true;
+            }
+        }
+    }
     if (declaration) {
         return declaration->interpret(templateTypes);
     }
@@ -2491,19 +2525,39 @@ bool ClassType::interpret(Scope* scope) {
 bool ClassType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){
         const auto& other = static_cast<const ClassType&>(type);
-        return this->name == other.name
-            && this->declaration == other.declaration
-            && this->templateTypes == other.templateTypes;
+        if (this->declaration) {
+            return this->declaration == other.declaration;
+        } else {
+            return this->name == other.name
+                && this->declaration == other.declaration
+                && this->templateTypes == other.templateTypes;
+        }
     } else {
         return false;
     }
+}
+bool ClassType::isTemplate() {
+    for (auto templateType : templateTypes) {
+        if (templateType->isTemplate()) return true;
+    }
+    return false;
 }
 MatchTemplateResult ClassType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind != type->kind) return MatchTemplateResult::Viable;
     auto classType = (ClassType*)type;
     if (declaration == classType->declaration && templateTypes == classType->templateTypes) {
         return MatchTemplateResult::Perfect;
-    } else {
+    } else if (declaration == nullptr) {
+        bool isPerfect = true;
+        for (int i = 0; i < templateTypes.size(); ++i) {
+            auto matchArgResult = templateTypes[i]->matchTemplate(templateFunctionType, classType->templateTypes[i]);
+            if (matchArgResult == MatchTemplateResult::Fail) return MatchTemplateResult::Fail;
+            if (matchArgResult == MatchTemplateResult::Viable) isPerfect = false;
+        }
+        if (isPerfect) return MatchTemplateResult::Perfect;
+        else return MatchTemplateResult::Viable;
+    } 
+    else {
         return MatchTemplateResult::Viable;
     }
 }
@@ -2769,6 +2823,12 @@ bool FunctionType::operator==(const Type& type) const {
     } else {
         return false;
     }
+}
+bool FunctionType::isTemplate() {
+    for (auto argumentType : argumentTypes) {
+        if (argumentType->isTemplate()) return true;
+    }
+    return returnType->isTemplate();
 }
 MatchTemplateResult FunctionType::matchTemplate(TemplateFunctionType* templateFunctionType, Type* type) {
     if (kind != type->kind) return MatchTemplateResult::Viable;
@@ -3282,6 +3342,9 @@ MatchTemplateResult TemplateType::matchTemplate(TemplateFunctionType* templateFu
     }
     return MatchTemplateResult::Fail;
 }
+bool TemplateType::isTemplate() {
+    return true;
+}
 Type* TemplateType::substituteTemplate(TemplateFunctionType* templateFunctionType) {
     for (int i = 0; i < templateFunctionType->templateTypes.size(); ++i) {
         if (name == templateFunctionType->templateTypes[i]->name) {
@@ -3366,6 +3429,12 @@ FunctionValue* TemplateFunctionType::getImplementation(Scope* scope, Declaration
         templateToType.insert({templateTypes[i]->name, implementationTypes[i]});
     }
     auto implementation = (FunctionValue*)declaration->value->templateCopy(scope, templateToType);
+    for (auto& argument : implementation->arguments) {
+        if (!argument->variable->type->interpret(scope)) {
+            return nullptr;
+        }
+    }
+    if (!implementation->type->interpret(scope)) return nullptr;
     implementations.push_back({implementationTypes, implementation});
     return implementation;
 }
