@@ -132,6 +132,13 @@ optional<Value*> Operation::interpret(Scope* scope) {
         type = Type::Create(Type::Kind::Void);
         break;
     }
+    case Kind::Move: {
+        if (!isLvalue(arguments[0])) {
+            return arguments[0];
+        }
+        type = arguments[0]->type->getEffectiveType();
+        break;
+    }
     case Kind::Typesize:
         return arguments[0]->type->typesize(scope);
     case Kind::Minus: {
@@ -483,6 +490,7 @@ optional<Value*> Operation::interpret(Scope* scope) {
 string Operation::kindToString(Kind kind) {
     switch (kind) {
     case Kind::Destroy: return "destroy";
+    case Kind::Move: return "move";
     case Kind::Dot: return ". (dot)";
     case Kind::FunctionCall: return "function call";
     case Kind::ArrayIndex: return "[] (array index)";
@@ -627,6 +635,7 @@ int Operation::priority(Kind kind) {
     case Kind::GetValue:
     case Kind::Deallocation:
     case Kind::Destroy:
+    case Kind::Move:
     case Kind::Cast:
     case Kind::BitNeg:
     case Kind::LogicalNot:
@@ -723,6 +732,7 @@ int Operation::numberOfArguments(Kind kind) {
     case Kind::GetValue:
     case Kind::Deallocation:
     case Kind::Destroy:
+    case Kind::Move:
     case Kind::BitNeg:
     case Kind::LogicalNot:
     case Kind::Minus:
@@ -816,6 +826,9 @@ void Operation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
     case Kind::Destroy:
         arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
         break;
+    case Kind::Move:
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        break;
     case Kind::Minus:
     case Kind::LogicalNot:
     case Kind::BitNeg:
@@ -853,12 +866,19 @@ void Operation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {
     case Kind::GetValue:
         switch (arguments[0]->type->getEffectiveType()->kind) {
         case Type::Kind::RawPointer: 
+            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            break;
         case Type::Kind::OwnerPointer:
             arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
-            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            break;
         case Type::Kind::MaybeError: 
             arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+            break;
         }
+        break;
+    case Kind::Move:
+        arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+        break;
     }
 }
 llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
@@ -884,6 +904,9 @@ llvm::Value* Operation::getReferenceLlvm(LlvmObject* llvmObj) {
         default:
             return nullptr;
         }
+    }
+    case Kind::Move: {
+        return arguments[0]->getReferenceLlvm(llvmObj);
     }
     default: return nullptr;
     }
@@ -912,6 +935,9 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     case Kind::Destroy: {
         arguments[0]->type->createLlvmDestructorRef(llvmObj, arguments[0]->getReferenceLlvm(llvmObj));
         return nullptr;
+    }
+    case Kind::Move: {
+        return arguments[0]->createLlvm(llvmObj);
     }
     case Kind::Minus: {
         auto arg = arguments[0]->createLlvm(llvmObj);
@@ -3180,12 +3206,13 @@ void ConstructorOperation::createDestructorLlvm(LlvmObject* llvmObj) {
 }
 
 
-AssignOperation::AssignOperation(const CodePosition& position) : 
-    Operation(position, Operation::Kind::Assign)
+AssignOperation::AssignOperation(const CodePosition& position, bool forceConstruction) : 
+    Operation(position, Operation::Kind::Assign),
+    isConstruction(forceConstruction)
 {}
 vector<unique_ptr<AssignOperation>> AssignOperation::objects;
-AssignOperation* AssignOperation::Create(const CodePosition& position) {
-    objects.emplace_back(make_unique<AssignOperation>(position));
+AssignOperation* AssignOperation::Create(const CodePosition& position, bool forceConstruction) {
+    objects.emplace_back(make_unique<AssignOperation>(position, forceConstruction));
     return objects.back().get();
 }
 void AssignOperation::templateCopy(AssignOperation* operation, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
