@@ -129,12 +129,26 @@ optional<Value*> Operation::interpret(Scope* scope) {
         if (!isLvalue(arguments[0])) {
             return errorMessageOpt("cannot destroy non-lvalue", position);
         }
+        if (arguments[0]->valueKind == Value::ValueKind::Variable) {
+            auto variable = (Variable*)arguments[0];
+            scope->maybeUninitializedDeclarations.insert(variable->declaration);
+            if (scope->declarationsInitState.at(variable->declaration)) {
+                scope->declarationsInitState[variable->declaration] = false;
+            } else {
+                return arguments[0];
+            }
+        }
         type = Type::Create(Type::Kind::Void);
         break;
     }
     case Kind::Move: {
         if (!isLvalue(arguments[0])) {
             return arguments[0];
+        }
+        if (arguments[0]->valueKind == Value::ValueKind::Variable) {
+            auto variable = (Variable*)arguments[0];
+            scope->maybeUninitializedDeclarations.insert(variable->declaration);
+            scope->declarationsInitState[variable->declaration] = false;
         }
         type = arguments[0]->type->getEffectiveType();
         break;
