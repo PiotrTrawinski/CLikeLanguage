@@ -1779,6 +1779,14 @@ void CodeScope::createLlvm(LlvmObject* llvmObj) {
         }
     }
     for (int i = 0; i < statements.size(); ++i) {
+        if (statements[i]->kind == Statement::Kind::Declaration) {
+            Declaration* declaration = (Declaration*)statements[i];
+            if (declaration->value && declaration->value->type->kind == Type::Kind::TemplateFunction) {
+                declaration->createLlvm(llvmObj);
+            }
+        }
+    }
+    for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
         if (!statement->isReachable) {
             continue;

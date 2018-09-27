@@ -3257,6 +3257,9 @@ pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj,
                 return { nullptr, new llvm::UIToFPInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
             }
         case Type::Kind::Float:
+            if (((FloatType*)arg0Type)->size == size) {
+                return { nullptr, arguments[0]->createLlvm(llvmObj) };
+            }
             if (size == FloatType::Size::F32) {
                 return { nullptr, new llvm::FPTruncInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
             } else {
@@ -3437,6 +3440,11 @@ FunctionValue* TemplateFunctionType::getImplementation(Scope* scope, Declaration
     if (!implementation->type->interpret(scope)) return nullptr;
     implementations.push_back({implementationTypes, implementation});
     return implementation;
+}
+void TemplateFunctionType::createLlvmImplementations(LlvmObject* llvmObj, const string& name) {
+    for (auto& implementation : implementations) {
+        implementation.second->createLlvm(llvmObj, name);
+    }
 }
 /*unique_ptr<Type> TemplateFunctionType::copy() {
     auto type = make_unique<TemplateFunctionType>();
