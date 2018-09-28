@@ -10,7 +10,7 @@ struct Operation : Value {
         Add, Sub, Mul, Div, Mod,
         Minus,
         BitAnd, BitOr, BitNeg, BitXor,
-        LogicalAnd, LogicalOr, LogicalNot,
+        LogicalAnd, LogicalOr, LogicalXor, LogicalNot,
         LongCircuitLogicalAnd, LongCircuitLogicalOr,
         Eq, Neq,
         Gt, Lt, Gte, Lte,

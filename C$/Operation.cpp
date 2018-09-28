@@ -440,6 +440,29 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
         break;   
     }
+    case Kind::LogicalXor: {
+        Value* bool1 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[0]});
+        auto bool1Interpret = bool1->interpret(scope);
+        if (!bool1Interpret) return nullopt;
+        if (bool1Interpret.value()) bool1 = bool1Interpret.value();
+
+        Value* bool2 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[1]});
+        auto bool2Interpret = bool2->interpret(scope);
+        if (!bool2Interpret) return nullopt;
+        if (bool2Interpret.value()) bool2 = bool2Interpret.value();
+
+        if (bool1->isConstexpr && bool2->isConstexpr) {
+            return BoolValue::Create(
+                position,
+                ((BoolValue*)bool1)->value ^ ((BoolValue*)bool2)->value
+            );
+        }
+        arguments[0] = bool1;
+        arguments[1] = bool2;
+        type = Type::Create(Type::Kind::Bool);
+
+        break;   
+    }
     case Kind::LongCircuitLogicalAnd: {
         Value* bool1 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[0]});
         auto bool1Interpret = bool1->interpret(scope);
@@ -601,6 +624,7 @@ string Operation::kindToString(Kind kind) {
     case Kind::BitOr: return "| (bit or)";
     case Kind::LogicalAnd: return "&& (logical and)";
     case Kind::LogicalOr: return "|| (logical or)";
+    case Kind::LogicalXor: return "^^ (logical xor)";
     case Kind::LongCircuitLogicalAnd: return "&&& (long circuit logical and)";
     case Kind::LongCircuitLogicalOr: return "||| (long circuit logical or)";
     case Kind::Assign: return "= (assign)";
@@ -646,6 +670,7 @@ optional<Operation::Kind> Operation::stringToKind(const std::string& str) {
     else if (str == "|")   return Kind::BitOr;
     else if (str == "&&")  return Kind::LogicalAnd;
     else if (str == "||")  return Kind::LogicalOr;
+    else if (str == "^^")  return Kind::LogicalXor;
     else if (str == "&&&")  return Kind::LongCircuitLogicalAnd;
     else if (str == "|||")  return Kind::LongCircuitLogicalOr;
     else if (str == "+=")  return Kind::AddAssign;
@@ -691,6 +716,7 @@ string Operation::kindToFunctionName(Kind kind) {
     case Kind::BitOr:         return "__operator_BitOr__";
     case Kind::LogicalAnd:    return "__operator_LogicalAnd__";
     case Kind::LogicalOr:     return "__operator_LogicalOr__";
+    case Kind::LogicalXor:     return "__operator_LogicalXor__";
     case Kind::LongCircuitLogicalAnd: return "__operator_LongCircuitLogicalAnd__";
     case Kind::LongCircuitLogicalOr:  return "__operator_LongCircuitLogicalOr__";
     case Kind::AddAssign:     return "__operator_AddAssign__";
@@ -755,9 +781,11 @@ int Operation::priority(Kind kind) {
     case Kind::LogicalAnd:
     case Kind::LongCircuitLogicalAnd:
         return 11;
+    case Kind::LogicalXor:
+        return 12;
     case Kind::LogicalOr:
     case Kind::LongCircuitLogicalOr:
-        return 12;
+        return 13;
     case Kind::Assign:
     case Kind::AddAssign:
     case Kind::SubAssign:
@@ -771,9 +799,9 @@ int Operation::priority(Kind kind) {
     case Kind::BitNegAssign:
     case Kind::BitOrAssign:
     case Kind::BitXorAssign:
-        return 13;
-    default: 
         return 14;
+    default: 
+        return 15;
     }
 }
 bool Operation::isLeftAssociative(Kind kind) {
@@ -803,6 +831,7 @@ bool Operation::isLeftAssociative(Kind kind) {
     case Kind::BitOr:
     case Kind::LogicalAnd:
     case Kind::LogicalOr:
+    case Kind::LogicalXor:
     case Kind::LongCircuitLogicalAnd:
     case Kind::LongCircuitLogicalOr:
         return true;
@@ -848,6 +877,7 @@ int Operation::numberOfArguments(Kind kind) {
     case Kind::BitOr:
     case Kind::LogicalAnd:
     case Kind::LogicalOr:
+    case Kind::LogicalXor:
     case Kind::LongCircuitLogicalAnd:
     case Kind::LongCircuitLogicalOr:
     case Kind::Assign:
@@ -945,6 +975,7 @@ void Operation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
     case Kind::Neq:
     case Kind::LongCircuitLogicalAnd:
     case Kind::LongCircuitLogicalOr:
+    case Kind::LogicalXor:
     case Kind::BitAnd:
     case Kind::BitXor:
     case Kind::BitOr:
@@ -1311,6 +1342,19 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
         );
         return new llvm::SExtInst(
             new llvm::LoadInst(shortCircuitLlvmVar, "", llvmObj->block),
+            Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+            "", llvmObj->block
+        );
+    }
+    case Kind::LogicalXor: {  
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg2 = arguments[1]->createLlvm(llvmObj);
+        return new llvm::SExtInst(
+            llvm::BinaryOperator::CreateXor(
+                new llvm::TruncInst(arg1, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block),
+                new llvm::TruncInst(arg2, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block),
+                "", llvmObj->block
+            ), 
             Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
             "", llvmObj->block
         );

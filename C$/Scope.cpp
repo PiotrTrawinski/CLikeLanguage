@@ -1003,6 +1003,10 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                     appendOperator(stack, out, Operation::Kind::LogicalOr, tokens[i].codePosition);
                     i += 2;
                     expectValue = true;
+                } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "^^") {
+                    appendOperator(stack, out, Operation::Kind::LogicalXor, tokens[i].codePosition);
+                    i += 2;
+                    expectValue = true;
                 } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "==") {
                     appendOperator(stack, out, Operation::Kind::Eq, tokens[i].codePosition);
                     i += 2;
