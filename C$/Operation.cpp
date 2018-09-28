@@ -2649,8 +2649,8 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
                 auto& declaration = scopePtr->declarationsOrder[i];
                 auto& variable = declaration->variable;
-                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
-                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                if (variable->type->needsDestruction() && scope->declarationsInitState.at(declaration)) {
+                    if (scope->maybeUninitializedDeclarations.find(declaration) != scope->maybeUninitializedDeclarations.end()) {
                         warningMessage("destruction of maybe uninitialized variable " + variable->name + " on remove statement", position);
                     }
                     auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
@@ -2691,8 +2691,8 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
                 auto& declaration = scopePtr->declarationsOrder[i];
                 auto& variable = declaration->variable;
-                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
-                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                if (variable->type->needsDestruction() && scope->declarationsInitState.at(declaration)) {
+                    if (scope->maybeUninitializedDeclarations.find(declaration) != scope->maybeUninitializedDeclarations.end()) {
                         warningMessage("destruction of maybe uninitialized variable " + variable->name + " on continue statement", position);
                     }
                     auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
@@ -2746,8 +2746,8 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
                 auto& declaration = scopePtr->declarationsOrder[i];
                 auto& variable = declaration->variable;
-                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
-                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                if (variable->type->needsDestruction() && scope->declarationsInitState.at(declaration)) {
+                    if (scope->maybeUninitializedDeclarations.find(declaration) != scope->maybeUninitializedDeclarations.end()) {
                         warningMessage("destruction of maybe uninitialized variable " + variable->name + " on break statement", position);
                     }
                     auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
@@ -2798,8 +2798,8 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
             for (int i = scopePtr->declarationsOrder.size() - 1; i >= 0; --i) {
                 auto& declaration = scopePtr->declarationsOrder[i];
                 auto& variable = declaration->variable;
-                if (variable->type->needsDestruction() && scopePtr->declarationsInitState.at(declaration)) {
-                    if (scopePtr->maybeUninitializedDeclarations.find(declaration) != scopePtr->maybeUninitializedDeclarations.end()) {
+                if (variable->type->needsDestruction() && scope->declarationsInitState.at(declaration)) {
+                    if (scope->maybeUninitializedDeclarations.find(declaration) != scope->maybeUninitializedDeclarations.end()) {
                         warningMessage("destruction of maybe uninitialized variable " + variable->name + " on return statement", position);
                     }
                     auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
