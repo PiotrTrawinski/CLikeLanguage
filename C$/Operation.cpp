@@ -1787,6 +1787,14 @@ void FunctionCallOperation::templateCopy(FunctionCallOperation* operation, Scope
     Operation::templateCopy(operation, parentScope, templateToType);
 }
 Statement* FunctionCallOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    if (function->valueKind == ValueKind::Variable) {
+        auto functionName = ((Variable*)function)->name;
+        auto foundType = templateToType.find(functionName);
+        if (foundType != templateToType.end()) {
+            return ConstructorOperation::Create(position, foundType->second, arguments, false, true);
+        }
+    }
+    
     auto operation = Create(position);
     templateCopy(operation, parentScope, templateToType);
     return operation;

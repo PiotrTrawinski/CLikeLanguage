@@ -82,11 +82,7 @@ Variable* Variable::Create(const CodePosition& position, const string& name) {
 }
 void Variable::templateCopy(Variable* value, Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
     auto foundType = templateToType.find(name);
-    if (foundType != templateToType.end()) {
-        value->name = DeclarationMap::toString(foundType->second);
-    } else {
-        value->name = name;
-    }
+    value->name = name;
     value->isConst = isConst;
     Value::templateCopy(value, parentScope, templateToType);
 }
