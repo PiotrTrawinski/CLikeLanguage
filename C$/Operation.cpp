@@ -1787,6 +1787,14 @@ void FunctionCallOperation::templateCopy(FunctionCallOperation* operation, Scope
     Operation::templateCopy(operation, parentScope, templateToType);
 }
 Statement* FunctionCallOperation::templateCopy(Scope* parentScope, const unordered_map<string, Type*>& templateToType) {
+    if (function->valueKind == ValueKind::Variable) {
+        auto functionName = ((Variable*)function)->name;
+        auto foundType = templateToType.find(functionName);
+        if (foundType != templateToType.end()) {
+            return ConstructorOperation::Create(position, foundType->second, arguments, false, true);
+        }
+    }
+    
     auto operation = Create(position);
     templateCopy(operation, parentScope, templateToType);
     return operation;
@@ -2849,15 +2857,23 @@ void ErrorResolveOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llv
 llvm::Value* ErrorResolveOperation::getReferenceLlvm(LlvmObject* llvmObj) {
     auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
     auto maybeErrorRef = arguments[0]->getReferenceLlvm(llvmObj);
-    llvmErrorValue = new llvm::LoadInst(maybeErrorType->llvmGepError(llvmObj, maybeErrorRef), "", llvmObj->block);
+    if (maybeErrorType->underlyingType->kind == Type::Kind::Void) {
+        llvmErrorValue = new llvm::LoadInst(maybeErrorRef);
+    } else {
+        llvmErrorValue = new llvm::LoadInst(maybeErrorType->llvmGepError(llvmObj, maybeErrorRef), "", llvmObj->block);
+    }
     auto errorEq0 = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, llvmErrorValue, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), "");
     llvmSuccessBlock = llvm::BasicBlock::Create(llvmObj->context, "onsuccess", llvmObj->function);
     llvmErrorBlock   = llvm::BasicBlock::Create(llvmObj->context, "onerror", llvmObj->function);
     llvm::BranchInst::Create(llvmSuccessBlock, llvmErrorBlock, errorEq0, llvmObj->block);
     if (onErrorScope) new llvm::StoreInst(llvmErrorValue, errorValueVariable->getReferenceLlvm(llvmObj), llvmErrorBlock);
     llvmObj->block = llvmSuccessBlock;
-    llvmRef = maybeErrorType->llvmGepValue(llvmObj, maybeErrorRef);
-    return llvmRef;
+    if (maybeErrorType->underlyingType->kind == Type::Kind::Void) {
+        return nullptr;
+    } else {
+        llvmRef = maybeErrorType->llvmGepValue(llvmObj, maybeErrorRef);
+        return llvmRef;
+    }
 }
 llvm::Value* ErrorResolveOperation::createLlvm(LlvmObject* llvmObj) {
     auto maybeErrorType = (MaybeErrorType*)arguments[0]->type;
@@ -2865,21 +2881,29 @@ llvm::Value* ErrorResolveOperation::createLlvm(LlvmObject* llvmObj) {
         return new llvm::LoadInst(getReferenceLlvm(llvmObj), "", llvmObj->block);
     }
     auto maybeErrorVal = arguments[0]->createLlvm(llvmObj);
-    llvmErrorValue = maybeErrorType->llvmExtractError(llvmObj, maybeErrorVal);
+    if (maybeErrorType->underlyingType->kind == Type::Kind::Void) {
+        llvmErrorValue = maybeErrorVal;
+    } else {
+        llvmErrorValue = maybeErrorType->llvmExtractError(llvmObj, maybeErrorVal);
+    }
     auto errorEq0 = new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, llvmErrorValue, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), "");
     llvmSuccessBlock = llvm::BasicBlock::Create(llvmObj->context, "onsuccess", llvmObj->function);
     llvmErrorBlock   = llvm::BasicBlock::Create(llvmObj->context, "onerror", llvmObj->function);
     llvm::BranchInst::Create(llvmSuccessBlock, llvmErrorBlock, errorEq0, llvmObj->block);
     if (onErrorScope) new llvm::StoreInst(llvmErrorValue, errorValueVariable->getReferenceLlvm(llvmObj), llvmErrorBlock);
     llvmObj->block = llvmSuccessBlock;
-    llvmValue = maybeErrorType->llvmExtractValue(llvmObj, maybeErrorVal);
-    return llvmValue;
+    if (maybeErrorType->underlyingType->kind == Type::Kind::Void) {
+        return nullptr;
+    } else {
+        llvmValue = maybeErrorType->llvmExtractValue(llvmObj, maybeErrorVal);
+        return llvmValue;
+    }
 }
 void ErrorResolveOperation::createLlvmSuccessDestructor(LlvmObject* llvmObj) {
     if (!wasCaptured) {
         if (llvmRef) {
             type->createLlvmDestructorRef(llvmObj, llvmRef);
-        } else {
+        } else if (llvmValue) {
             type->createLlvmDestructorRef(llvmObj, llvmValue);
         }
     }

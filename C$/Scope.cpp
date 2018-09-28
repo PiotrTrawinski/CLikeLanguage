@@ -1531,9 +1531,8 @@ bool CodeScope::createCodeTree(const vector<Token>& tokens, int& i) {
     }
     return true;
 }
-bool CodeScope::interpretNoUnitializedDeclarationsSet() {
+bool CodeScope::initialInterpretDeclarations() {
     bool wereErrors = false;
-    Declaration* declarationDependingOnErrorScope = nullptr;
     for (int i = 0; i < statements.size(); ++i) {
         auto statement = statements[i];
         if (statement->kind == Statement::Kind::Declaration) {
@@ -1558,6 +1557,10 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
             }
         }
     }
+    return wereErrors;
+}
+bool CodeScope::interpretAfterInitialDeclarations(bool wereErrors) {
+    Declaration* declarationDependingOnErrorScope = nullptr;
     for (int i = 0; i < statements.size(); ++i) {
         auto& statement = statements[i];
         switch (statement->kind) {
@@ -1745,6 +1748,10 @@ bool CodeScope::interpretNoUnitializedDeclarationsSet() {
 
     return true;
 }
+bool CodeScope::interpretNoUnitializedDeclarationsSet() {
+    bool wereErrors = initialInterpretDeclarations();
+    return interpretAfterInitialDeclarations(wereErrors);
+}
 bool CodeScope::interpret() {
     maybeUninitializedDeclarations = parentMaybeUninitializedDeclarations;
     return interpretNoUnitializedDeclarationsSet();
@@ -1915,12 +1922,13 @@ bool GlobalScope::setCDeclaration(const CodePosition& codePosition, const string
     return true;
 }
 bool GlobalScope::interpret() {
+    bool wereErrors = CodeScope::initialInterpretDeclarations();
     for (auto& declaration : cDeclarations) {
         if (!declaration->variable->type->interpret(this)) {
-            return false;
+            wereErrors = true;
         }
     }
-    return CodeScope::interpret();
+    return CodeScope::interpretAfterInitialDeclarations(wereErrors);
 }
 void GlobalScope::createLlvm(LlvmObject* llvmObj) {
     for (auto declaration : cDeclarations) {

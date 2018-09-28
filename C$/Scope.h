@@ -91,6 +91,8 @@ struct CodeScope : Scope {
     void templateCopy(CodeScope* scope, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
+    bool initialInterpretDeclarations();
+    bool interpretAfterInitialDeclarations(bool wereErrors);
     bool interpretNoUnitializedDeclarationsSet();
     virtual bool interpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);

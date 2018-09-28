@@ -258,6 +258,7 @@ bool createTokens(FileInfo* fileInfo, vector<Token>& tokens, vector<SourceString
                     }
                     if (openedComents <= 0) break;
                     if (!getline(file, line)) break;
+                    lineNumber += 1;
                     lineId = sourceCode.size();
                     sourceCode.emplace_back(line, fileInfo, lineNumber);
                     charId = 0;
