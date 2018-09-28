@@ -987,12 +987,24 @@ optional<vector<Value*>> Scope::getReversePolishNotation(const vector<Token>& to
                         appendOperator(stack, out, indexingOperation);
                     }
                     expectValue = false;
+                } else if (i+2 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == "&&&") {
+                    appendOperator(stack, out, Operation::Kind::LongCircuitLogicalAnd, tokens[i].codePosition);
+                    i += 3;
+                    expectValue = true;
+                } else if (i+2 < tokens.size() && tokens[i].value + tokens[i + 1].value + tokens[i + 2].value == "|||") {
+                    appendOperator(stack, out, Operation::Kind::LongCircuitLogicalOr, tokens[i].codePosition);
+                    i += 3;
+                    expectValue = true;
                 } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "&&") {
                     appendOperator(stack, out, Operation::Kind::LogicalAnd, tokens[i].codePosition);
                     i += 2;
                     expectValue = true;
                 } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "||") {
                     appendOperator(stack, out, Operation::Kind::LogicalOr, tokens[i].codePosition);
+                    i += 2;
+                    expectValue = true;
+                } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "^^") {
+                    appendOperator(stack, out, Operation::Kind::LogicalXor, tokens[i].codePosition);
                     i += 2;
                     expectValue = true;
                 } else if (i+1 < tokens.size() && tokens[i].value + tokens[i + 1].value == "==") {
@@ -2999,11 +3011,12 @@ void WhileScope::createLlvm(LlvmObject* llvmObj) {
     CodeScope::createLlvm(llvmObj);
     if (!hasReturnStatement) llvm::BranchInst::Create(whileConditionBlock, llvmObj->block);
     llvmObj->block = whileConditionBlock;
+    auto llvmCondition = conditionExpression->createLlvm(llvmObj);
     llvm::BranchInst::Create(
         whileBlock, 
         afterWhileBlock, 
-        new llvm::TruncInst(conditionExpression->createLlvm(llvmObj), llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), 
-        whileConditionBlock
+        new llvm::TruncInst(llvmCondition, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), 
+        llvmObj->block
     );
     llvmObj->block = afterWhileBlock;
     
@@ -3150,10 +3163,11 @@ void IfScope::createLlvm(LlvmObject* llvmObj) {
         auto afterIfBlock = llvmObj->block;
         auto elseBlock = llvm::BasicBlock::Create(llvmObj->context, "else", llvmObj->function);
         llvmObj->block = oldBlock;
+        auto llvmCondtition = conditionExpression->createLlvm(llvmObj);
         llvm::BranchInst::Create(
             ifBlock, 
             elseBlock, 
-            new llvm::TruncInst(conditionExpression->createLlvm(llvmObj), llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), 
+            new llvm::TruncInst(llvmCondtition, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), 
             llvmObj->block
         );
         llvmObj->block = elseBlock;
@@ -3172,10 +3186,11 @@ void IfScope::createLlvm(LlvmObject* llvmObj) {
         auto afterIfBlock = llvm::BasicBlock::Create(llvmObj->context, "afterIf", llvmObj->function);
         if (!hasReturnStatement) llvm::BranchInst::Create(afterIfBlock, llvmObj->block);
         llvmObj->block = oldBlock;
+        auto llvmCondtition = conditionExpression->createLlvm(llvmObj);
         llvm::BranchInst::Create(
             ifBlock, 
             afterIfBlock, 
-            new llvm::TruncInst(conditionExpression->createLlvm(llvmObj), llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), 
+            new llvm::TruncInst(llvmCondtition, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block), 
             llvmObj->block
         );
         llvmObj->block = afterIfBlock;

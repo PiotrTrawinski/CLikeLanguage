@@ -10,7 +10,8 @@ struct Operation : Value {
         Add, Sub, Mul, Div, Mod,
         Minus,
         BitAnd, BitOr, BitNeg, BitXor,
-        LogicalAnd, LogicalOr, LogicalNot,
+        LogicalAnd, LogicalOr, LogicalXor, LogicalNot,
+        LongCircuitLogicalAnd, LongCircuitLogicalOr,
         Eq, Neq,
         Gt, Lt, Gte, Lte,
         Shl, Shr, Sal, Sar,
@@ -68,6 +69,8 @@ struct Operation : Value {
     bool wasInterpreted = false;
     std::vector<Value*> arguments;
     ErrorResolveOperation* containedErrorResolve = nullptr;
+
+    llvm::Value* shortCircuitLlvmVar = nullptr;
 
 private:
     static std::vector<std::unique_ptr<Operation>> objects;
