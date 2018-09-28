@@ -440,6 +440,52 @@ optional<Value*> Operation::interpret(Scope* scope) {
 
         break;   
     }
+    case Kind::LongCircuitLogicalAnd: {
+        Value* bool1 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[0]});
+        auto bool1Interpret = bool1->interpret(scope);
+        if (!bool1Interpret) return nullopt;
+        if (bool1Interpret.value()) bool1 = bool1Interpret.value();
+
+        Value* bool2 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[1]});
+        auto bool2Interpret = bool2->interpret(scope);
+        if (!bool2Interpret) return nullopt;
+        if (bool2Interpret.value()) bool2 = bool2Interpret.value();
+
+        if (bool1->isConstexpr && bool2->isConstexpr) {
+            return BoolValue::Create(
+                position,
+                ((BoolValue*)bool1)->value && ((BoolValue*)bool2)->value
+            );
+        }
+        arguments[0] = bool1;
+        arguments[1] = bool2;
+        type = Type::Create(Type::Kind::Bool);
+
+        break;   
+    }
+    case Kind::LongCircuitLogicalOr: {
+        Value* bool1 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[0]});
+        auto bool1Interpret = bool1->interpret(scope);
+        if (!bool1Interpret) return nullopt;
+        if (bool1Interpret.value()) bool1 = bool1Interpret.value();
+
+        Value* bool2 = ConstructorOperation::Create(position, Type::Create(Type::Kind::Bool), {arguments[1]});
+        auto bool2Interpret = bool2->interpret(scope);
+        if (!bool2Interpret) return nullopt;
+        if (bool2Interpret.value()) bool2 = bool2Interpret.value();
+
+        if (bool1->isConstexpr && bool2->isConstexpr) {
+            return BoolValue::Create(
+                position,
+                ((BoolValue*)bool1)->value || ((BoolValue*)bool2)->value
+            );
+        }
+        arguments[0] = bool1;
+        arguments[1] = bool2;
+        type = Type::Create(Type::Kind::Bool);
+
+        break;   
+    }
     case Kind::BitNeg: {
         if (arguments[0]->type->kind == Type::Kind::Integer) {
             if (arguments[0]->isConstexpr) {
@@ -555,6 +601,8 @@ string Operation::kindToString(Kind kind) {
     case Kind::BitOr: return "| (bit or)";
     case Kind::LogicalAnd: return "&& (logical and)";
     case Kind::LogicalOr: return "|| (logical or)";
+    case Kind::LongCircuitLogicalAnd: return "&&& (long circuit logical and)";
+    case Kind::LongCircuitLogicalOr: return "||| (long circuit logical or)";
     case Kind::Assign: return "= (assign)";
     case Kind::AddAssign: return "+= (add-assign)";
     case Kind::SubAssign: return "-= (sub-assign)";
@@ -598,6 +646,8 @@ optional<Operation::Kind> Operation::stringToKind(const std::string& str) {
     else if (str == "|")   return Kind::BitOr;
     else if (str == "&&")  return Kind::LogicalAnd;
     else if (str == "||")  return Kind::LogicalOr;
+    else if (str == "&&&")  return Kind::LongCircuitLogicalAnd;
+    else if (str == "|||")  return Kind::LongCircuitLogicalOr;
     else if (str == "+=")  return Kind::AddAssign;
     else if (str == "-=")  return Kind::SubAssign;
     else if (str == "*=")  return Kind::MulAssign;
@@ -641,6 +691,8 @@ string Operation::kindToFunctionName(Kind kind) {
     case Kind::BitOr:         return "__operator_BitOr__";
     case Kind::LogicalAnd:    return "__operator_LogicalAnd__";
     case Kind::LogicalOr:     return "__operator_LogicalOr__";
+    case Kind::LongCircuitLogicalAnd: return "__operator_LongCircuitLogicalAnd__";
+    case Kind::LongCircuitLogicalOr:  return "__operator_LongCircuitLogicalOr__";
     case Kind::AddAssign:     return "__operator_AddAssign__";
     case Kind::SubAssign:     return "__operator_SubAssign__";
     case Kind::MulAssign:     return "__operator_MulAssign__";
@@ -701,8 +753,10 @@ int Operation::priority(Kind kind) {
     case Kind::BitOr:
         return 10;
     case Kind::LogicalAnd:
+    case Kind::LongCircuitLogicalAnd:
         return 11;
     case Kind::LogicalOr:
+    case Kind::LongCircuitLogicalOr:
         return 12;
     case Kind::Assign:
     case Kind::AddAssign:
@@ -749,6 +803,8 @@ bool Operation::isLeftAssociative(Kind kind) {
     case Kind::BitOr:
     case Kind::LogicalAnd:
     case Kind::LogicalOr:
+    case Kind::LongCircuitLogicalAnd:
+    case Kind::LongCircuitLogicalOr:
         return true;
     default: 
         return false;
@@ -792,6 +848,8 @@ int Operation::numberOfArguments(Kind kind) {
     case Kind::BitOr:
     case Kind::LogicalAnd:
     case Kind::LogicalOr:
+    case Kind::LongCircuitLogicalAnd:
+    case Kind::LongCircuitLogicalOr:
     case Kind::Assign:
     case Kind::AddAssign:
     case Kind::SubAssign:
@@ -885,13 +943,19 @@ void Operation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
     case Kind::Lte:
     case Kind::Eq:
     case Kind::Neq:
-    case Kind::LogicalAnd:
-    case Kind::LogicalOr:
+    case Kind::LongCircuitLogicalAnd:
+    case Kind::LongCircuitLogicalOr:
     case Kind::BitAnd:
     case Kind::BitXor:
     case Kind::BitOr:
         arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
         arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
+        break;
+    case Kind::LogicalAnd:
+    case Kind::LogicalOr:
+        arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+        arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
+        shortCircuitLlvmVar = new llvm::AllocaInst(llvm::Type::getInt1Ty(llvmObj->context), 0, "", llvmObj->block);
         break;
     default:
         break;
@@ -1215,6 +1279,44 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
     }
     case Kind::LogicalAnd: {
         auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg1Result = new llvm::TruncInst(arg1, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block);
+        createLlvmConditional(llvmObj, arg1Result, 
+            [&](){
+                auto arg2 = arguments[1]->createLlvm(llvmObj);
+                auto arg2Result = new llvm::TruncInst(arg2, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block);
+                new llvm::StoreInst(arg2Result, shortCircuitLlvmVar, llvmObj->block);
+            }, 
+            [&]() {
+                new llvm::StoreInst(arg1Result, shortCircuitLlvmVar, llvmObj->block);
+            }
+        );
+        return new llvm::SExtInst(
+            new llvm::LoadInst(shortCircuitLlvmVar, "", llvmObj->block),
+            Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+            "", llvmObj->block
+        );
+    }
+    case Kind::LogicalOr: {  
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
+        auto arg1Result = new llvm::TruncInst(arg1, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block);
+        createLlvmConditional(llvmObj, arg1Result, 
+            [&](){
+                new llvm::StoreInst(arg1Result, shortCircuitLlvmVar, llvmObj->block);
+            }, 
+            [&]() {
+                auto arg2 = arguments[1]->createLlvm(llvmObj);
+                auto arg2Result = new llvm::TruncInst(arg2, llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block);
+                new llvm::StoreInst(arg2Result, shortCircuitLlvmVar, llvmObj->block);
+            }
+        );
+        return new llvm::SExtInst(
+            new llvm::LoadInst(shortCircuitLlvmVar, "", llvmObj->block),
+            Type::Create(Type::Kind::Bool)->createLlvm(llvmObj), 
+            "", llvmObj->block
+        );
+    }
+    case Kind::LongCircuitLogicalAnd: {
+        auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
         return new llvm::SExtInst(
             new llvm::TruncInst(llvm::BinaryOperator::CreateAnd(arg1, arg2, "", llvmObj->block), llvm::Type::getInt1Ty(llvmObj->context), "", llvmObj->block),
@@ -1222,7 +1324,7 @@ llvm::Value* Operation::createLlvm(LlvmObject* llvmObj) {
             "", llvmObj->block
         );
     }
-    case Kind::LogicalOr: {  
+    case Kind::LongCircuitLogicalOr: {  
         auto arg1 = arguments[0]->createLlvm(llvmObj);
         auto arg2 = arguments[1]->createLlvm(llvmObj);
         return new llvm::SExtInst(
