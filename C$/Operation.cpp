@@ -2802,17 +2802,17 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                     if (scope->maybeUninitializedDeclarations.find(declaration) != scope->maybeUninitializedDeclarations.end()) {
                         warningMessage("destruction of maybe uninitialized variable " + variable->name + " on return statement", position);
                     }
-                    auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
-                    destroyOp->arguments.push_back(variable);
-                    if (!destroyOp->interpret(scope)) return nullopt;
-                    if (arguments.empty() || arguments[0]->valueKind != ValueKind::Variable || ((Variable*)arguments[0])->declaration != variable->declaration) {
+                    if (arguments.empty() || arguments[0]->valueKind != ValueKind::Variable || ((Variable*)arguments[0])->declaration != declaration) {
+                        auto destroyOp = Operation::Create(position, Operation::Kind::Destroy);
+                        destroyOp->arguments.push_back(variable);
+                        if (!destroyOp->interpret(scope)) return nullopt;
                         variablesDestructors.push_back(destroyOp);
                     }
                 }
             }
             if (scopePtr->owner == Scope::Owner::Function) {
                 auto functionValue = ((FunctionScope*)scopePtr)->function;
-                auto returnType = ((FunctionType*)functionValue->type)->returnType;
+                returnType = ((FunctionType*)functionValue->type)->returnType;
 
                 if (arguments.size() == 0) {
                     if (returnType->kind == Type::Kind::MaybeError && ((MaybeErrorType*)returnType)->underlyingType->kind == Type::Kind::Void) {
@@ -2822,12 +2822,16 @@ optional<Value*> FlowOperation::interpret(Scope* scope) {
                             + " got nothing", position);
                     } 
                 } else {
+                    if (arguments[0]->valueKind == ValueKind::Variable) {
+                        auto moveOperation = Operation::Create(position, Operation::Kind::Move);
+                        moveOperation->arguments.push_back(arguments[0]);
+                        arguments[0] = moveOperation;
+                    }
                     auto ctor = ConstructorOperation::Create(position, returnType, {arguments[0]});
-                    arguments[0] = ctor;
-                    auto ctorInterpret = arguments[0]->interpret(scope);
+                    auto ctorInterpret = ctor->interpret(scope);
                     if (!ctorInterpret) return nullopt;
                     if (ctorInterpret.value()) arguments[0] = ctorInterpret.value();
-                    arguments[0]->type = returnType;
+                    else arguments[0] = ctor;
                 }
                 break;
             } else {
@@ -2859,20 +2863,31 @@ bool FlowOperation::operator==(const Statement& value) const {
 }
 void FlowOperation::createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj) {
     if (kind == Kind::Return && arguments.size() > 0) {
-        if (arguments[0]->type->kind == Type::Kind::Reference) {
+        if (returnType->kind == Type::Kind::Reference) {
             arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
         } else {
-            arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            if (isLvalue(arguments[0])) {
+                if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Class || arguments[0]->type->getEffectiveType()->kind == Type::Kind::MaybeError
+                    || arguments[0]->type->getEffectiveType()->kind == Type::Kind::StaticArray || arguments[0]->type->getEffectiveType()->kind == Type::Kind::DynamicArray)
+                {
+                    arguments[0]->createAllocaLlvmIfNeededForReference(llvmObj);
+                } else {
+                    arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+                }
+                llvmReturnValue = arguments[0]->type->allocaLlvm(llvmObj, "__return_value__");
+            } else {
+                arguments[0]->createAllocaLlvmIfNeededForValue(llvmObj);
+            }
         }
     }
 }
 void FlowOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) {}
 llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
-    for (auto& destructor : variablesDestructors) {
-        destructor->createLlvm(llvmObj);
-    }
     if (kind == Kind::Return) {
         if (arguments.size() == 0) {
+            for (auto& destructor : variablesDestructors) {
+                destructor->createLlvm(llvmObj);
+            }
             if (isReturnMaybeErrorVoidType) {
                 return llvm::ReturnInst::Create(llvmObj->context, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), llvmObj->block);
             } else {
@@ -2881,10 +2896,24 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
         }
         else {
             llvm::Value* llvmArg;
-            if (arguments[0]->type->kind == Type::Kind::Reference) {
+            if (returnType->kind == Type::Kind::Reference) {
                 llvmArg = arguments[0]->getReferenceLlvm(llvmObj);
             } else {
-                llvmArg = arguments[0]->createLlvm(llvmObj);
+                if (isLvalue(arguments[0])) {
+                    if (arguments[0]->type->getEffectiveType()->kind == Type::Kind::Class || arguments[0]->type->getEffectiveType()->kind == Type::Kind::MaybeError
+                        || arguments[0]->type->getEffectiveType()->kind == Type::Kind::StaticArray || arguments[0]->type->getEffectiveType()->kind == Type::Kind::DynamicArray)
+                    {
+                        arguments[0]->type->createLlvmCopyConstructor(llvmObj, llvmReturnValue, arguments[0]->getReferenceLlvm(llvmObj));
+                    } else {
+                        arguments[0]->type->createLlvmCopyConstructor(llvmObj, llvmReturnValue, arguments[0]->createLlvm(llvmObj));
+                    }
+                    llvmArg = new llvm::LoadInst(llvmReturnValue, "", llvmObj->block);
+                } else {
+                    llvmArg = arguments[0]->createLlvm(llvmObj);
+                }
+            }
+            for (auto& destructor : variablesDestructors) {
+                destructor->createLlvm(llvmObj);
             }
             auto iter = ((CodeScope*)scopePtr)->valuesToDestroyAfterStatement.find(this);
             if (iter != ((CodeScope*)scopePtr)->valuesToDestroyAfterStatement.end()) {
@@ -2899,6 +2928,9 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
         }
     }
     else if (kind == Kind::Break) {
+        for (auto& destructor : variablesDestructors) {
+            destructor->createLlvm(llvmObj);
+        }
         if (scopePtr->owner == Scope::Owner::For) {
             llvm::BranchInst::Create(((ForScope*)scopePtr)->llvmAfterBlock, llvmObj->block);
         } else {
@@ -2906,6 +2938,9 @@ llvm::Value* FlowOperation::createLlvm(LlvmObject* llvmObj) {
         }
     }
     else if (kind == Kind::Continue) {
+        for (auto& destructor : variablesDestructors) {
+            destructor->createLlvm(llvmObj);
+        }
         if (scopePtr->owner == Scope::Owner::For) {
             llvm::BranchInst::Create(((ForScope*)scopePtr)->llvmStepBlock, llvmObj->block);
         } else {
@@ -3528,7 +3563,7 @@ void AssignOperation::createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj) 
                 arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
             }
         } else {
-            if (arguments[0]->type->kind == Type::Kind::Class) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::DynamicArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
                 arguments[1]->createAllocaLlvmIfNeededForReference(llvmObj);
             } else {
                 arguments[1]->createAllocaLlvmIfNeededForValue(llvmObj);
@@ -3555,7 +3590,7 @@ llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
                 arguments[0]->type->createLlvmCopyConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
             }
         } else {
-            if (arguments[0]->type->kind == Type::Kind::Class) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::DynamicArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
                 arguments[0]->type->createLlvmMoveConstructor(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmMoveConstructor(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
@@ -3569,7 +3604,7 @@ llvm::Value* AssignOperation::getReferenceLlvm(LlvmObject* llvmObj) {
                 arguments[0]->type->createLlvmCopyAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
             }
         } else {
-            if (arguments[0]->type->kind == Type::Kind::Class) {
+            if (arguments[0]->type->kind == Type::Kind::Class || arguments[0]->type->kind == Type::Kind::StaticArray || arguments[0]->type->kind == Type::Kind::DynamicArray || arguments[0]->type->kind == Type::Kind::MaybeError) {
                 arguments[0]->type->createLlvmMoveAssignment(llvmObj, arg0Reference, arguments[1]->getReferenceLlvm(llvmObj));
             } else {
                 arguments[0]->type->createLlvmMoveAssignment(llvmObj, arg0Reference, arguments[1]->createLlvm(llvmObj));
