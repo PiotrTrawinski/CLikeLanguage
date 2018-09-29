@@ -2595,7 +2595,7 @@ bool ClassType::needsReference() {
     return true;
 }
 optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
-    if (arguments.size() > 0 && !isExplicit) {
+    if (arguments.size() > 0 && !isExplicit && !cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
         if (!onlyTry) errorMessageOpt("class constructor needs to be explicit", position);
         return nullopt;
     }
