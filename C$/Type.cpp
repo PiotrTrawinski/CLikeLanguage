@@ -51,17 +51,22 @@ Type* Type::getEffectiveType() {
     return this;
 }
 Value* Type::typesize(Scope* scope) {
-    return IntegerValue::Create(CodePosition(nullptr,0,0), sizeInBytes());
-}
-int Type::sizeInBytes() {
-    switch (kind) {
-    case Kind::Bool:
-        return 1;
-    case Kind::Void:
-        return 0;
-    default:
-        return 0;
+    if (kind == Kind::Void) {
+        return IntegerValue::Create(CodePosition(nullptr, 0, 0), 0);
     }
+    auto sizeOfOperation = SizeofOperation::Create(CodePosition(nullptr, 0, 0));
+    sizeOfOperation->argType = this;
+    if (!sizeOfOperation->interpret(scope)) return nullptr;
+    return sizeOfOperation;
+}
+llvm::Value* Type::llvmTypesize(LlvmObject* llvmObj) {
+    auto gep = llvm::GetElementPtrInst::Create(
+        createLlvm(llvmObj),
+        llvm::ConstantPointerNull::get((llvm::PointerType*)RawPointerType::Create(this)->createLlvm(llvmObj)),
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 1),
+        "", llvmObj->block
+    );
+    return new llvm::PtrToIntInst(gep, llvm::Type::getInt64Ty(llvmObj->context), "", llvmObj->block);
 }
 bool Type::needsDestruction() {
     return false;
@@ -319,9 +324,6 @@ int OwnerPointerType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::OwnerPointer) return -1;
     return underlyingType->compareTemplateDepth(((OwnerPointerType*)type)->underlyingType);
 }
-int OwnerPointerType::sizeInBytes() {
-    return 8;
-}
 bool OwnerPointerType::needsDestruction() {
     return true;
 }
@@ -402,9 +404,8 @@ void OwnerPointerType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Valu
             new llvm::StoreInst(llvm::ConstantPointerNull::get((llvm::PointerType*)createLlvm(llvmObj)), leftLlvmRef, llvmObj->block);
         },
         [&]() {
-            auto llvmTypesize = IntegerValue::Create(CodePosition(nullptr,0,0), underlyingType->sizeInBytes());
             auto newAllocatedValue = new llvm::BitCastInst(
-                llvm::CallInst::Create(llvmObj->mallocFunction, llvmTypesize->createLlvm(llvmObj), "", llvmObj->block), 
+                llvm::CallInst::Create(llvmObj->mallocFunction, underlyingType->llvmTypesize(llvmObj), "", llvmObj->block), 
                 this->createLlvm(llvmObj), 
                 "", 
                 llvmObj->block
@@ -434,9 +435,8 @@ void OwnerPointerType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value
                 llvmObj,
                 new llvm::ICmpInst(*llvmObj->block, llvm::ICmpInst::ICMP_EQ, leftAsInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 0), ""),
                 [&]() {
-                    auto llvmTypesize = IntegerValue::Create(CodePosition(nullptr,0,0), underlyingType->sizeInBytes());
                     auto newAllocatedValue = new llvm::BitCastInst(
-                        llvm::CallInst::Create(llvmObj->mallocFunction, llvmTypesize->createLlvm(llvmObj), "", llvmObj->block), 
+                        llvm::CallInst::Create(llvmObj->mallocFunction, underlyingType->llvmTypesize(llvmObj), "", llvmObj->block), 
                         this->createLlvm(llvmObj), 
                         "", 
                         llvmObj->block
@@ -523,9 +523,6 @@ Type* RawPointerType::substituteTemplate(TemplateFunctionType* templateFunctionT
 int RawPointerType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::RawPointer) return -1;
     return underlyingType->compareTemplateDepth(((RawPointerType*)type)->underlyingType);
-}
-int RawPointerType::sizeInBytes() {
-    return 8;
 }
 optional<InterpretConstructorResult> RawPointerType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     switch (arguments.size()) {
@@ -633,9 +630,6 @@ Type* MaybeErrorType::substituteTemplate(TemplateFunctionType* templateFunctionT
 int MaybeErrorType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::MaybeError) return -1;
     return underlyingType->compareTemplateDepth(((MaybeErrorType*)type)->underlyingType);
-}
-int MaybeErrorType::sizeInBytes() {
-    return underlyingType->sizeInBytes() + 8;
 }
 bool MaybeErrorType::needsDestruction() {
     return underlyingType->needsDestruction();
@@ -1020,9 +1014,6 @@ int ReferenceType::compareTemplateDepth(Type* type) {
 Type* ReferenceType::getEffectiveType() {
     return underlyingType->getEffectiveType();
 }
-int ReferenceType::sizeInBytes() {
-    return 8;
-}
 optional<InterpretConstructorResult> ReferenceType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     switch (arguments.size()) {
     case 0: 
@@ -1121,9 +1112,6 @@ Type* StaticArrayType::substituteTemplate(TemplateFunctionType* templateFunction
 int StaticArrayType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::StaticArray) return -1;
     return elementType->compareTemplateDepth(((StaticArrayType*)type)->elementType);
-}
-int StaticArrayType::sizeInBytes() {
-    return sizeAsInt * elementType->sizeInBytes();
 }
 bool StaticArrayType::needsDestruction() {
     return elementType->needsDestruction();
@@ -1313,9 +1301,6 @@ int DynamicArrayType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::DynamicArray) return -1;
     return elementType->compareTemplateDepth(((DynamicArrayType*)type)->elementType);
 }
-int DynamicArrayType::sizeInBytes() {
-    return 24;
-}
 bool DynamicArrayType::needsDestruction() {
     return true;
 }
@@ -1324,7 +1309,7 @@ bool DynamicArrayType::needsReference() {
 }
 optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const CodePosition& position, Scope* scope, const string functionName, vector<Value*> arguments) {
     if (functionName == "push") {
-        auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+        auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
         if (!result) return nullopt; 
         if (result.value().value) arguments = {result.value().value};
         return pair<Type*,FunctionValue*>(Type::Create(Type::Kind::Void), result.value().classConstructor);
@@ -1341,7 +1326,7 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
 
             auto arg0 = arguments[0];
             arguments.erase(arguments.begin());
-            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
             if (!result) return nullopt; 
             if (result.value().value) arguments = {result.value().value};
             arguments.insert(arguments.begin(), arg0);
@@ -1361,7 +1346,7 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
 
             auto arg0 = arguments[0];
             arguments.erase(arguments.begin());
-            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
             if (!result) return nullopt; 
             if (result.value().value) arguments = {result.value().value};
             arguments.insert(arguments.begin(), arg0);
@@ -1379,7 +1364,7 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
 
             auto arg0 = arguments[0];
             arguments.erase(arguments.begin());
-            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
             if (!result) return nullopt; 
             if (result.value().value) arguments = {result.value().value};
             arguments.insert(arguments.begin(), arg0);
@@ -1845,7 +1830,7 @@ optional<InterpretConstructorResult> DynamicArrayType::interpretConstructor(cons
         auto arg0 = arguments[0];
         auto arg1 = arguments[1];
         arguments.erase(arguments.begin(), arguments.begin()+2);
-        auto result = elementType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment, isExplicit);
+        auto result = elementType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment, true);
         if (result && !isExplicit) {
             if (!onlyTry) errorMessageOpt("cannot implicitly create dynamic array with those arguments", position);
             return nullopt;
@@ -1944,7 +1929,7 @@ void DynamicArrayType::llvmAllocData(LlvmObject* llvmObj, llvm::Value* llvmRef, 
             llvm::CallInst::Create(
                 llvmObj->mallocFunction, 
                 llvm::BinaryOperator::CreateMul(
-                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), elementType->sizeInBytes()),
+                    elementType->llvmTypesize(llvmObj),
                     numberOfElements, 
                     "", llvmObj->block
                 ),
@@ -1970,7 +1955,7 @@ void DynamicArrayType::llvmReallocData(LlvmObject* llvmObj, llvm::Value* llvmRef
                         "", llvmObj->block
                     ), 
                     llvm::BinaryOperator::CreateMul(
-                        llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), elementType->sizeInBytes()),
+                        elementType->llvmTypesize(llvmObj),
                         numberOfElements, 
                         "", llvmObj->block
                     )
@@ -2310,9 +2295,6 @@ int ArrayViewType::compareTemplateDepth(Type* type) {
     if (type->kind != Type::Kind::ArrayView) return -1;
     return elementType->compareTemplateDepth(((ArrayViewType*)type)->elementType);
 }
-int ArrayViewType::sizeInBytes() {
-    return 16;
-}
 optional<InterpretConstructorResult> ArrayViewType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
     switch (arguments.size()) {
     case 0:
@@ -2579,15 +2561,6 @@ Type* ClassType::substituteTemplate(TemplateFunctionType* templateFunctionType) 
     classType->templateTypes = templateTypes;
     return classType;
 }
-int ClassType::sizeInBytes() {
-    int sum = 0;
-    for (auto memberDeclaration : declaration->body->declarations) {
-        if (!memberDeclaration->variable->isConstexpr) {
-            sum += memberDeclaration->variable->type->sizeInBytes();
-        }
-    }
-    return sum;
-}
 bool ClassType::needsDestruction() {
     return declaration->body->destructor || declaration->body->inlineDestructors;
 }
@@ -2595,7 +2568,7 @@ bool ClassType::needsReference() {
     return true;
 }
 optional<InterpretConstructorResult> ClassType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
-    if (arguments.size() > 0 && !isExplicit) {
+    if (arguments.size() > 0 && !isExplicit && !cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
         if (!onlyTry) errorMessageOpt("class constructor needs to be explicit", position);
         return nullopt;
     }
@@ -2904,9 +2877,6 @@ int FunctionType::compareTemplateDepth(Type* type) {
     } else {
         return 0;
     }
-}
-int FunctionType::sizeInBytes() {
-    return 8;
 }
 llvm::Type* FunctionType::createLlvm(LlvmObject* llvmObj) {
     vector<llvm::Type*> types;

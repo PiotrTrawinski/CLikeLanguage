@@ -391,6 +391,7 @@ struct SizeofOperation : Operation {
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual std::optional<Value*> interpret(Scope* scope);
     virtual bool operator==(const Statement& value) const;
+    virtual llvm::Value* createLlvm(LlvmObject* llvmObj);
 
     Type* argType = nullptr;
 

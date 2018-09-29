@@ -2756,7 +2756,7 @@ void ForScope::createLlvm(LlvmObject* llvmObj) {
         forEachData.indexDeclaration->createLlvm(llvmObj);
         forEachData.itDeclaration->createLlvm(llvmObj);
         auto llvmItRef = forEachData.it->getReferenceLlvm(llvmObj, true);
-        llvm::Value* itOffset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), ((ReferenceType*)forEachData.it->type)->underlyingType->sizeInBytes());
+        llvm::Value* itOffset = ((ReferenceType*)forEachData.it->type)->underlyingType->llvmTypesize(llvmObj);
         llvm::Value* size = nullptr;
         llvm::Value* data = nullptr;
         llvm::Value* dynArrayRef = nullptr;

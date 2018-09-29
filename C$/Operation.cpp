@@ -1447,8 +1447,7 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
 
     if (cmpPtr(type, effectiveType)) {
         return arguments[0];
-    } 
-    else if (type->sizeInBytes() == effectiveType->sizeInBytes()) {
+    } else {
         auto k1 = type->kind;
         auto k2 = effectiveType->kind;
         if (isLvalue(arguments[0])) {
@@ -1458,7 +1457,7 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
             || k1 == Type::Kind::Bool || k1 == Type::Kind::Integer || k1 == Type::Kind::Float) 
             && 
             (k2 == Type::Kind::RawPointer || k2 == Type::Kind::OwnerPointer 
-            || k2 == Type::Kind::Bool || k2 == Type::Kind::Integer || k2 == Type::Kind::Float)) 
+                || k2 == Type::Kind::Bool || k2 == Type::Kind::Integer || k2 == Type::Kind::Float)) 
         {
             return nullptr;
         } else {
@@ -1468,13 +1467,6 @@ optional<Value*> CastOperation::interpret(Scope* scope) {
                 " (this cast requires l-value argument)", position
             );
         }
-    } else {
-        return errorMessageOpt("cannot cast " + 
-            DeclarationMap::toString(arguments[0]->type) + 
-            " to " + DeclarationMap::toString(type) + 
-            " (sizeof(" + DeclarationMap::toString(arguments[0]->type) + ") !=" +
-            " sizeof(" + DeclarationMap::toString(type) + "))", position
-        );
     }
     
     
@@ -3117,7 +3109,7 @@ optional<Value*> SizeofOperation::interpret(Scope* scope) {
     if (!argType->interpret(scope)) {
         return errorMessageOpt("non-type expression given to sizeof operation", position);
     }
-    return argType->typesize(scope);
+    return nullptr;
 }
 bool SizeofOperation::operator==(const Statement& value) const {
     if(typeid(value) == typeid(*this)){
@@ -3129,7 +3121,28 @@ bool SizeofOperation::operator==(const Statement& value) const {
         return false;
     }
 }
+llvm::Value* SizeofOperation::createLlvm(LlvmObject* llvmObj) {
+    //%Size = getelementptr %T* null, int 1
+    //%SizeI = cast %T* %Size to uint
 
+    /*
+        return llvm::GetElementPtrInst::Create(
+            ((llvm::PointerType*)arg0->getType())->getElementType(),
+            arg0,
+            indexList,
+            "",
+            llvmObj->block
+        );
+    */
+
+    auto gep = llvm::GetElementPtrInst::Create(
+        argType->createLlvm(llvmObj),
+        llvm::ConstantPointerNull::get((llvm::PointerType*)RawPointerType::Create(argType)->createLlvm(llvmObj)),
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), 1),
+        "", llvmObj->block
+    );
+    return new llvm::PtrToIntInst(gep, type->createLlvm(llvmObj), "", llvmObj->block);
+}
 
 
 void createLlvmForEachLoop(LlvmObject* llvmObj, llvm::Value* sizeValue, function<void(llvm::Value*)> bodyFunction) {
