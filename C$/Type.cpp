@@ -1324,7 +1324,7 @@ bool DynamicArrayType::needsReference() {
 }
 optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const CodePosition& position, Scope* scope, const string functionName, vector<Value*> arguments) {
     if (functionName == "push") {
-        auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+        auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
         if (!result) return nullopt; 
         if (result.value().value) arguments = {result.value().value};
         return pair<Type*,FunctionValue*>(Type::Create(Type::Kind::Void), result.value().classConstructor);
@@ -1341,7 +1341,7 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
 
             auto arg0 = arguments[0];
             arguments.erase(arguments.begin());
-            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
             if (!result) return nullopt; 
             if (result.value().value) arguments = {result.value().value};
             arguments.insert(arguments.begin(), arg0);
@@ -1361,7 +1361,7 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
 
             auto arg0 = arguments[0];
             arguments.erase(arguments.begin());
-            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
             if (!result) return nullopt; 
             if (result.value().value) arguments = {result.value().value};
             arguments.insert(arguments.begin(), arg0);
@@ -1379,7 +1379,7 @@ optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const C
 
             auto arg0 = arguments[0];
             arguments.erase(arguments.begin());
-            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, false);
+            auto result = elementType->interpretConstructor(position, scope, arguments, false, false, true);
             if (!result) return nullopt; 
             if (result.value().value) arguments = {result.value().value};
             arguments.insert(arguments.begin(), arg0);
@@ -1845,7 +1845,7 @@ optional<InterpretConstructorResult> DynamicArrayType::interpretConstructor(cons
         auto arg0 = arguments[0];
         auto arg1 = arguments[1];
         arguments.erase(arguments.begin(), arguments.begin()+2);
-        auto result = elementType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment, isExplicit);
+        auto result = elementType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment, true);
         if (result && !isExplicit) {
             if (!onlyTry) errorMessageOpt("cannot implicitly create dynamic array with those arguments", position);
             return nullopt;
