@@ -346,6 +346,8 @@ struct FlowOperation : Operation {
     Scope* scopePtr = nullptr;
     bool isReturnMaybeErrorVoidType = false;
     std::vector<Operation*> variablesDestructors;
+    llvm::Value* llvmReturnValue = nullptr;
+    Type* returnType = nullptr;
 
     virtual void createAllocaLlvmIfNeededForValue(LlvmObject* llvmObj);
     virtual void createAllocaLlvmIfNeededForReference(LlvmObject* llvmObj);

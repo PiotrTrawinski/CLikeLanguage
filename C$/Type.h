@@ -183,6 +183,7 @@ struct MaybeErrorType : Type {
     virtual void createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue);
     virtual void createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef);
@@ -245,6 +246,7 @@ struct StaticArrayType : Type {
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual llvm::AllocaInst* allocaLlvm(LlvmObject* llvmObj, const std::string& name="");
     virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue);
     virtual void createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef);
@@ -271,6 +273,7 @@ struct DynamicArrayType : Type {
     virtual bool interpret(Scope* scope);
     virtual int sizeInBytes();
     virtual bool needsDestruction();
+    virtual bool needsReference();
     virtual std::optional<std::pair<Type*,FunctionValue*>> interpretFunction(const CodePosition& position, Scope* scope, const std::string functionName, std::vector<Value*> arguments);
     virtual llvm::Value* createFunctionLlvmReference(const std::string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual std::pair<llvm::Value*, llvm::Value*> createFunctionLlvmValue(const std::string functionName, LlvmObject* llvmObj, llvm::Value* llvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
@@ -294,6 +297,7 @@ struct DynamicArrayType : Type {
     virtual void createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
+    virtual void createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue);
     virtual void createLlvmDestructorValue(LlvmObject* llvmObj, llvm::Value* llvmValue);
     virtual void createLlvmDestructorRef(LlvmObject* llvmObj, llvm::Value* llvmRef);

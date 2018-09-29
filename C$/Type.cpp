@@ -409,7 +409,7 @@ void OwnerPointerType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Valu
                 "", 
                 llvmObj->block
             );
-            if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::MaybeError) {
+            if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::StaticArray || underlyingType->kind == Type::Kind::DynamicArray || underlyingType->kind == Type::Kind::MaybeError) {
                 underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, rightLlvmValue);
             } else {
                 underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
@@ -441,7 +441,7 @@ void OwnerPointerType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value
                         "", 
                         llvmObj->block
                     );
-                    if (underlyingType->kind == Type::Kind::Class) {
+                    if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::StaticArray || underlyingType->kind == Type::Kind::DynamicArray || underlyingType->kind == Type::Kind::MaybeError) {
                         underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, rightLlvmValue);
                     } else {
                         underlyingType->createLlvmCopyConstructor(llvmObj, newAllocatedValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
@@ -449,7 +449,7 @@ void OwnerPointerType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value
                     new llvm::StoreInst(newAllocatedValue, leftLlvmRef, llvmObj->block);
                 },
                 [&]() {
-                    if (underlyingType->kind == Type::Kind::Class) {
+                    if (underlyingType->kind == Type::Kind::Class || underlyingType->kind == Type::Kind::StaticArray || underlyingType->kind == Type::Kind::DynamicArray || underlyingType->kind == Type::Kind::MaybeError) {
                         underlyingType->createLlvmCopyConstructor(llvmObj, leftLlvmValue, rightLlvmValue);
                     } else {
                         underlyingType->createLlvmCopyConstructor(llvmObj, leftLlvmValue, new llvm::LoadInst(rightLlvmValue, "", llvmObj->block));
@@ -887,6 +887,9 @@ void MaybeErrorType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value*
         );
     }
 }
+void MaybeErrorType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
+}
 void MaybeErrorType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     if (underlyingType->kind == Type::Kind::Void) {
         new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
@@ -1212,6 +1215,9 @@ void StaticArrayType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Value
         }  
     });
 }
+void StaticArrayType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
+}
 void StaticArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     auto sizeValue = llvm::ConstantInt::get(llvm::Type::getInt64Ty(llvmObj->context), sizeAsInt);
     createLlvmForEachLoop(llvmObj, sizeValue, [&](llvm::Value* index) {
@@ -1311,6 +1317,9 @@ int DynamicArrayType::sizeInBytes() {
     return 24;
 }
 bool DynamicArrayType::needsDestruction() {
+    return true;
+}
+bool DynamicArrayType::needsReference() {
     return true;
 }
 optional<pair<Type*,FunctionValue*>> DynamicArrayType::interpretFunction(const CodePosition& position, Scope* scope, const string functionName, vector<Value*> arguments) {
@@ -2041,7 +2050,7 @@ void DynamicArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* l
                             elementType->createLlvmCopyConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
                         } 
                     } else {
-                        if (elementType->kind == Type::Kind::Class) {
+                        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::DynamicArray || elementType->kind == Type::Kind::MaybeError) {
                             elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, gepStatic);
                         } else {
                             elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
@@ -2063,7 +2072,7 @@ void DynamicArrayType::createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* l
                             elementType->createLlvmCopyConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
                         } 
                     } else {
-                        if (elementType->kind == Type::Kind::Class) {
+                        if (elementType->kind == Type::Kind::Class || elementType->kind == Type::Kind::StaticArray || elementType->kind == Type::Kind::DynamicArray || elementType->kind == Type::Kind::MaybeError) {
                             elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, gepStatic);
                         } else {
                             elementType->createLlvmMoveConstructor(llvmObj, gepDynamic, llvmLoad(llvmObj, gepStatic));
@@ -2151,6 +2160,9 @@ void DynamicArrayType::createLlvmCopyConstructor(LlvmObject* llvmObj, llvm::Valu
             elementType->createLlvmCopyConstructor(llvmObj, leftGepRef, new llvm::LoadInst(rightGepRef, "", llvmObj->block));
         } 
     });
+}
+void DynamicArrayType::createLlvmMoveConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
+    new llvm::StoreInst(new llvm::LoadInst(rightLlvmValue, "", llvmObj->block), leftLlvmRef, llvmObj->block);
 }
 void DynamicArrayType::createLlvmCopyAssignment(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, llvm::Value* rightLlvmValue) {
     auto leftCapacity  = new llvm::LoadInst(llvmGepCapacity(llvmObj, leftLlvmRef),    "", llvmObj->block);
