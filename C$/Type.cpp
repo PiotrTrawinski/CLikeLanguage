@@ -2504,7 +2504,7 @@ bool ClassType::interpret(Scope* scope) {
         }
     }
     if (declaration) {
-        return declaration->interpret(templateTypes);
+        return declaration->shallowInterpret(templateTypes);
     }
     declaration = scope->classDeclarationMap.getDeclaration(name);
     if (!declaration && scope->parentScope) {
@@ -2514,7 +2514,7 @@ bool ClassType::interpret(Scope* scope) {
         return false;
     }
     declaration = declaration->get(templateTypes);
-    return declaration->interpret(templateTypes);
+    return declaration->shallowInterpret(templateTypes);
 }
 bool ClassType::operator==(const Type& type) const {
     if(typeid(type) == typeid(*this)){

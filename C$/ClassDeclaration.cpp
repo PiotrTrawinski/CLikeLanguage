@@ -53,13 +53,22 @@ ClassDeclaration* ClassDeclaration::get(const vector<Type*>& classTemplateTypes)
         return this;
     }
 }
+bool ClassDeclaration::shallowInterpret(const vector<Type*>& classTemplateTypes) {
+    if (templateTypes.size() > 0) {
+        if (classTemplateTypes.size() == 0) return true;
+        return get(classTemplateTypes)->shallowInterpret({});
+    } else {
+        body->classDeclaration = this;
+        return body->interpret();
+    }
+}
 bool ClassDeclaration::interpret(const vector<Type*>& classTemplateTypes) {
     if (templateTypes.size() > 0) {
         if (classTemplateTypes.size() == 0) return true;
         return get(classTemplateTypes)->interpret({});
     } else {
         body->classDeclaration = this;
-        return body->interpret();
+        return body->completeInterpret();
     }
 }
 bool ClassDeclaration::interpretAllImplementations() {

@@ -12,7 +12,7 @@ struct ClassDeclaration : Statement {
     void templateCopy(ClassDeclaration* classDeclaration, Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     ClassDeclaration* get(const std::vector<Type*>& classTemplateTypes);
-    bool interpret(const std::vector<Type*>& classTemplateTypes);
+    bool shallowInterpret(const std::vector<Type*>& classTemplateTypes);
     bool interpretAllImplementations();
     virtual bool operator==(const Statement& declaration) const;
 
@@ -29,4 +29,6 @@ struct ClassDeclaration : Statement {
 
 private:
     static std::vector<std::unique_ptr<ClassDeclaration>> objects;
+
+    bool interpret(const std::vector<Type*>& classTemplateTypes);
 };
