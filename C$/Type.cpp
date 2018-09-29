@@ -3082,10 +3082,17 @@ pair<llvm::Value*, llvm::Value*> IntegerType::createLlvmValue(LlvmObject* llvmOb
             } else {
                 return { nullptr, new llvm::FPToUIInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
             }
+        case Type::Kind::Bool: {
+            if (sizeInBytes() == 1) {
+                return { nullptr, arguments[0]->createLlvm(llvmObj) };
+            } else {
+                return { nullptr, new llvm::SExtInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+            }
+        }
         case Type::Kind::MaybeError:
             return { nullptr, arguments[0]->createLlvm(llvmObj)};
         default:
-            internalError("integer can only be constructed from integer and float values in llvm stage");
+            internalError("integer can only be constructed from integer, float and bool values in llvm stage");
             return { nullptr, nullptr };
         }
     }
@@ -3274,8 +3281,11 @@ pair<llvm::Value*, llvm::Value*> FloatType::createLlvmValue(LlvmObject* llvmObj,
             } else {
                 return { nullptr, new llvm::FPExtInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
             }
+        case Type::Kind::Bool: {
+            return { nullptr, new llvm::SIToFPInst(arguments[0]->createLlvm(llvmObj), createLlvm(llvmObj), "", llvmObj->block) };
+        }
         default:
-            internalError("float can only be constructed from integer and float values in llvm stage");
+            internalError("float can only be constructed from integer, float and bool values in llvm stage");
             return { nullptr, nullptr };
         }
     }
