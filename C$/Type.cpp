@@ -96,6 +96,9 @@ optional<InterpretConstructorResult> Type::interpretConstructor(const CodePositi
                 return BoolValue::Create(position, false);
             }
         case 1:  {
+            if (cmpPtr(arguments[0]->type->getEffectiveType(), this)) {
+                return arguments[0];
+            }
             if (arguments[0]->isConstexpr) {
                 switch (arguments[0]->valueKind) {
                 case Value::ValueKind::Char:        return BoolValue::Create(position, ((CharValue*)arguments[0])->value != 0);
@@ -332,6 +335,9 @@ optional<InterpretConstructorResult> OwnerPointerType::interpretConstructor(cons
     case 0:
         return NullValue::Create(position, this);
     case 1: {
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+            return arguments[0];
+        }
         if (arguments[0]->valueKind == Value::ValueKind::Null) {
             return NullValue::Create(position, this);
         }
@@ -533,6 +539,9 @@ optional<InterpretConstructorResult> RawPointerType::interpretConstructor(const 
             return NullValue::Create(position, this);
         }
     case 1: {
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+            return arguments[0];
+        }
         if (arguments[0]->valueKind == Value::ValueKind::Null) {
             return NullValue::Create(position, this);
         }
@@ -642,6 +651,9 @@ optional<InterpretConstructorResult> MaybeErrorType::interpretConstructor(const 
     case 0:
         return InterpretConstructorResult(nullptr, nullptr);
     case 1: {
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+            return arguments[0];
+        }
         auto argEffType = arguments[0]->type->getEffectiveType();
         if (cmpPtr(argEffType, underlyingType)) {
             return InterpretConstructorResult(nullptr, nullptr);
@@ -1120,6 +1132,9 @@ bool StaticArrayType::needsReference() {
     return true;
 }
 optional<InterpretConstructorResult> StaticArrayType::interpretConstructor(const CodePosition& position, Scope* scope, vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit) {
+    if (arguments.size() > 0 && cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+        return arguments[0];
+    }
     auto result = elementType->interpretConstructor(position, scope, arguments, onlyTry, parentIsAssignment, isExplicit);
     if (result && !isExplicit) {
         if (!onlyTry) errorMessageOpt("cannot implicitly create static array with those arguments", position);
@@ -1785,6 +1800,9 @@ optional<InterpretConstructorResult> DynamicArrayType::interpretConstructor(cons
     case 0:
         return InterpretConstructorResult(nullptr, nullptr);
     case 1: {
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+            return arguments[0];
+        }
         auto effType = arguments[0]->type->getEffectiveType();
         if (effType->kind == Type::Kind::StaticArray) {
             if (cmpPtr(elementType, ((StaticArrayType*)effType)->elementType)) {
@@ -2300,6 +2318,9 @@ optional<InterpretConstructorResult> ArrayViewType::interpretConstructor(const C
     case 0:
         return InterpretConstructorResult(nullptr, nullptr);
     case 1: {
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+            return arguments[0];
+        }
         auto argEffType = arguments[0]->type->getEffectiveType();
         if (argEffType->kind == Type::Kind::StaticArray && cmpPtr(elementType, ((StaticArrayType*)argEffType)->elementType)) {
             return InterpretConstructorResult(nullptr, nullptr);
@@ -2983,6 +3004,9 @@ optional<InterpretConstructorResult> IntegerType::interpretConstructor(const Cod
             return intValue;
         }
     case 1:
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+            return arguments[0];
+        }
         switch (arguments[0]->type->getEffectiveType()->kind) {
         case Type::Kind::Integer:
             if (arguments[0]->isConstexpr) {
@@ -3178,6 +3202,9 @@ optional<InterpretConstructorResult> FloatType::interpretConstructor(const CodeP
             return floatValue;
         }
     case 1:
+        if (cmpPtr(arguments[0]->type->getEffectiveType(), (Type*)this)) {
+            return arguments[0];
+        }
         switch (arguments[0]->type->getEffectiveType()->kind) {
         case Type::Kind::Integer:
             if (arguments[0]->isConstexpr) {
