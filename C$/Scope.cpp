@@ -1602,7 +1602,7 @@ bool CodeScope::interpretAfterInitialDeclarations(bool wereErrors) {
         }
         case Statement::Kind::ClassDeclaration: {
             ClassDeclaration* declaration = (ClassDeclaration*)statement;
-            if (!declaration->interpret({})) {
+            if (!declaration->shallowInterpret({})) {
                 wereErrors = true;
             }
             break;
@@ -2030,6 +2030,7 @@ bool ClassScope::interpret() {
         return true;
     }
     wasInterpreted = true;
+
     auto classType = ClassType::Create(classDeclaration->name);
     classType->declaration = classDeclaration;
 
@@ -2045,7 +2046,7 @@ bool ClassScope::interpret() {
         }
         declarationsInitState.insert({declaration, declaration->value});
     }
-    
+
     /*
         inline constructors
     */
@@ -2208,6 +2209,15 @@ bool ClassScope::interpret() {
         }
     }
 
+    return !wereErrors;
+}
+bool ClassScope::completeInterpret() {
+    if (wasCompletelyInterpreted) {
+        return true;
+    }
+    wasCompletelyInterpreted = true;
+
+    bool wereErrors = false;
     for (auto& declaration : declarations) {
         if (declaration->variable->isConst && declaration->value && declaration->value->valueKind == Value::ValueKind::FunctionValue) {
             if (!declaration->interpret(this)) {

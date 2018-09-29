@@ -2319,7 +2319,7 @@ optional<Value*> FunctionCallOperation::interpret(Scope* scope) {
         }
         if (classDeclaration) {
             classDeclaration = classDeclaration->get(templatedArguments);
-            if (!classDeclaration->interpret({})) return nullopt;
+            if (!classDeclaration->shallowInterpret({})) return nullopt;
             auto constructorType = ClassType::Create(classDeclaration->name);
             constructorType->declaration = classDeclaration;
             constructorType->templateTypes = templatedArguments;

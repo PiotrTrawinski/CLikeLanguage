@@ -145,6 +145,7 @@ struct ClassScope : Scope {
     virtual Statement* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool createCodeTree(const std::vector<Token>& tokens, int& i);
     virtual bool interpret();
+    bool completeInterpret();
     virtual Declaration* findAndInterpretDeclaration(const std::string& name);
     virtual bool operator==(const Statement& scope) const;
     virtual void allocaAllDeclarationsLlvm(LlvmObject* llvmObj);
@@ -153,6 +154,7 @@ struct ClassScope : Scope {
     virtual bool getHasReturnStatement();
 
     bool wasInterpreted = false;
+    bool wasCompletelyInterpreted = false;
     std::vector<Declaration*> declarations;
     FunctionValue* inlineConstructors = nullptr;
     FunctionValue* copyConstructor = nullptr;
