@@ -58,8 +58,8 @@ struct Type {
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
     virtual Type* getEffectiveType();
-    virtual Value* typesize(Scope* scope);
-    virtual int sizeInBytes();
+    Value* typesize(Scope* scope);
+    llvm::Value* llvmTypesize(LlvmObject* llvmObj);
     virtual bool needsDestruction();
     virtual bool needsReference();
     virtual std::optional<std::pair<Type*, FunctionValue*>> interpretFunction(const CodePosition& position, Scope* scope, const std::string functionName, std::vector<Value*> arguments);
@@ -107,7 +107,6 @@ struct OwnerPointerType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual bool needsDestruction();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
@@ -139,7 +138,6 @@ struct RawPointerType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual void createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual void createLlvmConstructor(LlvmObject* llvmObj, llvm::Value* leftLlvmRef, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
@@ -163,7 +161,6 @@ struct MaybeErrorType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual bool needsDestruction();
     virtual bool needsReference();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
@@ -207,7 +204,6 @@ struct ReferenceType : Type {
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
     Type* getEffectiveType();
-    virtual int sizeInBytes();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
 
@@ -230,7 +226,6 @@ struct StaticArrayType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual bool needsDestruction();
     virtual bool needsReference();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
@@ -271,7 +266,6 @@ struct DynamicArrayType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual bool needsDestruction();
     virtual bool needsReference();
     virtual std::optional<std::pair<Type*,FunctionValue*>> interpretFunction(const CodePosition& position, Scope* scope, const std::string functionName, std::vector<Value*> arguments);
@@ -320,7 +314,6 @@ struct ArrayViewType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual llvm::Value* createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
@@ -353,7 +346,6 @@ struct ClassType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual bool needsDestruction();
     virtual bool needsReference();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
@@ -391,7 +383,6 @@ struct FunctionType : Type {
     virtual Type* changeClassToTemplate(const std::vector<TemplateType*> templateTypes);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
     virtual bool interpret(Scope* scope);
-    virtual int sizeInBytes();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Type* createLlvm(LlvmObject* llvmObj);
     virtual void createAllocaIfNeededForConstructor(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
@@ -435,11 +426,11 @@ struct FloatType : Type {
     FloatType(Size size);
     static FloatType* Create(Size size);
     
+    int sizeInBytes();
     virtual bool operator==(const Type& type) const;
     virtual MatchTemplateResult matchTemplate(TemplateFunctionType* templateFunctionType, Type* type);
     virtual Type* substituteTemplate(TemplateFunctionType* templateFunctionType);
     virtual Type* templateCopy(Scope* parentScope, const std::unordered_map<std::string, Type*>& templateToType);
-    virtual int sizeInBytes();
     virtual std::optional<InterpretConstructorResult> interpretConstructor(const CodePosition& position, Scope* scope, std::vector<Value*>& arguments, bool onlyTry, bool parentIsAssignment, bool isExplicit);
     virtual llvm::Value* createRefForLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor);
     virtual std::pair<llvm::Value*, llvm::Value*> createLlvmValue(LlvmObject* llvmObj, const std::vector<Value*>& arguments, FunctionValue* classConstructor, llvm::Value* ref);
